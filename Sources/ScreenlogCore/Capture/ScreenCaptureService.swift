@@ -10,11 +10,10 @@ import UniformTypeIdentifiers
 
 private let log = Logger(subsystem: "dev.screenlog", category: "capture")
 
-public struct CapturedBitmap: Sendable {
-    /// Encoded still (HEIC preferred, JPEG fallback).
-    public var imageData: Data
-    /// File extension matching `imageData` (`heic` / `jpg` / rare `png`).
-    public var imageExtension: String
+public struct CapturedBitmap: @unchecked Sendable {
+    /// Original ScreenCaptureKit image. OCR and change detection consume this
+    /// directly so the capture path never decodes a still it just encoded.
+    public var image: CGImage
     public var width: Int
     public var height: Int
     public var timestampMs: Int64
@@ -32,8 +31,15 @@ public struct CapturedBitmap: Sendable {
     public var displayID: UInt32?
 }
 
+public struct EncodedStill: Sendable {
+    public var data: Data
+    /// File extension matching `data` (`heic` / `jpg` / rare `png`).
+    public var fileExtension: String
+}
+
 /// ScreenCaptureKit snapshot capture enriched with CGWindowList metadata.
-/// Safe to call from a background actor / queue - HEIC encode never requires MainActor.
+/// Safe to call from a background actor or queue. Capturing returns raw images;
+/// callers encode only images that have passed privacy and processing checks.
 public final class ScreenCaptureService: NSObject, @unchecked Sendable {
     /// Longest output edge in pixels. Zero preserves native display resolution.
     public var maxDimension: Int = 2_880
@@ -67,7 +73,7 @@ public final class ScreenCaptureService: NSObject, @unchecked Sendable {
 
     /// Captures the configured display set as one logical interval. Display
     /// discovery and metadata are shared, and raw screenshots are collected
-    /// before encoding so multi-display moments stay close in time.
+    /// together so multi-display moments stay close in time.
     public func captureDisplays(
         excludingApplicationsWithBundleIDs excludedBundleIDs: Set<String> = []
     ) async throws -> [CapturedBitmap] {
@@ -119,40 +125,10 @@ public final class ScreenCaptureService: NSObject, @unchecked Sendable {
         let windows = Self.windowBoundsPreferringCG(scContent: content, limit: maxWindows)
         let focused = Self.focusedApp()
         let ts = Int64(Date().timeIntervalSince1970 * 1000)
-        let quality = stillQuality
-        let preferJPEG = preferJPEG
         var bitmaps: [CapturedBitmap] = []
         bitmaps.reserveCapacity(rawCaptures.count)
 
         for raw in rawCaptures {
-            let encoded: (data: Data, ext: String)
-            do {
-                // HEIC/JPEG encoding is CPU-bound. The caller is an actor, but
-                // the work itself belongs on a user-initiated worker queue.
-                let image = raw.image
-                encoded = try await withCheckedThrowingContinuation { continuation in
-                    DispatchQueue.global(qos: .userInitiated).async {
-                        do {
-                            continuation.resume(
-                                returning: try Self.encodeStill(
-                                    image,
-                                    quality: quality,
-                                    preferJPEG: preferJPEG
-                                )
-                            )
-                        } catch {
-                            continuation.resume(throwing: error)
-                        }
-                    }
-                }
-            } catch {
-                firstFailure = firstFailure ?? error
-                log.error(
-                    "display encode failed id=\(raw.display.displayID): \(error.localizedDescription, privacy: .public)"
-                )
-                continue
-            }
-
             // display.frame is global CG points (origin top-left in window-server space).
             let frame = raw.display.frame
             let displayRect = CaptureDisplayRect(
@@ -164,12 +140,11 @@ public final class ScreenCaptureService: NSObject, @unchecked Sendable {
             let displayID = UInt32(raw.display.displayID)
 
             log.debug(
-                "capture \(raw.image.width)x\(raw.image.height) ext=\(encoded.ext) windows=\(windows.count) display=\(Int(displayRect.width))x\(Int(displayRect.height)) id=\(displayID) bundle=\(focused.bundleID ?? "-", privacy: .private(mask: .hash))"
+                "capture \(raw.image.width)x\(raw.image.height) windows=\(windows.count) display=\(Int(displayRect.width))x\(Int(displayRect.height)) id=\(displayID) bundle=\(focused.bundleID ?? "-", privacy: .private(mask: .hash))"
             )
             bitmaps.append(
                 CapturedBitmap(
-                    imageData: encoded.data,
-                    imageExtension: encoded.ext,
+                    image: raw.image,
                     width: raw.image.width,
                     height: raw.image.height,
                     timestampMs: ts,
@@ -382,7 +357,33 @@ public final class ScreenCaptureService: NSObject, @unchecked Sendable {
 
     // MARK: - Still encode (HEIC to JPEG fallback)
 
-    private static func encodeStill(
+    /// Encodes a captured image once it is known to be safe and worth storing.
+    /// Encoding is CPU-bound, so it runs outside the caller's executor.
+    public func encodeStill(_ image: CGImage) async throws -> EncodedStill {
+        let quality = stillQuality
+        let preferJPEG = preferJPEG
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                do {
+                    let encoded = try Self.encodeStillData(
+                        image,
+                        quality: quality,
+                        preferJPEG: preferJPEG
+                    )
+                    continuation.resume(
+                        returning: EncodedStill(
+                            data: encoded.data,
+                            fileExtension: encoded.ext
+                        )
+                    )
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    private static func encodeStillData(
         _ image: CGImage,
         quality: Double,
         preferJPEG: Bool = false

@@ -138,6 +138,15 @@ public final class ExclusionStore: @unchecked Sendable {
         return false
     }
 
+    /// Whether a browser preflight can prevent otherwise wasted capture work.
+    /// Category domains are evaluated lazily and are not copied into defaults.
+    public var hasWebsiteExclusions: Bool {
+        lock.lock()
+        let hasExplicitDomains = !domains.isEmpty
+        lock.unlock()
+        return hasExplicitDomains || banksCategoryEnabled
+    }
+
     /// Whether the built-in bank-domain exclusion category is enabled.
     public var banksCategoryEnabled: Bool {
         get {

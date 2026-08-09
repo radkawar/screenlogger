@@ -13,6 +13,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     var shortcutCancellable: AnyCancellable?
     var captureOnceFeedbackTask: Task<Void, Never>?
     var isShowingCaptureOnceSuccess = false
+    let browserURLService = BrowserURLService()
 
     /// Menu item tags for dynamic titles and state.
     enum ItemTag: Int {
@@ -33,6 +34,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         case captureOnce = 16
         case captureStatus = 17
         case checkForUpdates = 18
+        case excludeCurrentWebsite = 19
 
         var accessibilityIdentifier: String {
             switch self {
@@ -53,6 +55,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             case .captureOnce: return "status-menu.capture-once"
             case .captureStatus: return "status-menu.capture-status"
             case .checkForUpdates: return "status-menu.check-for-updates"
+            case .excludeCurrentWebsite: return "status-menu.exclude-website"
             }
         }
     }

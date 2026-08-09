@@ -23,9 +23,25 @@ struct RecordingCaptureBackoff: Equatable {
     }
 }
 
+/// Product-owned capture protection. This is deliberately independent from
+/// user preferences so Screenlogger can never record its own windows.
+public enum ScreenloggerCapturePrivacy {
+    public static let bundleIdentifier = "dev.screenlog.app"
+
+    public static func isScreenlogger(bundleID: String?) -> Bool {
+        bundleID?.caseInsensitiveCompare(bundleIdentifier) == .orderedSame
+    }
+
+    public static func includingScreenlogger(in bundleIDs: Set<String>) -> Set<String> {
+        var result = Set(bundleIDs.map { $0.lowercased() })
+        result.insert(bundleIdentifier)
+        return result
+    }
+}
+
 // MARK: - Off-MainActor capture pipeline
 
-/// Heavy capture work: ScreenCaptureKit stills, HEIC encode, Vision OCR, AX, SQLite writes.
+/// Heavy capture work: ScreenCaptureKit stills, Vision OCR, HEIC encode, AX, SQLite writes.
 /// Isolated from the UI so RecordingEngine's MainActor loop only hops back for published state.
 private actor CapturePipeline {
     private let capture = ScreenCaptureService()
@@ -127,9 +143,26 @@ private actor CapturePipeline {
     }
 
     func captureAndStore(store: Store) async throws -> CycleOutcome {
-        // Cheap early exclusion by frontmost bundle (before ScreenCaptureKit work).
+        // Cheap early exclusions before ScreenCaptureKit, OCR, or encoding.
         let earlyBundle = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-        if exclusions.isExcluded(bundleID: earlyBundle, domain: nil) {
+        if ScreenloggerCapturePrivacy.isScreenlogger(bundleID: earlyBundle) {
+            log.debug("skip capture: Screenlogger is frontmost")
+            return CycleOutcome(
+                frameIDs: [],
+                ocrReused: false,
+                axNodes: 0,
+                pauseReason: .excludedContent
+            )
+        }
+
+        var preflightBrowserAttribution: BrowserURLAttribution?
+        if exclusions.hasWebsiteExclusions,
+            BrowserURLService.isSupportedBrowser(bundleID: earlyBundle)
+        {
+            preflightBrowserAttribution = browserURL.frontmostBrowserAttribution()
+        }
+        let preflightDomain = preflightBrowserAttribution?.domain
+        if exclusions.isExcluded(bundleID: earlyBundle, domain: preflightDomain) {
             log.info("skip capture: excluded frontmost bundle \(earlyBundle ?? "?", privacy: .private(mask: .hash))")
             return CycleOutcome(
                 frameIDs: [],
@@ -147,26 +180,37 @@ private actor CapturePipeline {
 
         var url: String?
         var domain: String?
+        var privacyURL: String?
+        var privacyDomain: String?
         var title = representative.focusedTitle ?? ""
         let bundleID = representative.focusedBundleID ?? earlyBundle
 
         var browserAttribution: BrowserURLAttribution?
-        if captureBrowserURL || pauseWhenBrowserAddressUnavailable {
+        if captureBrowserURL || excludePrivateTabs || pauseWhenBrowserAddressUnavailable
+            || preflightBrowserAttribution != nil
+        {
+            // Re-read after the still. Preflight avoids work when the website
+            // is already excluded; postflight prevents a tab or focus change
+            // during capture from being attributed to the previous website.
             browserAttribution = browserURL.frontmostBrowserAttribution()
             // The foreground app can change while ScreenCaptureKit is working.
             // Never attach Browser B's address or title to Browser A's pixels.
             if let b = browserAttribution,
                 b.observedBundleID == bundleID
             {
-                if let u = b.url { url = u }
-                if let d = b.domain { domain = d }
+                privacyURL = b.url
+                privacyDomain = b.domain
+                if captureBrowserURL {
+                    url = b.url
+                    domain = b.domain
+                }
                 if let t = b.title, !t.isEmpty { title = t }
             }
         }
 
-        if exclusions.isExcluded(bundleID: bundleID, domain: domain) {
+        if exclusions.isExcluded(bundleID: bundleID, domain: privacyDomain) {
             log.info(
-                "skip frame storage: excluded bundle=\(bundleID ?? "-", privacy: .private(mask: .hash)) domain=\(domain ?? "-", privacy: .private(mask: .hash))"
+                "skip frame storage: excluded bundle=\(bundleID ?? "-", privacy: .private(mask: .hash)) domain=\(privacyDomain ?? "-", privacy: .private(mask: .hash))"
             )
             return CycleOutcome(
                 frameIDs: [],
@@ -177,7 +221,11 @@ private actor CapturePipeline {
         }
 
         if excludePrivateTabs,
-            PrivateBrowsingDetector.looksPrivate(title: title, url: url, bundleID: bundleID)
+            PrivateBrowsingDetector.looksPrivate(
+                title: title,
+                url: privacyURL,
+                bundleID: bundleID
+            )
         {
             log.info(
                 "skip private browsing tab bundle=\(bundleID ?? "-", privacy: .private(mask: .hash)) title=\(title, privacy: .private(mask: .hash))"
@@ -232,11 +280,11 @@ private actor CapturePipeline {
                 let reused: Bool
                 if useDifferentialOCR {
                     let service = differentialOCRService(for: bitmap.displayID)
-                    let diff = try await service.recognize(pngData: bitmap.imageData)
+                    let diff = try await service.recognize(image: bitmap.image)
                     rawOCR = diff.result
                     reused = diff.reused
                 } else {
-                    rawOCR = try await fullOCR.recognize(pngData: bitmap.imageData)
+                    rawOCR = try await fullOCR.recognize(image: bitmap.image)
                     reused = false
                 }
 
@@ -261,8 +309,11 @@ private actor CapturePipeline {
                     }
                 }
 
+                // Encode exactly once, after privacy checks and OCR have
+                // consumed the original ScreenCaptureKit image.
+                let encoded = try await capture.encodeStill(bitmap.image)
                 let payload = CapturePayload(
-                    imageData: bitmap.imageData,
+                    imageData: encoded.data,
                     timestampMs: bitmap.timestampMs,
                     width: bitmap.width,
                     height: bitmap.height,
@@ -277,7 +328,7 @@ private actor CapturePipeline {
                     ocrBoxes: attributed.boxes,
                     windowBounds: windowBounds,
                     isInactive: false,
-                    imageFileExtension: bitmap.imageExtension,
+                    imageFileExtension: encoded.fileExtension,
                     captureDisplay: bitmap.captureDisplay
                 )
 
@@ -331,7 +382,7 @@ private actor CapturePipeline {
         if exclusions.passwordManagersCategoryEnabled {
             bundleIDs.formUnion(ExclusionCatalog.passwordManagerBundleIDs.map { $0.lowercased() })
         }
-        return bundleIDs
+        return ScreenloggerCapturePrivacy.includingScreenlogger(in: bundleIDs)
     }
 
     func runMaintenance(

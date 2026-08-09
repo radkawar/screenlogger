@@ -1,3 +1,4 @@
+import ScreenlogCore
 import XCTest
 
 final class ExclusionPolicyPresentationTests: XCTestCase {
@@ -130,5 +131,65 @@ final class ExclusionPolicyPresentationTests: XCTestCase {
             )
             XCTAssertTrue(presentation.accessibilityHint.contains("not deleted"))
         }
+    }
+}
+
+final class WebsiteExclusionMenuPresentationTests: XCTestCase {
+    func testNonBrowserKeepsWebsiteActionOutOfTheMenu() {
+        XCTAssertEqual(
+            WebsiteExclusionMenuPresentation.resolve(
+                frontmostBundleID: "com.apple.Notes",
+                attribution: nil,
+                isExcluded: { _ in false }
+            ),
+            .hidden
+        )
+    }
+
+    func testBrowserWithoutReadableAddressExplainsWhyActionIsUnavailable() {
+        XCTAssertEqual(
+            WebsiteExclusionMenuPresentation.resolve(
+                frontmostBundleID: "com.apple.Safari",
+                attribution: nil,
+                isExcluded: { _ in false }
+            ),
+            .addressUnavailable
+        )
+    }
+
+    func testCurrentWebsiteIsNormalizedAndReflectsExistingPolicy() {
+        let attribution = BrowserURLAttribution(
+            url: "https://www.example.com/design",
+            domain: "www.example.com",
+            title: "Design",
+            observedBundleID: "com.apple.Safari"
+        )
+
+        XCTAssertEqual(
+            WebsiteExclusionMenuPresentation.resolve(
+                frontmostBundleID: "com.apple.Safari",
+                attribution: attribution,
+                isExcluded: { $0 == "example.com" }
+            ),
+            .available(domain: "example.com", isExcluded: true)
+        )
+    }
+
+    func testAttributionFromAnotherBrowserIsNeverOffered() {
+        let attribution = BrowserURLAttribution(
+            url: "https://example.com",
+            domain: "example.com",
+            title: "Example",
+            observedBundleID: "com.google.Chrome"
+        )
+
+        XCTAssertEqual(
+            WebsiteExclusionMenuPresentation.resolve(
+                frontmostBundleID: "com.apple.Safari",
+                attribution: attribution,
+                isExcluded: { _ in false }
+            ),
+            .addressUnavailable
+        )
     }
 }

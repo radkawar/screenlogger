@@ -73,6 +73,22 @@ final class ExclusionStoreTests: XCTestCase {
         XCTAssertEqual(store.allDomainsSorted(), ["a.com", "b.com", "c.com"])
     }
 
+    func testWebsitePreflightOnlyActivatesWhenAWebsitePolicyExists() {
+        XCTAssertFalse(store.hasWebsiteExclusions)
+
+        store.add("com.example.app")
+        XCTAssertFalse(store.hasWebsiteExclusions)
+
+        store.addDomain("example.com")
+        XCTAssertTrue(store.hasWebsiteExclusions)
+
+        store.removeDomain("example.com")
+        XCTAssertFalse(store.hasWebsiteExclusions)
+
+        store.banksCategoryEnabled = true
+        XCTAssertTrue(store.hasWebsiteExclusions)
+    }
+
     func testCombinedIsExcludedAndShouldExclude() {
         store.add("com.secret.app")
         store.addDomain("private.example")

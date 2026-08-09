@@ -103,8 +103,23 @@ extension StatusMenuController {
         appModel.excludeApplication(bundleID: bundleID)
     }
 
-    @objc func undoLastAppExclusion(_ sender: Any?) {
-        appModel.undoRecentApplicationExclusion()
+    @objc func excludeCurrentWebsite(_ sender: Any?) {
+        guard let item = sender as? NSMenuItem,
+            let domain = item.representedObject as? String,
+            !domain.isEmpty
+        else {
+            appModel.statusMessage = "Website address unavailable"
+            return
+        }
+        if appModel.isDomainEffectivelyExcluded(domain) {
+            appModel.openProductSettings(.exclusionsWebsites)
+            return
+        }
+        appModel.excludeWebsite(domain: domain)
+    }
+
+    @objc func undoLastCaptureExclusion(_ sender: Any?) {
+        appModel.undoRecentCaptureExclusion()
     }
 
     @objc func openTimeline(_ sender: Any?) {

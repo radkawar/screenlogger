@@ -1,6 +1,5 @@
 import CoreGraphics
 import Foundation
-import ImageIO
 import OSLog
 import Vision
 
@@ -44,13 +43,6 @@ public final class OCRService: @unchecked Sendable {
     public var recognitionLanguages: [String] = []
 
     public init() {}
-
-    public func recognize(pngData: Data) async throws -> OCRResult {
-        guard let image = Self.cgImage(from: pngData) else {
-            return OCRResult(fullText: "", boxes: [])
-        }
-        return try await recognize(image: image)
-    }
 
     public func recognize(image: CGImage) async throws -> OCRResult {
         // Run Vision off the cooperative pool; never require MainActor.
@@ -342,8 +334,4 @@ public final class OCRService: @unchecked Sendable {
         return nil
     }
 
-    private static func cgImage(from data: Data) -> CGImage? {
-        guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
-        return CGImageSourceCreateImageAtIndex(src, 0, nil)
-    }
 }

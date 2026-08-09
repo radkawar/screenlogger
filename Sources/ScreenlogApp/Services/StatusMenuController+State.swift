@@ -78,6 +78,16 @@ extension StatusMenuController {
     private func refreshMenuItems(_ menu: NSMenu) {
         let libraryIssue = appModel.libraryStartupIssue
         let front = Self.frontmostUserApp()
+        let frontmostBundleID = front?.bundleIdentifier
+        let websiteAttribution =
+            BrowserURLService.isSupportedBrowser(bundleID: frontmostBundleID)
+            ? browserURLService.browserAttribution(for: front)
+            : nil
+        let websitePresentation = WebsiteExclusionMenuPresentation.resolve(
+            frontmostBundleID: frontmostBundleID,
+            attribution: websiteAttribution,
+            isExcluded: appModel.isDomainEffectivelyExcluded
+        )
         let status = appModel.captureStatusPresentation()
         let showsLibraryRecoveryTools =
             libraryIssue != nil
@@ -164,18 +174,54 @@ extension StatusMenuController {
                     item.isEnabled = false
                     item.toolTip = "Switch to the app you don't want Screenlogger to capture"
                 }
+            case .excludeCurrentWebsite:
+                switch websitePresentation {
+                case .hidden:
+                    item.title = "Exclude Website"
+                    item.representedObject = nil
+                    item.isHidden = true
+                    item.isEnabled = false
+                    item.toolTip = nil
+                case .addressUnavailable:
+                    item.title = "Website Address Unavailable"
+                    item.image = menuSymbolImage("questionmark.circle")
+                    item.representedObject = nil
+                    item.isHidden = false
+                    item.isEnabled = false
+                    item.toolTip = "Screenlogger could not read the active browser address"
+                case .available(let domain, let isExcluded):
+                    item.title =
+                        isExcluded
+                        ? "Manage Website Exclusions..."
+                        : "Don't Capture \"\(domain)\""
+                    item.image = menuSymbolImage(isExcluded ? "slider.horizontal.3" : "globe")
+                    item.representedObject = domain
+                    item.isHidden = false
+                    item.isEnabled = true
+                    item.toolTip =
+                        isExcluded
+                        ? "Open Website Exclusions in Settings"
+                        : "Skip capture while \(domain) is open in the active browser tab"
+                }
             case .undoExclude:
-                if let change = appModel.recentApplicationExclusion,
-                    appModel.excludedBundles.contains(where: {
-                        $0.caseInsensitiveCompare(change.bundleID) == .orderedSame
-                    })
-                {
+                switch appModel.recentCaptureExclusion {
+                case .application(let change)
+                where appModel.excludedBundles.contains(where: {
+                    $0.caseInsensitiveCompare(change.bundleID) == .orderedSame
+                }):
                     item.title = "Capture \"\(change.displayName)\" Again"
-                    item.representedObject = change.bundleID
+                    item.representedObject = nil
                     item.isHidden = false
                     item.isEnabled = true
                     item.toolTip = "Remove the app from Application Exclusions"
-                } else {
+                case .website(let domain)
+                where appModel.isDomainEffectivelyExcluded(domain):
+                    item.title = "Capture \"\(domain)\" Again"
+                    item.representedObject = nil
+                    item.isHidden = false
+                    item.isEnabled = true
+                    item.toolTip = "Remove the website from Website Exclusions"
+                default:
                     item.representedObject = nil
                     item.isHidden = true
                     item.isEnabled = false

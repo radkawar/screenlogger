@@ -1,6 +1,32 @@
 import Foundation
 import ScreenlogCore
 
+/// Native menu state for the website under the active browser tab. Resolving
+/// it here keeps Accessibility failures and browser focus races deterministic.
+enum WebsiteExclusionMenuPresentation: Equatable, Sendable {
+    case hidden
+    case addressUnavailable
+    case available(domain: String, isExcluded: Bool)
+
+    static func resolve(
+        frontmostBundleID: String?,
+        attribution: BrowserURLAttribution?,
+        isExcluded: (String) -> Bool
+    ) -> Self {
+        guard BrowserURLService.isSupportedBrowser(bundleID: frontmostBundleID) else {
+            return .hidden
+        }
+        guard let attribution,
+            attribution.observedBundleID == frontmostBundleID,
+            let domain = attribution.domain,
+            let normalized = DomainExclusionParser.normalize(domain)
+        else {
+            return .addressUnavailable
+        }
+        return .available(domain: normalized, isExcluded: isExcluded(normalized))
+    }
+}
+
 /// The effective capture result shown beside every app and website policy.
 /// These are deliberately outcomes rather than checkbox states: a disabled
 /// checkbox can still mean "Never Capture" when a broader rule owns it.

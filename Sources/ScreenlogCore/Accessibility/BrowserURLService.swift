@@ -63,10 +63,20 @@ public final class BrowserURLService: @unchecked Sendable {
     }
 
     public func frontmostBrowserAttribution() -> BrowserURLAttribution? {
+        browserAttribution(for: NSWorkspace.shared.frontmostApplication)
+    }
+
+    /// Reads a specific browser retained by a menu action. The status item can
+    /// temporarily become frontmost while its menu is open, so callers must be
+    /// able to resolve the browser that was active immediately beforehand.
+    public func browserAttribution(
+        for application: NSRunningApplication?
+    ) -> BrowserURLAttribution? {
         guard AccessibilityPermission.isTrusted(prompt: false) else {
             return nil
         }
-        guard let app = NSWorkspace.shared.frontmostApplication,
+        guard let app = application,
+            !app.isTerminated,
             let bid = app.bundleIdentifier,
             Self.browserBundleIDs.contains(bid)
         else {

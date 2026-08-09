@@ -1,8 +1,52 @@
+import CoreGraphics
+import ImageIO
 import XCTest
 
 @testable import ScreenlogCore
 
 final class CaptureOnceFailureTests: XCTestCase {
+    func testScreenloggerIsAlwaysAddedToCaptureFilter() {
+        let result = ScreenloggerCapturePrivacy.includingScreenlogger(
+            in: ["com.apple.Notes", "DEV.EXAMPLE.APP"]
+        )
+
+        XCTAssertTrue(ScreenloggerCapturePrivacy.isScreenlogger(bundleID: "dev.screenlog.app"))
+        XCTAssertTrue(result.contains("dev.screenlog.app"))
+        XCTAssertTrue(result.contains("dev.example.app"))
+        XCTAssertEqual(result.count, 3)
+    }
+
+    func testRawImageCanBeEncodedOnceAtStorageBoundary() async throws {
+        let bytes: [UInt8] = [
+            255, 0, 0, 255,
+            0, 255, 0, 255,
+            0, 0, 255, 255,
+            255, 255, 255, 255,
+        ]
+        let provider = try XCTUnwrap(CGDataProvider(data: Data(bytes) as CFData))
+        let image = try XCTUnwrap(
+            CGImage(
+                width: 2,
+                height: 2,
+                bitsPerComponent: 8,
+                bitsPerPixel: 32,
+                bytesPerRow: 8,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
+                provider: provider,
+                decode: nil,
+                shouldInterpolate: false,
+                intent: .defaultIntent
+            )
+        )
+
+        let encoded = try await ScreenCaptureService().encodeStill(image)
+
+        XCTAssertFalse(encoded.data.isEmpty)
+        XCTAssertTrue(["heic", "jpg", "png"].contains(encoded.fileExtension))
+        XCTAssertNotNil(CGImageSourceCreateWithData(encoded.data as CFData, nil))
+    }
+
     func testCaptureResolutionPolicyPreservesNativePixelsForUltra() {
         let size = ScreenCaptureService.outputSize(
             nativeWidth: 6_016,

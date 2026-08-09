@@ -115,9 +115,17 @@ extension StatusMenuController {
                 tag: .excludeFrontmost,
                 symbol: "eye.slash"
             ))
+        let excludeWebsite = makeItem(
+            title: "Exclude Website",
+            action: #selector(excludeCurrentWebsite(_:)),
+            tag: .excludeCurrentWebsite,
+            symbol: "globe"
+        )
+        excludeWebsite.isHidden = true
+        menu.addItem(excludeWebsite)
         let undoExclude = makeItem(
             title: "Undo Exclusion",
-            action: #selector(undoLastAppExclusion(_:)),
+            action: #selector(undoLastCaptureExclusion(_:)),
             tag: .undoExclude,
             symbol: "arrow.uturn.backward.circle"
         )

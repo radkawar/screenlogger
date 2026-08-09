@@ -422,7 +422,7 @@ final class AppModel: ObservableObject {
     }
     @Published var excludedBundles: [String] = []
     /// Most recent menu-bar exclusion, retained so the next menu open offers Undo.
-    @Published var recentApplicationExclusion: ExcludedApplicationChange?
+    @Published var recentCaptureExclusion: RecentCaptureExclusion?
     @Published var newExclusionBundle = ""
     @Published var excludedDomains: [String] = []
     @Published var newExclusionDomain = ""

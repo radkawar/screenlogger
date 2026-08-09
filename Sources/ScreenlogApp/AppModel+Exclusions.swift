@@ -25,8 +25,10 @@ extension AppModel {
     func removeExclusion(_ bundleID: String) {
         let displayName = SLAppIdentity.displayName(bundleID: bundleID)
         exclusionStore.remove(bundleID)
-        if recentApplicationExclusion?.bundleID.caseInsensitiveCompare(bundleID) == .orderedSame {
-            recentApplicationExclusion = nil
+        if case .application(let change) = recentCaptureExclusion,
+            change.bundleID.caseInsensitiveCompare(bundleID) == .orderedSame
+        {
+            recentCaptureExclusion = nil
         }
         reloadExclusionsFromStore()
         statusMessage = "Will capture \(displayName) again"
@@ -94,7 +96,7 @@ extension AppModel {
 
     func restoreExclusionDefaults() {
         exclusionStore.clearAll()
-        recentApplicationExclusion = nil
+        recentCaptureExclusion = nil
         // Privacy-first defaults: exclude password managers and private tabs.
         applyExclusionCategory(.passwordManagers, enabled: true)
         applyExclusionCategory(.banks, enabled: false)
@@ -118,6 +120,11 @@ extension AppModel {
 
     func removeDomainExclusion(_ domain: String) {
         exclusionStore.removeDomain(domain)
+        if case .website(let recentDomain) = recentCaptureExclusion,
+            DomainExclusionParser.normalize(recentDomain) == DomainExclusionParser.normalize(domain)
+        {
+            recentCaptureExclusion = nil
+        }
         reloadExclusionsFromStore()
         statusMessage = "Removed \(domain)"
     }

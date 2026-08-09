@@ -325,19 +325,35 @@ extension AppModel {
         guard !bundleID.isEmpty else { return }
         addExclusion(bundleID)
         let name = displayName ?? SLAppIdentity.displayName(bundleID: bundleID)
-        recentApplicationExclusion = ExcludedApplicationChange(
-            bundleID: bundleID,
-            displayName: name
+        recentCaptureExclusion = .application(
+            ExcludedApplicationChange(
+                bundleID: bundleID,
+                displayName: name
+            )
         )
         statusMessage = "Won't capture \(name)"
     }
 
-    func undoRecentApplicationExclusion() {
-        guard let change = recentApplicationExclusion else { return }
-        exclusionStore.remove(change.bundleID)
-        recentApplicationExclusion = nil
+    func excludeWebsite(domain: String) {
+        guard let normalized = DomainExclusionParser.normalize(domain) else { return }
+        exclusionStore.addDomain(normalized)
+        recentCaptureExclusion = .website(domain: normalized)
         reloadExclusionsFromStore()
-        statusMessage = "Will capture \(change.displayName) again"
+        statusMessage = "Won't capture \(normalized)"
+    }
+
+    func undoRecentCaptureExclusion() {
+        guard let change = recentCaptureExclusion else { return }
+        switch change {
+        case .application(let application):
+            exclusionStore.remove(application.bundleID)
+            statusMessage = "Will capture \(application.displayName) again"
+        case .website(let domain):
+            exclusionStore.removeDomain(domain)
+            statusMessage = "Will capture \(domain) again"
+        }
+        recentCaptureExclusion = nil
+        reloadExclusionsFromStore()
     }
 
     func captureOnce() async {

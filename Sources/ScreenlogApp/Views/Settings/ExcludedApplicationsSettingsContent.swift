@@ -39,6 +39,32 @@ struct ExcludedApplicationsSettingsContent: View {
             )
             SettingsCard(padding: 0) {
                 VStack(spacing: 0) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "eye.slash.circle.fill")
+                            .foregroundStyle(SLDesign.success)
+                            .frame(width: 28)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Screenlogger")
+                                .font(.body.weight(.medium))
+                            Text("Screenlogger windows never appear in captures.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 8)
+                        Label("Always Excluded", systemImage: "checkmark.shield.fill")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(SLDesign.success)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Screenlogger, always excluded")
+                    .accessibilityHint("Screenlogger windows never appear in captures")
+                    .accessibilityIdentifier("exclusions.applications.screenlogger")
+
+                    Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
+
                     ExclusionToggleRow(
                         icon: category.systemImage,
                         title: category.label,
@@ -394,6 +420,7 @@ struct ExcludedApplicationsSettingsContent: View {
         }
         let available = installedApps.filter {
             !isExplicitlyExcluded($0.bundleID)
+                && !ScreenloggerCapturePrivacy.isScreenlogger(bundleID: $0.bundleID)
                 && applicationCategoryNames(bundleID: $0.bundleID).isEmpty
         }
         guard !normalizedQuery.isEmpty else { return available }

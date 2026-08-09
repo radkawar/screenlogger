@@ -1,6 +1,5 @@
 import CoreGraphics
 import Foundation
-import ImageIO
 import OSLog
 import Vision
 
@@ -20,7 +19,7 @@ public final class DifferentialOCRService: @unchecked Sendable {
     public var reuseThreshold: Double = 0.988
     /// Stride on the *downscaled* sample image (larger = cheaper).
     public var sampleStride: Int = 4
-    /// Max edge of luminance sample canvas (pixels). Keeps diff cheap vs full 1080p decode.
+    /// Max edge of luminance sample canvas (pixels). Keeps diff cheap at full display resolution.
     public var sampleMaxEdge: Int = 160
 
     /// Vision language codes for the underlying OCRService (empty = system).
@@ -31,13 +30,6 @@ public final class DifferentialOCRService: @unchecked Sendable {
     }
 
     public init() {}
-
-    public func recognize(pngData: Data) async throws -> (result: OCRResult, reused: Bool) {
-        guard let image = Self.cgImage(from: pngData) else {
-            return (OCRResult(fullText: "", boxes: []), false)
-        }
-        return try await recognize(image: image)
-    }
 
     public func recognize(image: CGImage) async throws -> (result: OCRResult, reused: Bool) {
         // Downscale + sample off the main thread (never full-res RGBA for diff).
@@ -78,11 +70,6 @@ public final class DifferentialOCRService: @unchecked Sendable {
         lastImageHash = nil
         lastResult = nil
         lastPixelSample = nil
-    }
-
-    private static func cgImage(from data: Data) -> CGImage? {
-        guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
-        return CGImageSourceCreateImageAtIndex(src, 0, nil)
     }
 
     /// Downscale to `maxEdge`, then sample luminance - avoids full-res CGContext for 1080p+.
