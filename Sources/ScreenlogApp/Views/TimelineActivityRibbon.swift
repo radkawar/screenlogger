@@ -23,9 +23,6 @@ extension HistoryPane {
                 visibleEndMs: window.endMs,
                 expectedCaptureIntervalMs: Int64((model.intervalSeconds * 1_000).rounded())
             )
-            let visibleTranscriptPassages = model.timelineTranscriptPassages.filter {
-                $0.endTimestampMs >= window.startMs && $0.startTimestampMs <= window.endMs
-            }
             let hoveredFrame = frames.first(where: { $0.id == hoveredTimelineFrameID })
             let contextFrame = hoveredFrame ?? model.selectedTimelineFrame
             VStack(spacing: 4) {
@@ -71,34 +68,14 @@ extension HistoryPane {
                         .frame(height: 8)
                         .accessibilityHidden(true)
 
-                    ForEach(visibleTranscriptPassages) { passage in
-                        let startMs = max(window.startMs, passage.startTimestampMs)
-                        let endMs = min(window.endMs, passage.endTimestampMs)
-                        let x = Self.timelineX(timestampMs: startMs, in: window, width: w)
-                        let endX = Self.timelineX(timestampMs: endMs, in: window, width: w)
-                        let markerWidth = max(3, endX - x)
-                        let isActive = passage.contains(
-                            timestampMs: model.selectedTimelineFrame?.timestampMs ?? Int64.min
-                        )
-                        Capsule(style: .continuous)
-                            .fill(speechMarkerColor(for: passage.source).opacity(isActive ? 1 : 0.62))
-                            .frame(width: markerWidth, height: isActive ? 5 : 3)
-                            .shadow(
-                                color: isActive
-                                    ? speechMarkerColor(for: passage.source).opacity(0.55)
-                                    : .clear,
-                                radius: 3
-                            )
-                            .position(x: x + markerWidth / 2, y: 3)
-                            .help(
-                                "\(passage.source.label) transcript, \(SLTimeFormat.shortTime(passage.startTimestampMs))"
-                            )
-                            .accessibilityElement()
-                            .accessibilityLabel("\(passage.source.label) speech")
-                            .accessibilityValue(
-                                "\(SLTimeFormat.shortTime(passage.startTimestampMs)) to \(SLTimeFormat.shortTime(passage.endTimestampMs))"
-                            )
-                    }
+                    TimelineSpeechMarkers(
+                        passages: model.timelineTranscriptPassages,
+                        visibleStartMs: window.startMs,
+                        visibleEndMs: window.endMs,
+                        selectedTimestampMs: model.selectedTimelineFrame?.timestampMs,
+                        width: w,
+                        computerColor: model.accentSwiftUIColor
+                    )
 
                     ForEach(activity.intervals) { interval in
                         let x = Self.timelineX(timestampMs: interval.startMs, in: window, width: w)
@@ -475,9 +452,72 @@ extension HistoryPane {
         // hover/VoiceOver context without assigning every app a random hue.
         model.accentSwiftUIColor
     }
+}
 
-    private func speechMarkerColor(for source: TranscriptSource) -> Color {
-        source == .microphone ? .white : model.accentSwiftUIColor
+private struct TimelineSpeechMarkers: View {
+    let passages: [TimelineTranscriptPresentation.Passage]
+    let visibleStartMs: Int64
+    let visibleEndMs: Int64
+    let selectedTimestampMs: Int64?
+    let width: CGFloat
+    let computerColor: Color
+
+    private var visiblePassages: [TimelineTranscriptPresentation.Passage] {
+        passages.filter {
+            $0.endTimestampMs >= visibleStartMs && $0.startTimestampMs <= visibleEndMs
+        }
+    }
+
+    var body: some View {
+        ForEach(visiblePassages) { passage in
+            TimelineSpeechMarker(
+                passage: passage,
+                x: timelineX(max(visibleStartMs, passage.startTimestampMs)),
+                endX: timelineX(min(visibleEndMs, passage.endTimestampMs)),
+                isActive: selectedTimestampMs.map { passage.contains(timestampMs: $0) } ?? false,
+                color: passage.source == .microphone ? .white : computerColor
+            )
+        }
+    }
+
+    private func timelineX(_ timestampMs: Int64) -> CGFloat {
+        TimelineRibbonMapping.x(
+            timestampMs: timestampMs,
+            in: TimelineRibbonMapping.Window(
+                startMs: visibleStartMs,
+                endMs: visibleEndMs
+            ),
+            width: width
+        )
+    }
+}
+
+private struct TimelineSpeechMarker: View {
+    let passage: TimelineTranscriptPresentation.Passage
+    let x: CGFloat
+    let endX: CGFloat
+    let isActive: Bool
+    let color: Color
+
+    private var markerWidth: CGFloat { max(3, endX - x) }
+
+    var body: some View {
+        Capsule(style: .continuous)
+            .fill(color.opacity(isActive ? 1 : 0.62))
+            .frame(width: markerWidth, height: isActive ? 5 : 3)
+            .shadow(
+                color: isActive ? color.opacity(0.55) : .clear,
+                radius: 3
+            )
+            .position(x: x + markerWidth / 2, y: 3)
+            .help(
+                "\(passage.source.label) transcript, \(SLTimeFormat.shortTime(passage.startTimestampMs))"
+            )
+            .accessibilityElement()
+            .accessibilityLabel("\(passage.source.label) speech")
+            .accessibilityValue(
+                "\(SLTimeFormat.shortTime(passage.startTimestampMs)) to \(SLTimeFormat.shortTime(passage.endTimestampMs))"
+            )
     }
 }
 
