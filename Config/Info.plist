@@ -30,6 +30,10 @@
 	<string>NSApplication</string>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>Screenlogger saves periodic screenshots on this Mac so you can search and revisit what you saw.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Screenlogger can transcribe your microphone on this Mac when you explicitly enable audio transcription.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Screenlogger can transcribe computer audio on this Mac when you explicitly enable audio transcription.</string>
 	<key>NSAccessibilityUsageDescription</key>
 	<string>Screenlogger identifies the active app, website, and interface context so search and privacy exclusions work accurately.</string>
 	<key>NSAppleEventsUsageDescription</key>

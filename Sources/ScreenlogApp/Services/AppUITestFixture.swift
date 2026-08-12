@@ -55,6 +55,7 @@ import ScreenlogCore
             let assistantScenario: AssistantScenario
             let firstRunFrameDelayMilliseconds: UInt64?
             let seedsMultipleDisplays: Bool
+            let presentsAudioTranscription: Bool
         }
 
         /// Assistant discovery and readiness are explicit fixture inputs. The
@@ -208,7 +209,10 @@ import ScreenlogCore
                 ].flatMap(UInt64.init),
                 seedsMultipleDisplays: environment[
                     "SCREENLOG_UI_TEST_MULTIPLE_DISPLAYS"
-                ] == "1"
+                ] == "1",
+                presentsAudioTranscription: environment[
+                    "SCREENLOG_UI_TEST_AUDIO_TRANSCRIPTION"
+                ] == "active"
             )
         }()
 
@@ -405,8 +409,11 @@ import ScreenlogCore
             )
             model.permissionJourney = model.permissionFlowCoordinator.journey
             model.capturePauseReason = nil
-            model.isRecording = false
-            model.statusMessage = "Ready - capture off"
+            model.isRecording = configuration.presentsAudioTranscription
+            model.statusMessage =
+                configuration.presentsAudioTranscription
+                ? "Capturing every 2s"
+                : "Ready - capture off"
             model.captureIssue = configuration.captureIssue
             // Fixture readiness must not depend on a particular view reaching
             // `onAppear`. Install the declared assistant scenario with the
@@ -427,6 +434,9 @@ import ScreenlogCore
                             usesUnreadablePreview: configuration.usesUnreadablePreview,
                             includesMultipleDisplays: configuration.seedsMultipleDisplays
                         )
+                        if configuration.presentsAudioTranscription {
+                            try seedAudioTranscript(in: store)
+                        }
                     }
                     await model.refreshData(light: false)
                     await model.loadSessions()
@@ -477,6 +487,18 @@ import ScreenlogCore
             }
             if let accent = configuration.accent {
                 model.accentColorPreference = accent
+            }
+            if configuration.presentsAudioTranscription {
+                model.isLoadingSettings = true
+                model.audioTranscriptionEnabled = true
+                model.computerAudioTranscriptionEnabled = true
+                model.microphoneTranscriptionEnabled = true
+                model.isLoadingSettings = false
+                model.audioTranscriptionStatus = AudioTranscriptionStatus(
+                    phase: .active,
+                    activeSources: Set(TranscriptSource.allCases),
+                    detail: "Transcribing microphone and computer audio on this Mac."
+                )
             }
             model.applyAppearancePreference()
 
@@ -775,6 +797,28 @@ import ScreenlogCore
                     )
                 }
             }
+        }
+
+        private static func seedAudioTranscript(in store: Store) throws {
+            let timestampMs = Int64(Date().timeIntervalSince1970 * 1_000) - 60_000
+            _ = try store.storeTranscript(
+                TranscriptSegmentDraft(
+                    startTimestampMs: timestampMs - 700,
+                    endTimestampMs: timestampMs + 900,
+                    source: .microphone,
+                    text: "Let's confirm the launch plan and owners.",
+                    localeIdentifier: "en-US"
+                )
+            )
+            _ = try store.storeTranscript(
+                TranscriptSegmentDraft(
+                    startTimestampMs: timestampMs + 1_000,
+                    endTimestampMs: timestampMs + 2_600,
+                    source: .computer,
+                    text: "The design review is scheduled for Thursday.",
+                    localeIdentifier: "en-US"
+                )
+            )
         }
 
         private static func fixtureImageData(for moment: SeedMoment) throws -> Data {

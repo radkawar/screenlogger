@@ -171,6 +171,12 @@ struct HistoryPane: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+            if let segments = model.selectedTimelineFrame?.transcriptSegments,
+                !segments.isEmpty
+            {
+                TimelineTranscriptRows(segments: segments)
+            }
+
             bottomChrome
                 .frame(maxWidth: .infinity)
         }
@@ -255,5 +261,57 @@ struct HistoryPane: View {
                 if review == nil { model.cancelLibraryDeletionReview() }
             }
         )
+    }
+}
+
+private struct TimelineTranscriptRows: View {
+    let segments: [TranscriptSegment]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            ForEach(Array(segments.prefix(3))) { segment in
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Label(
+                        segment.source.label,
+                        systemImage: segment.source == .microphone ? "mic.fill" : "waveform"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.68))
+                    .frame(width: 88, alignment: .leading)
+
+                    Text(segment.text)
+                        .font(.callout)
+                        .foregroundStyle(.white.opacity(0.92))
+                        .lineLimit(2)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Text(SLTimeFormat.shortTime(segment.startTimestampMs))
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.46))
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    "\(segment.source.label), \(segment.text), \(SLTimeFormat.shortTime(segment.startTimestampMs))"
+                )
+            }
+
+            if segments.count > 3 {
+                Text("\(segments.count - 3) more transcript segments in this moment")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.5))
+                    .padding(.leading, 98)
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.black.opacity(0.94))
+        .overlay(alignment: .top) {
+            Divider().overlay(Color.white.opacity(0.12))
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Audio transcript")
+        .accessibilityIdentifier("timeline.transcript")
     }
 }

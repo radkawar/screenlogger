@@ -140,6 +140,7 @@ final class AppModel: ObservableObject {
     /// Expected capture pause, published on AppModel so SwiftUI updates when
     /// the engine changes without relying on an unrelated polling redraw.
     @Published var capturePauseReason: CapturePauseReason?
+    @Published var audioTranscriptionStatus: AudioTranscriptionStatus = .off
     /// User-requested pause end time (menu: 'Pause Recording for 1 Hour'). Nil when not paused.
     @Published var recordingPausedUntil: Date? = nil
     var pauseResumeTask: Task<Void, Never>?
@@ -242,6 +243,24 @@ final class AppModel: ObservableObject {
             guard !isLoadingSettings else { return }
             preferences.set(differentialOCREnabled, forKey: ProductPreferenceKey.differentialOCR)
             applySnapshotPrefsToEngine()
+        }
+    }
+    @Published var audioTranscriptionEnabled = false {
+        didSet {
+            guard !isLoadingSettings else { return }
+            persistAndApplyAudioTranscriptionSettings()
+        }
+    }
+    @Published var computerAudioTranscriptionEnabled = true {
+        didSet {
+            guard !isLoadingSettings else { return }
+            persistAndApplyAudioTranscriptionSettings()
+        }
+    }
+    @Published var microphoneTranscriptionEnabled = true {
+        didSet {
+            guard !isLoadingSettings else { return }
+            persistAndApplyAudioTranscriptionSettings()
         }
     }
 
@@ -855,6 +874,15 @@ final class AppModel: ObservableObject {
                 Task { @MainActor [weak self] in
                     self?.capturePauseReason = value
                     self?.updateStatusMessage()
+                }
+            }
+            .store(in: &engineCancellables)
+
+        engine.$audioTranscriptionStatus
+            .removeDuplicates()
+            .sink { [weak self] value in
+                Task { @MainActor [weak self] in
+                    self?.audioTranscriptionStatus = value
                 }
             }
             .store(in: &engineCancellables)

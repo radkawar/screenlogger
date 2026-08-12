@@ -44,6 +44,10 @@ extension StatusMenuController {
         appModel.openProductSettings()
     }
 
+    @objc func openAudioTranscriptionSettings(_ sender: Any?) {
+        appModel.openProductSettings(.captureAudio)
+    }
+
     @objc func openHelp(_ sender: Any?) {
         appModel.openProductGuide()
     }

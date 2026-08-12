@@ -270,6 +270,208 @@ struct CaptureTextRecognitionSettingsSection: View {
     }
 }
 
+struct AudioTranscriptionSettingsSection: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        SettingsCard(padding: 0) {
+            VStack(spacing: 0) {
+                SettingsCardRow(
+                    icon: "waveform.badge.mic",
+                    title: "Audio Transcription",
+                    subtitle: summary
+                ) {
+                    Toggle(
+                        "Audio Transcription",
+                        isOn: Binding(
+                            get: { model.audioTranscriptionEnabled },
+                            set: { model.setAudioTranscriptionEnabledFromUserAction($0) }
+                        )
+                    )
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .disabled(!AudioTranscriptionSupport.isAvailable)
+                    .accessibilityValue(
+                        SettingsAccessibilityValue.onOff(model.audioTranscriptionEnabled)
+                    )
+                    .accessibilityHint("Transcribe selected audio sources on this Mac")
+                    .accessibilityIdentifier("capture.audio.enabled.toggle")
+                }
+                .padding(14)
+
+                if model.audioTranscriptionEnabled && AudioTranscriptionSupport.isAvailable {
+                    Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
+
+                    sourceRow(
+                        icon: "speaker.wave.2",
+                        title: "Computer Audio",
+                        subtitle: "Words played by apps are labeled Computer.",
+                        isOn: $model.computerAudioTranscriptionEnabled,
+                        identifier: "capture.audio.computer.toggle"
+                    )
+
+                    Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
+
+                    sourceRow(
+                        icon: "mic",
+                        title: "Microphone",
+                        subtitle: microphoneSubtitle,
+                        isOn: Binding(
+                            get: { model.microphoneTranscriptionEnabled },
+                            set: { model.setMicrophoneTranscriptionEnabledFromUserAction($0) }
+                        ),
+                        identifier: "capture.audio.microphone.toggle"
+                    )
+
+                    if model.microphoneTranscriptionEnabled,
+                        MicrophoneAuthorization.current != .authorized
+                    {
+                        HStack {
+                            Spacer()
+                            Button(microphoneButtonTitle) {
+                                model.retryMicrophoneAuthorizationFromUserAction()
+                            }
+                            .controlSize(.small)
+                            .accessibilityIdentifier("capture.audio.microphone.permission")
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 12)
+                    }
+
+                    Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
+
+                    statusRow
+
+                    Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
+
+                    VStack(alignment: .leading, spacing: 7) {
+                        Label("Private by design", systemImage: "lock.shield")
+                            .font(.callout.weight(.medium))
+                        Text(
+                            "Apple's speech model runs on this Mac. Screenlogger saves finalized text only and immediately discards audio samples. App and website exclusions and Private Browsing also pause transcription."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                        Text(
+                            "Browser note: macOS cannot reliably identify which background tab produced audio. A background tab may be transcribed when a different, allowed website is active."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(14)
+                }
+            }
+        }
+        .accessibilityIdentifier("capture.audio-transcription")
+    }
+
+    private var summary: String {
+        guard AudioTranscriptionSupport.isAvailable else {
+            return AudioTranscriptionSupport.requirementDescription
+        }
+        if model.audioTranscriptionEnabled {
+            return "Adds what you say and hear to Library search. Audio is never saved."
+        }
+        return "Optional on-device transcripts for meetings, presentations, and calls."
+    }
+
+    private var microphoneSubtitle: String {
+        switch MicrophoneAuthorization.current {
+        case .authorized: return "Your voice is labeled You."
+        case .notDetermined: return "Your voice is labeled You. Permission is requested only when you enable this."
+        case .denied, .restricted: return "Microphone access is unavailable. Computer Audio can still be transcribed."
+        }
+    }
+
+    private var microphoneButtonTitle: String {
+        MicrophoneAuthorization.current == .notDetermined
+            ? "Allow Microphone"
+            : "Open Microphone Settings"
+    }
+
+    private func sourceRow(
+        icon: String,
+        title: String,
+        subtitle: String,
+        isOn: Binding<Bool>,
+        identifier: String
+    ) -> some View {
+        SettingsCardRow(icon: icon, title: title, subtitle: subtitle) {
+            Toggle(title, isOn: isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .accessibilityValue(SettingsAccessibilityValue.onOff(isOn.wrappedValue))
+                .accessibilityIdentifier(identifier)
+        }
+        .padding(14)
+    }
+
+    @ViewBuilder
+    private var statusRow: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: statusSymbol)
+                .foregroundStyle(statusColor)
+                .frame(width: 18)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(statusTitle)
+                    .font(.callout.weight(.medium))
+                Text(model.audioTranscriptionStatus.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if model.audioTranscriptionStatus.phase == .preparing,
+                    let progress = model.audioTranscriptionStatus.preparationProgress
+                {
+                    ProgressView(value: progress)
+                        .progressViewStyle(.linear)
+                        .padding(.top, 3)
+                }
+            }
+            Spacer(minLength: 8)
+        }
+        .padding(14)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("capture.audio.status")
+    }
+
+    private var statusTitle: String {
+        switch model.audioTranscriptionStatus.phase {
+        case .unavailable: return "Unavailable"
+        case .off: return "Off"
+        case .permissionRequired: return "Microphone Permission Needed"
+        case .preparing: return "Preparing On-Device Model"
+        case .active: return "Transcribing"
+        case .privacyPaused: return "Paused for Privacy"
+        case .capturePaused: return "Waiting for Capture"
+        case .failed: return "Transcription Needs Attention"
+        }
+    }
+
+    private var statusSymbol: String {
+        switch model.audioTranscriptionStatus.phase {
+        case .active: return "waveform.circle.fill"
+        case .preparing: return "arrow.down.circle"
+        case .privacyPaused: return "lock.circle"
+        case .failed, .permissionRequired: return "exclamationmark.circle"
+        case .unavailable, .off, .capturePaused: return "waveform.circle"
+        }
+    }
+
+    private var statusColor: Color {
+        switch model.audioTranscriptionStatus.phase {
+        case .active: return .green
+        case .preparing: return .accentColor
+        case .privacyPaused: return .orange
+        case .failed, .permissionRequired: return .red
+        case .unavailable, .off, .capturePaused: return .secondary
+        }
+    }
+}
+
 enum CaptureSettingsCopy {
     static func interval(_ seconds: Double) -> String {
         if seconds == floor(seconds) {

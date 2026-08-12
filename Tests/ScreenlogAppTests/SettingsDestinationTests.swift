@@ -78,6 +78,29 @@ final class SettingsDestinationTests: XCTestCase {
             SettingsSearchResult.matching("multiple monitors").map(\.destination),
             [.captureDisplays]
         )
+        for query in ["audio transcription", "microphone", "computer audio", "meeting caption"] {
+            XCTAssertEqual(
+                SettingsSearchResult.matching(query).map(\.destination),
+                [.captureAudio],
+                query
+            )
+        }
+    }
+
+    func testAudioTranscriptionHasAStableCaptureDestination() {
+        XCTAssertEqual(SettingsDestination.captureAudio.section, .capture)
+        XCTAssertEqual(
+            SettingsDestination.captureAudio.anchor?.accessibilityLabel,
+            "Audio transcription"
+        )
+        XCTAssertEqual(
+            SettingsDestination.captureAudio.anchor?.accessibilityIdentifier,
+            "settings.destination.capture-audio"
+        )
+        XCTAssertEqual(
+            SettingsDestination.captureAudio.anchor?.searchResultAccessibilityIdentifier,
+            "settings.search-result.capture-audio"
+        )
     }
 
     func testCaptureDisplayCopyExplainsCoverageAndCost() {

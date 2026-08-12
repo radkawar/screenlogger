@@ -37,6 +37,73 @@ public enum ProductPreferenceKey {
     public static let assistantHandoffRouting = "screenlog.assistantHandoff.routing"
     public static let excludePasswordManagers = "screenlog.exclude.passwordManagers"
     public static let excludeBanksCategory = "screenlog.exclude.banks"
+    /// Audio transcription is deliberately opt-in. Source switches retain
+    /// their choices while the master switch is off.
+    public static let audioTranscriptionEnabled = "screenlog.audioTranscription.enabled"
+    public static let computerAudioTranscriptionEnabled =
+        "screenlog.audioTranscription.computerAudio"
+    public static let microphoneTranscriptionEnabled =
+        "screenlog.audioTranscription.microphone"
+}
+
+/// Privacy-first persisted settings for on-device audio transcription.
+public enum AudioTranscriptionPreferenceStore {
+    public struct Snapshot: Equatable, Sendable {
+        public var isEnabled: Bool
+        public var computerAudioEnabled: Bool
+        public var microphoneEnabled: Bool
+
+        public init(
+            isEnabled: Bool = false,
+            computerAudioEnabled: Bool = true,
+            microphoneEnabled: Bool = true
+        ) {
+            self.isEnabled = isEnabled
+            self.computerAudioEnabled = computerAudioEnabled
+            self.microphoneEnabled = microphoneEnabled
+        }
+
+        public var enabledSources: Set<TranscriptSource> {
+            guard isEnabled else { return [] }
+            var sources: Set<TranscriptSource> = []
+            if computerAudioEnabled { sources.insert(.computer) }
+            if microphoneEnabled { sources.insert(.microphone) }
+            return sources
+        }
+    }
+
+    public static func load(
+        from defaults: UserDefaults = ScreenlogProcessPreferences.current
+    ) -> Snapshot {
+        Snapshot(
+            isEnabled: defaults.bool(forKey: ProductPreferenceKey.audioTranscriptionEnabled),
+            computerAudioEnabled: defaults.object(
+                forKey: ProductPreferenceKey.computerAudioTranscriptionEnabled
+            ) == nil
+                ? true
+                : defaults.bool(forKey: ProductPreferenceKey.computerAudioTranscriptionEnabled),
+            microphoneEnabled: defaults.object(
+                forKey: ProductPreferenceKey.microphoneTranscriptionEnabled
+            ) == nil
+                ? true
+                : defaults.bool(forKey: ProductPreferenceKey.microphoneTranscriptionEnabled)
+        )
+    }
+
+    public static func save(
+        _ snapshot: Snapshot,
+        to defaults: UserDefaults = ScreenlogProcessPreferences.current
+    ) {
+        defaults.set(snapshot.isEnabled, forKey: ProductPreferenceKey.audioTranscriptionEnabled)
+        defaults.set(
+            snapshot.computerAudioEnabled,
+            forKey: ProductPreferenceKey.computerAudioTranscriptionEnabled
+        )
+        defaults.set(
+            snapshot.microphoneEnabled,
+            forKey: ProductPreferenceKey.microphoneTranscriptionEnabled
+        )
+    }
 }
 
 /// Persisted authorization for mutating commands sent through Screenlogger's

@@ -37,6 +37,14 @@ Open the menu or Capture Settings for the exact reason. Common causes are missin
 permission, an exclusion, private browsing, an unknown website under strict
 protection, inactivity, or low disk space.
 
+## Audio transcription does not start
+
+Audio Transcription requires macOS 26 or later and starts only while capture is
+running. Open Capture Settings for its exact state. The first enable can take
+time while macOS installs an Apple speech model. Microphone transcription also
+requires Microphone access; computer audio can continue independently if that
+access is denied.
+
 ## Diagnostics
 
 Settings under Support and About can export a bounded diagnostics bundle. It

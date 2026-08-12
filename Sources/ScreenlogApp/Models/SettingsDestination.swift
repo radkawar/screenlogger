@@ -59,6 +59,7 @@ enum SettingsDestination: Hashable {
     static let captureOnce = anchor(SettingsAnchor.captureOnce)
     static let captureDisplays = anchor(SettingsAnchor.captureDisplays)
     static let captureTiming = anchor(SettingsAnchor.captureTiming)
+    static let captureAudio = anchor(SettingsAnchor.captureAudio)
     static let privacyPermissions = anchor(SettingsAnchor.privacyPermissions)
     static let privacyProtection = anchor(SettingsAnchor.privacyProtection)
     static let privacyNetwork = anchor(SettingsAnchor.privacyNetwork)
@@ -93,6 +94,7 @@ enum SettingsAnchor: String, CaseIterable, Hashable {
     case captureOnce = "capture-once"
     case captureDisplays = "capture-displays"
     case captureTiming = "capture-timing"
+    case captureAudio = "capture-audio"
     case privacyPermissions = "privacy-permissions"
     case privacyProtection = "privacy-protection"
     case privacyNetwork = "privacy-network"
@@ -109,7 +111,7 @@ enum SettingsAnchor: String, CaseIterable, Hashable {
 
     var section: SettingsSidebarItem {
         switch self {
-        case .captureStatus, .captureOnce, .captureDisplays, .captureTiming:
+        case .captureStatus, .captureOnce, .captureDisplays, .captureTiming, .captureAudio:
             return .capture
         case .privacyPermissions, .privacyProtection, .privacyNetwork, .privacyLocalData:
             return .privacy
@@ -138,6 +140,7 @@ enum SettingsAnchor: String, CaseIterable, Hashable {
         case .integrationsAssistantConnections: return "bubble.left.and.bubble.right"
         case .captureDisplays: return "rectangle.on.rectangle"
         case .captureStatus, .captureOnce, .captureTiming: return "record.circle"
+        case .captureAudio: return "waveform.badge.mic"
         case .privacyPermissions, .privacyProtection, .privacyNetwork, .privacyLocalData:
             return "hand.raised"
         case .exclusionsApplications, .exclusionsWebsites: return "eye.slash"
@@ -153,6 +156,7 @@ enum SettingsAnchor: String, CaseIterable, Hashable {
         case .captureOnce: return "Capture a moment"
         case .captureDisplays: return "Capture displays"
         case .captureTiming: return "Capture timing"
+        case .captureAudio: return "Audio transcription"
         case .privacyPermissions: return "Screen capture permissions"
         case .privacyProtection: return "Privacy protection"
         case .privacyNetwork: return "Network privacy"
@@ -182,6 +186,11 @@ enum SettingsAnchor: String, CaseIterable, Hashable {
             ]
         case .captureTiming:
             return ["interval", "timer", "frequency", "inactive", "inactivity"]
+        case .captureAudio:
+            return [
+                "audio", "transcription", "transcript", "microphone", "computer audio",
+                "speech", "meeting", "presentation", "caption", "voice",
+            ]
         case .privacyPermissions:
             return ["permission", "screen recording", "accessibility", "system settings"]
         case .privacyProtection:
@@ -294,7 +303,7 @@ enum SettingsSidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .integrations: return "Terminal command and assistant connections"
         case .appearance: return "Theme and Timeline controls"
         case .shortcuts: return "Customize how you navigate and control Screenlogger"
-        case .capture: return "Displays, timing, image quality, and text recognition"
+        case .capture: return "Displays, timing, image quality, text, and audio"
         case .privacy: return "Permissions, protected activity, and Library data"
         case .storage: return "Library usage and retention"
         case .exclusions: return "Apps and detectable websites Screenlogger skips"
@@ -321,7 +330,8 @@ enum SettingsSidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .capture:
             return [
                 title, subtitle, "recording", "quality", "interval", "OCR", "text recognition",
-                "encoding", "display", "monitor", "multiple screens",
+                "encoding", "display", "monitor", "multiple screens", "audio", "transcription",
+                "microphone", "computer audio",
             ]
         case .privacy:
             return [title, subtitle, "permission", "screen recording", "accessibility", "offline", "network", "local"]

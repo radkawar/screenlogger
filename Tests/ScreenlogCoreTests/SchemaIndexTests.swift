@@ -37,6 +37,8 @@ final class SchemaIndexTests: XCTestCase {
             "idx_ocr_frame",
             "idx_window_bound_frame",
             "idx_window_bound_application",
+            "idx_transcript_segment_frame",
+            "idx_transcript_segment_time",
             // app / domain
             "idx_application_bundle_id",
             "idx_domain_normalized",
@@ -60,11 +62,18 @@ final class SchemaIndexTests: XCTestCase {
         let tables = try masterNames(type: "table", in: store.db)
         // FTS5 may show as table in sqlite_master
         XCTAssertTrue(tables.contains("ocr_fts") || tables.contains("ocr_fts_data"), "ocr_fts FTS5 table required")
+        XCTAssertTrue(
+            tables.contains("transcript_fts") || tables.contains("transcript_fts_data"),
+            "transcript_fts FTS5 table required"
+        )
 
         let triggers = try masterNames(type: "trigger", in: store.db)
         XCTAssertTrue(triggers.contains("frame_ai"))
         XCTAssertTrue(triggers.contains("frame_ad"))
         XCTAssertTrue(triggers.contains("frame_au"))
+        XCTAssertTrue(triggers.contains("transcript_segment_ai"))
+        XCTAssertTrue(triggers.contains("transcript_segment_ad"))
+        XCTAssertTrue(triggers.contains("transcript_segment_au"))
     }
 
     func testSchemaVersionIsCurrent() throws {
@@ -80,6 +89,7 @@ final class SchemaIndexTests: XCTestCase {
             "frame", "ocr", "segment", "application", "domain", "video",
             "window_bound", "metadata", "ax_node", "ax_node_edge", "ax_snapshot",
             "ax_legacy_tree", "once_tasks", "app_version", "timezone",
+            "transcript_segment",
         ] {
             XCTAssertTrue(tables.contains(name), "missing table \(name)")
         }

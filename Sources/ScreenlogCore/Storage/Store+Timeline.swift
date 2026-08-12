@@ -62,6 +62,15 @@ extension Store {
         )
     }
 
+    private func attachingTranscripts(to rows: [TimelineFrame]) throws -> [TimelineFrame] {
+        let grouped = try transcriptsByMoment(timestamps: rows.map(\.timestampMs))
+        return rows.map { row in
+            var hydrated = row
+            hydrated.transcriptSegments = grouped[row.timestampMs] ?? []
+            return hydrated
+        }
+    }
+
     /// Recent frames joined with app / domain / url for Timeline UI.
     public func recentTimeline(limit: Int = 80) throws -> [TimelineFrame] {
         let sql = """
@@ -83,7 +92,7 @@ extension Store {
         while sqlite3_step(stmt) == SQLITE_ROW {
             rows.append(Self.timelineFrame(from: stmt))
         }
-        return rows
+        return try attachingTranscripts(to: rows)
     }
 
     /// Chronological window of frames around a center id (for search to replay).
@@ -125,7 +134,7 @@ extension Store {
         while sqlite3_step(stmt) == SQLITE_ROW {
             rows.append(Self.timelineFrame(from: stmt))
         }
-        return rows
+        return try attachingTranscripts(to: rows)
     }
 
     public func timelineNear(timestampMs: Int64, limit: Int = 80) throws -> [TimelineFrame] {
@@ -170,7 +179,7 @@ extension Store {
         while sqlite3_step(stmt) == SQLITE_ROW {
             rows.append(Self.timelineFrame(from: stmt))
         }
-        return rows
+        return try attachingTranscripts(to: rows)
     }
 
     /// Inclusive time-range timeline (`idx_frame_timestamp`) for session browse / scrub windows.
@@ -201,7 +210,7 @@ extension Store {
         while sqlite3_step(stmt) == SQLITE_ROW {
             rows.append(Self.timelineFrame(from: stmt))
         }
-        return rows
+        return try attachingTranscripts(to: rows)
     }
 
     /// Timeline frames for a contiguous recording block from `sessions(gapMs:)`.

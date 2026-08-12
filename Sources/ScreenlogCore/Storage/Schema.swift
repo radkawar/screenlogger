@@ -21,7 +21,7 @@ extension SchemaMigrationError: LocalizedError {
 /// Screenlogger schema and migrations for frames, OCR, segments, FTS5, and AX context.
 /// Uses plain SQLite3 (not SQLCipher). Bookkeeping via `schema_migrations` (not grdb_migrations).
 public enum Schema {
-    public static let currentVersion = 5
+    public static let currentVersion = 6
 
     public static let createStatements: [String] = [
         // ---- Core activity graph ----
@@ -208,6 +208,55 @@ public enum Schema {
         END
         """,
 
+        // ---- On-device audio transcripts (no retained audio) ----
+        """
+        CREATE TABLE IF NOT EXISTS transcript_segment (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            frame_id INTEGER NOT NULL REFERENCES frame(id) ON DELETE CASCADE,
+            start_timestamp INTEGER NOT NULL,
+            end_timestamp INTEGER NOT NULL,
+            source TEXT NOT NULL CHECK(source IN ('microphone', 'computer')),
+            text TEXT NOT NULL,
+            locale_identifier TEXT,
+            confidence REAL,
+            CHECK(end_timestamp >= start_timestamp)
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_transcript_segment_frame
+            ON transcript_segment(frame_id)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_transcript_segment_time
+            ON transcript_segment(start_timestamp, end_timestamp)
+        """,
+        """
+        CREATE VIRTUAL TABLE IF NOT EXISTS transcript_fts USING fts5(
+            text,
+            content='transcript_segment',
+            content_rowid='id',
+            tokenize='porter unicode61 remove_diacritics 2'
+        )
+        """,
+        """
+        CREATE TRIGGER IF NOT EXISTS transcript_segment_ai AFTER INSERT ON transcript_segment BEGIN
+            INSERT INTO transcript_fts(rowid, text) VALUES (new.id, new.text);
+        END
+        """,
+        """
+        CREATE TRIGGER IF NOT EXISTS transcript_segment_ad AFTER DELETE ON transcript_segment BEGIN
+            INSERT INTO transcript_fts(transcript_fts, rowid, text)
+            VALUES('delete', old.id, old.text);
+        END
+        """,
+        """
+        CREATE TRIGGER IF NOT EXISTS transcript_segment_au AFTER UPDATE OF text ON transcript_segment BEGIN
+            INSERT INTO transcript_fts(transcript_fts, rowid, text)
+            VALUES('delete', old.id, old.text);
+            INSERT INTO transcript_fts(rowid, text) VALUES (new.id, new.text);
+        END
+        """,
+
         // ---- Persistent accessibility tree (content-addressed) ----
         """
         CREATE TABLE IF NOT EXISTS ax_node (
@@ -336,6 +385,11 @@ public enum Schema {
                 try setUserVersion(db, 5)
             }
 
+            if try userVersion(db) < 6 {
+                try migrateToV6(db)
+                try setUserVersion(db, 6)
+            }
+
             if try userVersion(db) < currentVersion {
                 try setUserVersion(db, currentVersion)
             }
@@ -384,6 +438,11 @@ public enum Schema {
                 "window_layer", "z_order", "url",
             ],
             "ocr_fts": ["foreground", "background", "title"],
+            "transcript_segment": [
+                "id", "frame_id", "start_timestamp", "end_timestamp", "source", "text",
+                "locale_identifier", "confidence",
+            ],
+            "transcript_fts": ["text"],
             "ax_node": ["hash", "payload", "first_seen_frame_id"],
             "ax_node_edge": ["parent_hash", "child_hash"],
             "ax_snapshot": [
@@ -406,7 +465,10 @@ public enum Schema {
             }
         }
 
-        for trigger in ["frame_ai", "frame_ad", "frame_au"] where try !triggerExists(db, trigger) {
+        for trigger in [
+            "frame_ai", "frame_ad", "frame_au",
+            "transcript_segment_ai", "transcript_segment_ad", "transcript_segment_au",
+        ] where try !triggerExists(db, trigger) {
             failures.append("missing trigger \(trigger)")
         }
 
@@ -557,6 +619,72 @@ public enum Schema {
                 completed INTEGER NOT NULL DEFAULT 0,
                 completed_at REAL
             )
+            """
+        )
+    }
+
+    // MARK: - V6
+
+    private static func migrateToV6(_ db: SQLiteDatabase) throws {
+        try db.exec(
+            """
+            CREATE TABLE IF NOT EXISTS transcript_segment (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                frame_id INTEGER NOT NULL REFERENCES frame(id) ON DELETE CASCADE,
+                start_timestamp INTEGER NOT NULL,
+                end_timestamp INTEGER NOT NULL,
+                source TEXT NOT NULL CHECK(source IN ('microphone', 'computer')),
+                text TEXT NOT NULL,
+                locale_identifier TEXT,
+                confidence REAL,
+                CHECK(end_timestamp >= start_timestamp)
+            )
+            """
+        )
+        try db.exec(
+            """
+            CREATE INDEX IF NOT EXISTS idx_transcript_segment_frame
+                ON transcript_segment(frame_id)
+            """
+        )
+        try db.exec(
+            """
+            CREATE INDEX IF NOT EXISTS idx_transcript_segment_time
+                ON transcript_segment(start_timestamp, end_timestamp)
+            """
+        )
+        try db.exec(
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS transcript_fts USING fts5(
+                text,
+                content='transcript_segment',
+                content_rowid='id',
+                tokenize='porter unicode61 remove_diacritics 2'
+            )
+            """
+        )
+        try db.exec(
+            """
+            CREATE TRIGGER IF NOT EXISTS transcript_segment_ai AFTER INSERT ON transcript_segment BEGIN
+                INSERT INTO transcript_fts(rowid, text) VALUES (new.id, new.text);
+            END
+            """
+        )
+        try db.exec(
+            """
+            CREATE TRIGGER IF NOT EXISTS transcript_segment_ad AFTER DELETE ON transcript_segment BEGIN
+                INSERT INTO transcript_fts(transcript_fts, rowid, text)
+                VALUES('delete', old.id, old.text);
+            END
+            """
+        )
+        try db.exec(
+            """
+            CREATE TRIGGER IF NOT EXISTS transcript_segment_au AFTER UPDATE OF text ON transcript_segment BEGIN
+                INSERT INTO transcript_fts(transcript_fts, rowid, text)
+                VALUES('delete', old.id, old.text);
+                INSERT INTO transcript_fts(rowid, text) VALUES (new.id, new.text);
+            END
             """
         )
     }

@@ -19,10 +19,18 @@ extension StatusMenuController {
         guard let button = statusItem?.button else { return }
         guard !isShowingCaptureOnceSuccess else { return }
         let status = appModel.captureStatusPresentation()
-        button.image = statusSymbolImage(status.symbolName)
-        button.toolTip = "Screenlogger - \(status.headline)\n\(status.detail)"
-        button.setAccessibilityLabel("Screenlogger - \(status.headline)")
-        button.setAccessibilityHelp(status.detail)
+        let audio = appModel.audioTranscriptionStatus
+        if audio.isConspicuouslyActive {
+            button.image = statusSymbolImage("waveform.circle.fill")
+            button.toolTip = "Screenlogger - Audio Transcription Active\n\(audio.detail)"
+            button.setAccessibilityLabel("Screenlogger - Audio Transcription Active")
+            button.setAccessibilityHelp(audio.detail)
+        } else {
+            button.image = statusSymbolImage(status.symbolName)
+            button.toolTip = "Screenlogger - \(status.headline)\n\(status.detail)"
+            button.setAccessibilityLabel("Screenlogger - \(status.headline)")
+            button.setAccessibilityHelp(status.detail)
+        }
         // Never leave the button disabled.
         button.isEnabled = true
     }
@@ -102,6 +110,13 @@ extension StatusMenuController {
                 item.isEnabled = status.primaryAction != nil
                 item.setAccessibilityLabel(item.title)
                 item.setAccessibilityHelp(statusAccessibilityHelp(status))
+            case .audioTranscriptionStatus:
+                let audio = appModel.audioTranscriptionStatus
+                item.isHidden = !appModel.audioTranscriptionEnabled
+                item.isEnabled = appModel.audioTranscriptionEnabled
+                item.title = audioMenuTitle(audio)
+                item.image = menuSymbolImage(audioMenuSymbol(audio))
+                item.toolTip = audio.detail
             case .revealLibrary:
                 item.isHidden = libraryIssue == nil || !appModel.canRevealLibrary
                 item.isEnabled = libraryIssue != nil && appModel.canRevealLibrary
@@ -154,14 +169,14 @@ extension StatusMenuController {
                         item.title =
                             isExcluded
                             ? "Manage App Exclusions..."
-                            : "Don't Capture \"\(name)\""
+                            : exclusionActionTitle(name)
                         item.image = menuSymbolImage(isExcluded ? "slider.horizontal.3" : "eye.slash")
                         item.representedObject = bundleID
                         item.isEnabled = true
                         item.toolTip =
                             isExcluded
                             ? "Open Application Exclusions in Settings"
-                            : "Pause capture whenever \(name) is the active app"
+                            : exclusionActionHelp(name)
                     } else {
                         item.title = "Choose an App to Exclude"
                         item.representedObject = nil
@@ -193,7 +208,7 @@ extension StatusMenuController {
                     item.title =
                         isExcluded
                         ? "Manage Website Exclusions..."
-                        : "Don't Capture \"\(domain)\""
+                        : exclusionActionTitle(domain)
                     item.image = menuSymbolImage(isExcluded ? "slider.horizontal.3" : "globe")
                     item.representedObject = domain
                     item.isHidden = false
@@ -201,7 +216,7 @@ extension StatusMenuController {
                     item.toolTip =
                         isExcluded
                         ? "Open Website Exclusions in Settings"
-                        : "Skip capture while \(domain) is open in the active browser tab"
+                        : exclusionActionHelp(domain)
                 }
             case .undoExclude:
                 switch appModel.recentCaptureExclusion {
@@ -257,6 +272,41 @@ extension StatusMenuController {
     private func statusMenuTitle(_ status: CaptureStatusPresentation) -> String {
         guard let actionLabel = status.actionLabel else { return status.compactLabel }
         return "\(status.compactLabel) - \(actionLabel)"
+    }
+
+    private func exclusionActionTitle(_ name: String) -> String {
+        appModel.audioTranscriptionEnabled
+            ? "Don't Capture or Transcribe \"\(name)\""
+            : "Don't Capture \"\(name)\""
+    }
+
+    private func exclusionActionHelp(_ name: String) -> String {
+        appModel.audioTranscriptionEnabled
+            ? "Pause capture and transcription whenever \(name) is active"
+            : "Pause capture whenever \(name) is active"
+    }
+
+    private func audioMenuTitle(_ status: AudioTranscriptionStatus) -> String {
+        switch status.phase {
+        case .active: return "Audio Transcription Active"
+        case .preparing: return "Preparing Audio Transcription..."
+        case .privacyPaused: return "Audio Transcription Paused for Privacy"
+        case .permissionRequired: return "Audio Transcription Needs Microphone Access"
+        case .failed: return "Audio Transcription Needs Attention"
+        case .capturePaused: return "Audio Transcription Waiting for Capture"
+        case .unavailable: return "Audio Transcription Unavailable"
+        case .off: return "Audio Transcription Off"
+        }
+    }
+
+    private func audioMenuSymbol(_ status: AudioTranscriptionStatus) -> String {
+        switch status.phase {
+        case .active: return "waveform.circle.fill"
+        case .privacyPaused: return "lock.circle"
+        case .preparing: return "arrow.down.circle"
+        case .permissionRequired, .failed: return "exclamationmark.circle"
+        case .capturePaused, .unavailable, .off: return "waveform.circle"
+        }
     }
 
     private func statusAccessibilityHelp(_ status: CaptureStatusPresentation) -> String {

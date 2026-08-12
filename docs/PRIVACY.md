@@ -10,6 +10,8 @@ Depending on enabled features, a captured moment can include:
 - recognized foreground and background text;
 - application identity and window title;
 - website domain and address when Accessibility provides them;
+- finalized microphone or computer-audio transcript text when Audio
+  Transcription is enabled;
 - a bounded accessibility snapshot for structured context;
 - capture time, display metadata, and search indexes.
 
@@ -32,6 +34,11 @@ APIs and do not capture content.
 Screenlogger asks for Automation access only when the user chooses to launch an
 assistant in Terminal.
 
+Audio Transcription is off by default and available on macOS 26 or later. The
+Microphone source asks for microphone access only after the person enables the
+feature. Computer Audio uses the existing Screen Recording access and may also
+surface the system audio-capture consent managed by macOS.
+
 ## Exclusions
 
 Applications and websites can be excluded in Settings. Screenlogger also ships
@@ -42,10 +49,27 @@ Add services specific to your work before handling sensitive information.
 Private browsing protection depends on Accessibility context. If Screenlogger
 cannot determine a website while strict protection is enabled, capture pauses.
 
+Audio uses the same application and website exclusions as screenshots. It
+always pauses in Private Browsing, while Screenlogger is frontmost, and whenever
+capture cannot save a corresponding Timeline moment. The current process is
+also removed from the system-audio stream. An active background browser tab
+cannot be attributed reliably to its website by macOS, so an allowed foreground
+tab can coexist with audio from another tab.
+
+## Audio transcription
+
+Screenlogger uses Apple's on-device Speech framework. Microphone and computer
+audio are processed as separate in-memory PCM streams and labeled You and
+Computer. Only finalized, timestamped text is stored and indexed. Screenlogger
+does not create or retain an audio recording and does not fall back to a remote
+speech service. The required Apple language model may need to be downloaded the
+first time the feature is enabled.
+
 ## Network access
 
 Capture, text recognition, indexing, search, and Library maintenance do not
-require a network connection.
+require a network connection. Audio transcription runs offline after macOS has
+installed the selected Apple speech model.
 
 Website-icon fetching is off by default. When enabled, Screenlogger sends only a
 domain name to DuckDuckGo's public icon endpoint. It does not send screenshots,

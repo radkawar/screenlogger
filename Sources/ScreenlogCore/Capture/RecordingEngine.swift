@@ -429,6 +429,7 @@ public final class RecordingEngine: ObservableObject {
     @Published public private(set) var pausedForDisk = false
     /// Why a running capture loop is intentionally not saving frames.
     @Published public private(set) var pauseReason: CapturePauseReason?
+    @Published public private(set) var audioTranscriptionStatus: AudioTranscriptionStatus = .off
 
     public var intervalSeconds: TimeInterval = 2.0
     public private(set) var maxDimension: Int = 2_880
@@ -483,17 +484,24 @@ public final class RecordingEngine: ObservableObject {
     public var ocrLanguages: [String] = []
     /// Which connected displays are saved during each capture interval.
     public private(set) var displayMode: CaptureDisplayMode = .active
+    public private(set) var audioTranscriptionSettings =
+        AudioTranscriptionPreferenceStore.Snapshot()
     /// Published when the capture loop is skipping due to idle (not disk).
     @Published public private(set) var pausedForInactivity = false
 
     private var task: Task<Void, Never>?
     private var maintenanceTask: Task<Void, Never>?
     private let pipeline = CapturePipeline()
+    private let audioTranscription = AudioTranscriptionCoordinator()
     private var store: Store?
     private var dataRoot: URL?
     private var exclusions: ExclusionStore = .shared
 
-    public init() {}
+    public init() {
+        audioTranscription.statusDidChange = { [weak self] status in
+            self?.audioTranscriptionStatus = status
+        }
+    }
 
     public func configure(
         store: Store,
@@ -529,7 +537,27 @@ public final class RecordingEngine: ObservableObject {
                 ocrLanguages: langs,
                 differentialOCR: diff
             )
+            await reconcileAudioTranscription()
         }
+    }
+
+    /// Apply explicit audio choices without coupling them to image quality or
+    /// capture timing. The coordinator performs no microphone prompt itself.
+    public func applyAudioTranscriptionSettings(
+        _ settings: AudioTranscriptionPreferenceStore.Snapshot
+    ) {
+        audioTranscriptionSettings = settings
+        Task { await reconcileAudioTranscription() }
+    }
+
+    private func reconcileAudioTranscription() async {
+        await audioTranscription.apply(
+            settings: audioTranscriptionSettings,
+            captureIsRunning: isRecording,
+            store: store,
+            exclusions: exclusions,
+            pauseWhenBrowserAddressUnavailable: pauseWhenBrowserAddressUnavailable
+        )
     }
 
     /// Snapshot-class prefs (encoding, OCR languages, differential OCR).
@@ -568,6 +596,7 @@ public final class RecordingEngine: ObservableObject {
         pauseWhenBrowserAddressUnavailable: Bool? = nil,
         displayMode: CaptureDisplayMode = .active
     ) {
+        let previousPauseWhenAddressUnavailable = self.pauseWhenBrowserAddressUnavailable
         self.intervalSeconds = max(0.5, intervalSeconds)
         self.maxDimension = maxDimension == 0 ? 0 : max(480, maxDimension)
         self.stillQuality = min(1, max(0, stillQuality))
@@ -586,6 +615,9 @@ public final class RecordingEngine: ObservableObject {
         self.displayMode = displayMode
         Task { await pipeline.setDisplayMode(displayMode) }
         applyCaptureQualityToPipeline()
+        if previousPauseWhenAddressUnavailable != self.pauseWhenBrowserAddressUnavailable {
+            Task { await reconcileAudioTranscription() }
+        }
     }
 
     private func applyCaptureQualityToPipeline() {
@@ -632,6 +664,10 @@ public final class RecordingEngine: ObservableObject {
         // Unstructured task: awaits on pipeline release MainActor during OCR/encode/DB.
         task = Task { [weak self] in await self?.runLoop() }
         maintenanceTask = Task { [weak self] in await self?.maintenanceLoop() }
+        Task {
+            await audioTranscription.setCaptureAvailable(true)
+            await reconcileAudioTranscription()
+        }
         log.info("recording started interval=\(self.intervalSeconds)s")
         return isRecording
     }
@@ -644,6 +680,8 @@ public final class RecordingEngine: ObservableObject {
         task = nil
         maintenanceTask?.cancel()
         maintenanceTask = nil
+        audioTranscription.deactivateImmediately()
+        Task { await audioTranscription.stop() }
         pausedForDisk = false
         pausedForInactivity = false
         pauseReason = nil
@@ -664,6 +702,7 @@ public final class RecordingEngine: ObservableObject {
         maintenanceTask = nil
         _ = await captureTask?.result
         _ = await backgroundMaintenanceTask?.result
+        await audioTranscription.stop()
         store = nil
         dataRoot = nil
         pausedForDisk = false
@@ -712,6 +751,7 @@ public final class RecordingEngine: ObservableObject {
         var consecutiveFailures = 0
         while !Task.isCancelled && isRecording {
             if !PermissionsSnapshot.currentFast().isCaptureReady {
+                await audioTranscription.setCaptureAvailable(false)
                 pausedForDisk = false
                 pausedForInactivity = false
                 pauseReason = .permissionRequired
@@ -725,6 +765,7 @@ public final class RecordingEngine: ObservableObject {
             if let root = dataRoot ?? store?.root,
                 DiskSpaceMonitor.shared.shouldPauseRecording(dataRoot: root)
             {
+                await audioTranscription.setCaptureAvailable(false)
                 pausedForDisk = true
                 pausedForInactivity = false
                 pauseReason = .lowDiskSpace
@@ -742,6 +783,7 @@ public final class RecordingEngine: ObservableObject {
             if pauseOnInactivity,
                 SystemIdleMonitor.isIdle(thresholdSeconds: inactivityThresholdSeconds)
             {
+                await audioTranscription.setCaptureAvailable(false)
                 if !pausedForInactivity {
                     log.info(
                         "capture paused for inactivity (idle >= \(Int(self.inactivityThresholdSeconds))s)"
@@ -758,6 +800,7 @@ public final class RecordingEngine: ObservableObject {
                 log.info("user active again; resuming capture")
             }
             pausedForInactivity = false
+            await audioTranscription.setCaptureAvailable(true)
 
             do {
                 if let store {

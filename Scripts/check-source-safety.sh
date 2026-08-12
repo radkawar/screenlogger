@@ -37,4 +37,19 @@ if [[ -n "$permission_probe_matches" ]]; then
   exit 1
 fi
 
+# The first transcription release is transcript-only and on-device. Keep raw
+# audio file APIs and the legacy recognizer with possible server fallback out of
+# the isolated audio implementation.
+audio_source_directory="Sources/ScreenlogCore/Audio"
+if command -v rg >/dev/null 2>&1; then
+  audio_retention_matches="$(rg -n '(SFSpeechRecognizer|AVAudioFile|AudioFileCreate)' "$audio_source_directory" || true)"
+else
+  audio_retention_matches="$(git grep -n -E '(SFSpeechRecognizer|AVAudioFile|AudioFileCreate)' -- "$audio_source_directory" || true)"
+fi
+if [[ -n "$audio_retention_matches" ]]; then
+  echo "error: audio implementation includes a retained-file or remote-capable speech API:" >&2
+  echo "$audio_retention_matches" >&2
+  exit 1
+fi
+
 echo "source safety: passed"

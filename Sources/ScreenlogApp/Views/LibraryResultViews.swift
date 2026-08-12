@@ -207,6 +207,12 @@ struct SearchResultCard: View {
 
     private var resultMetadata: some View {
         VStack(alignment: .leading, spacing: 3) {
+            if let source = result.transcriptSource {
+                Label(source.label, systemImage: source == .microphone ? "mic.fill" : "waveform")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Transcript source: \(source.label)")
+            }
             provenance
             resultTime
         }
@@ -363,6 +369,15 @@ struct SearchResultInspector: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(8)
                     .textSelection(.enabled)
+            }
+
+            if let source = result.transcriptSource {
+                Label(
+                    "Transcript from \(source.label)",
+                    systemImage: source == .microphone ? "mic.fill" : "waveform"
+                )
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

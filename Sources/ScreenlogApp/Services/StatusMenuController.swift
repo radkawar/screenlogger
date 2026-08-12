@@ -35,6 +35,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         case captureStatus = 17
         case checkForUpdates = 18
         case excludeCurrentWebsite = 19
+        case audioTranscriptionStatus = 20
 
         var accessibilityIdentifier: String {
             switch self {
@@ -56,6 +57,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             case .captureStatus: return "status-menu.capture-status"
             case .checkForUpdates: return "status-menu.check-for-updates"
             case .excludeCurrentWebsite: return "status-menu.exclude-website"
+            case .audioTranscriptionStatus: return "status-menu.audio-transcription"
             }
         }
     }

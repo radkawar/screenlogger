@@ -71,6 +71,7 @@ targets:
       - sdk: AppKit.framework
       - sdk: ApplicationServices.framework
       - sdk: AVFoundation.framework
+      - sdk: Speech.framework
       - sdk: Combine.framework
       - sdk: CoreAudio.framework
       - sdk: CoreData.framework

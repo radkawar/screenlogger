@@ -183,9 +183,6 @@ extension Store {
 
         let usesFTS = !match.isEmpty
         var whereParts: [String] = []
-        if usesFTS {
-            whereParts.append("ocr_fts MATCH ?")
-        }
         if appFilter != nil {
             whereParts.append(
                 "(instr(lower(coalesce(a.bundle_id, '')), ?) > 0 "
@@ -214,105 +211,182 @@ extension Store {
             whereParts.append("f.timestamp < ?")
         }
         let whereSQL = whereParts.joined(separator: " AND ")
+        let limit = min(maximumLimit, max(1, requestedLimit))
+        let sql: String
+        if usesFTS {
+            let constrainedWhere = whereSQL.isEmpty ? "" : " AND \(whereSQL)"
+            sql = """
+                WITH candidate_matches AS (
+                    SELECT
+                        f.id AS frame_id,
+                        f.timestamp AS timestamp_ms,
+                        snippet(ocr_fts, 0, '[', ']', '...', 16) AS snippet_foreground,
+                        snippet(ocr_fts, 1, '[', ']', '...', 16) AS snippet_background,
+                        snippet(ocr_fts, 2, '[', ']', '...', 16) AS snippet_title,
+                        NULL AS snippet_transcript,
+                        NULL AS transcript_id,
+                        NULL AS transcript_source,
+                        NULL AS transcript_start,
+                        NULL AS transcript_end
+                    FROM ocr_fts
+                    JOIN frame f ON f.id = ocr_fts.rowid
+                    LEFT JOIN segment s ON s.id = f.segment
+                    LEFT JOIN application a ON a.id = s.application
+                    LEFT JOIN domain d ON d.id = s.domain
+                    WHERE ocr_fts MATCH ?\(constrainedWhere)
 
-        let snippetColumns =
-            usesFTS
-            ? """
-            snippet(ocr_fts, 0, '[', ']', '...', 16) AS snippet_foreground,
-            snippet(ocr_fts, 1, '[', ']', '...', 16) AS snippet_background,
-            snippet(ocr_fts, 2, '[', ']', '...', 16) AS snippet_title
-            """
-            : """
-            substr(f.foreground, 1, 161) AS snippet_foreground,
-            substr(f.background, 1, 161) AS snippet_background,
-            substr(f.title, 1, 161) AS snippet_title
-            """
-        let source =
-            usesFTS
-            ? "ocr_fts JOIN frame f ON f.id = ocr_fts.rowid"
-            : "frame f"
-        let outerMatchSQL = usesFTS ? "WHERE ocr_fts MATCH ?" : ""
+                    UNION ALL
 
-        let sql = """
-            WITH matching_moments AS (
-                SELECT MAX(f.id) AS frame_id, f.timestamp AS timestamp_ms
-                FROM \(source)
+                    SELECT
+                        f.id AS frame_id,
+                        f.timestamp AS timestamp_ms,
+                        NULL AS snippet_foreground,
+                        NULL AS snippet_background,
+                        NULL AS snippet_title,
+                        snippet(transcript_fts, 0, '[', ']', '...', 16) AS snippet_transcript,
+                        ts.id AS transcript_id,
+                        ts.source AS transcript_source,
+                        ts.start_timestamp AS transcript_start,
+                        ts.end_timestamp AS transcript_end
+                    FROM transcript_fts
+                    JOIN transcript_segment ts ON ts.id = transcript_fts.rowid
+                    JOIN frame f ON f.id = ts.frame_id
+                    LEFT JOIN segment s ON s.id = f.segment
+                    LEFT JOIN application a ON a.id = s.application
+                    LEFT JOIN domain d ON d.id = s.domain
+                    WHERE transcript_fts MATCH ?\(constrainedWhere)
+                ), ranked_matches AS (
+                    SELECT *,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY timestamp_ms
+                            ORDER BY (transcript_id IS NOT NULL) DESC, frame_id DESC, transcript_id DESC
+                        ) AS moment_rank
+                    FROM candidate_matches
+                ), matching_moments AS (
+                    SELECT * FROM ranked_matches
+                    WHERE moment_rank = 1
+                    ORDER BY timestamp_ms DESC, frame_id DESC
+                    LIMIT ?
+                )
+                SELECT
+                    f.id,
+                    f.timestamp,
+                    f.title,
+                    a.bundle_id,
+                    a.display_name,
+                    d.normalized_domain,
+                    m.snippet_foreground,
+                    m.snippet_background,
+                    m.snippet_title,
+                    m.snippet_transcript,
+                    f.image_path,
+                    f.video,
+                    m.transcript_id,
+                    m.transcript_source,
+                    m.transcript_start,
+                    m.transcript_end
+                FROM matching_moments m
+                JOIN frame f ON f.id = m.frame_id
                 LEFT JOIN segment s ON s.id = f.segment
                 LEFT JOIN application a ON a.id = s.application
                 LEFT JOIN domain d ON d.id = s.domain
-                WHERE \(whereSQL)
-                GROUP BY f.timestamp
-                ORDER BY f.timestamp DESC
-                LIMIT ?
-            )
-            SELECT
-                f.id,
-                f.timestamp,
-                f.title,
-                a.bundle_id,
-                a.display_name,
-                d.normalized_domain,
-                \(snippetColumns),
-                f.image_path,
-                f.video
-            FROM \(source)
-            JOIN matching_moments m ON m.frame_id = f.id
-            LEFT JOIN segment s ON s.id = f.segment
-            LEFT JOIN application a ON a.id = s.application
-            LEFT JOIN domain d ON d.id = s.domain
-            \(outerMatchSQL)
-            ORDER BY f.timestamp DESC, f.id DESC
-            """
+                ORDER BY f.timestamp DESC, f.id DESC
+                """
+        } else {
+            sql = """
+                WITH matching_moments AS (
+                    SELECT MAX(f.id) AS frame_id, f.timestamp AS timestamp_ms
+                    FROM frame f
+                    LEFT JOIN segment s ON s.id = f.segment
+                    LEFT JOIN application a ON a.id = s.application
+                    LEFT JOIN domain d ON d.id = s.domain
+                    WHERE \(whereSQL)
+                    GROUP BY f.timestamp
+                    ORDER BY f.timestamp DESC
+                    LIMIT ?
+                )
+                SELECT
+                    f.id,
+                    f.timestamp,
+                    f.title,
+                    a.bundle_id,
+                    a.display_name,
+                    d.normalized_domain,
+                    substr(f.foreground, 1, 161),
+                    substr(f.background, 1, 161),
+                    substr(f.title, 1, 161),
+                    NULL,
+                    f.image_path,
+                    f.video,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL
+                FROM matching_moments m
+                JOIN frame f ON f.id = m.frame_id
+                LEFT JOIN segment s ON s.id = f.segment
+                LEFT JOIN application a ON a.id = s.application
+                LEFT JOIN domain d ON d.id = s.domain
+                ORDER BY f.timestamp DESC, f.id DESC
+                """
+        }
         let stmt = try db.prepare(sql)
         defer { sqlite3_finalize(stmt) }
         var bind: Int32 = 1
+        func bindConstraints() {
+            if let appFilter {
+                SQLiteBind.text(stmt, bind, appFilter)
+                SQLiteBind.text(stmt, bind + 1, appFilter)
+                bind += 2
+            }
+            if let siteFilter {
+                SQLiteBind.text(stmt, bind, siteFilter)
+                SQLiteBind.text(stmt, bind + 1, "%.\(Self.escapedLikeLiteral(siteFilter))")
+                bind += 2
+            }
+            if let appBundleID {
+                SQLiteBind.text(stmt, bind, appBundleID)
+                bind += 1
+            }
+            if let domain {
+                SQLiteBind.text(stmt, bind, domain)
+                bind += 1
+            }
+            if let from = query.fromTimestampMs {
+                SQLiteBind.int64(stmt, bind, from)
+                bind += 1
+            }
+            if let to = query.toTimestampMs {
+                SQLiteBind.int64(stmt, bind, to)
+                bind += 1
+            }
+            if let cursor {
+                SQLiteBind.int64(stmt, bind, cursor.timestampMs)
+                bind += 1
+            }
+        }
         if usesFTS {
             SQLiteBind.text(stmt, bind, match)
             bind += 1
-        }
-        if let appFilter {
-            SQLiteBind.text(stmt, bind, appFilter)
-            SQLiteBind.text(stmt, bind + 1, appFilter)
-            bind += 2
-        }
-        if let siteFilter {
-            SQLiteBind.text(stmt, bind, siteFilter)
-            SQLiteBind.text(stmt, bind + 1, "%.\(Self.escapedLikeLiteral(siteFilter))")
-            bind += 2
-        }
-        if let appBundleID {
-            SQLiteBind.text(stmt, bind, appBundleID)
-            bind += 1
-        }
-        if let domain {
-            SQLiteBind.text(stmt, bind, domain)
-            bind += 1
-        }
-        if let from = query.fromTimestampMs {
-            SQLiteBind.int64(stmt, bind, from)
-            bind += 1
-        }
-        if let to = query.toTimestampMs {
-            SQLiteBind.int64(stmt, bind, to)
-            bind += 1
-        }
-        if let cursor {
-            SQLiteBind.int64(stmt, bind, cursor.timestampMs)
-            bind += 1
-        }
-        SQLiteBind.int(stmt, bind, min(maximumLimit, max(1, requestedLimit)))
-        bind += 1
-        if usesFTS {
+            bindConstraints()
             SQLiteBind.text(stmt, bind, match)
+            bind += 1
+            bindConstraints()
+        } else {
+            bindConstraints()
         }
+        SQLiteBind.int(stmt, bind, limit)
         var results: [FTSResult] = []
         var stepResult = sqlite3_step(stmt)
         while stepResult == SQLITE_ROW {
             let snipFG = SQLiteColumn.text(stmt, 6)
             let snipBG = SQLiteColumn.text(stmt, 7)
             let snipTitle = SQLiteColumn.text(stmt, 8)
-            let imagePath = SQLiteColumn.text(stmt, 9)
-            let videoID = SQLiteColumn.int64Optional(stmt, 10)
+            let transcriptSnippet = SQLiteColumn.text(stmt, 9)
+            let imagePath = SQLiteColumn.text(stmt, 10)
+            let videoID = SQLiteColumn.int64Optional(stmt, 11)
+            let transcriptID = SQLiteColumn.int64Optional(stmt, 12)
+            let transcriptSource = SQLiteColumn.text(stmt, 13).flatMap(TranscriptSource.init(rawValue:))
             let stillMissing = imagePath.map { $0.isEmpty } ?? true
             results.append(
                 FTSResult(
@@ -322,9 +396,18 @@ extension Store {
                     bundleID: SQLiteColumn.text(stmt, 3),
                     displayName: SQLiteColumn.text(stmt, 4),
                     domain: SQLiteColumn.text(stmt, 5),
-                    snippet: Self.preferredFTSSnippet(foreground: snipFG, background: snipBG, title: snipTitle),
+                    snippet: transcriptSnippet
+                        ?? Self.preferredFTSSnippet(
+                            foreground: snipFG,
+                            background: snipBG,
+                            title: snipTitle
+                        ),
                     imagePath: imagePath,
-                    isCompacted: stillMissing && videoID != nil
+                    isCompacted: stillMissing && videoID != nil,
+                    transcriptSegmentID: transcriptID,
+                    transcriptSource: transcriptSource,
+                    transcriptStartTimestampMs: SQLiteColumn.int64Optional(stmt, 14),
+                    transcriptEndTimestampMs: SQLiteColumn.int64Optional(stmt, 15)
                 )
             )
             stepResult = sqlite3_step(stmt)

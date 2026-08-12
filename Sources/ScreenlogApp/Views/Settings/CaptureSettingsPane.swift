@@ -23,6 +23,8 @@ struct CaptureSettingsPane: View {
                 .settingsDestinationAnchor(.captureTiming)
             CaptureImageSettingsSection()
             CaptureTextRecognitionSettingsSection()
+            AudioTranscriptionSettingsSection()
+                .settingsDestinationAnchor(.captureAudio)
         }
         .onChange(of: model.permissions.isCaptureReady) { _, granted in
             guard granted else { return }

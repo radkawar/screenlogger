@@ -41,6 +41,15 @@ extension StatusMenuController {
         captureStatus.isEnabled = false
         menu.addItem(captureStatus)
 
+        let audioStatus = makeItem(
+            title: "Audio Transcription",
+            action: #selector(openAudioTranscriptionSettings(_:)),
+            tag: .audioTranscriptionStatus,
+            symbol: "waveform"
+        )
+        audioStatus.isHidden = true
+        menu.addItem(audioStatus)
+
         menu.addItem(.separator())
 
         menu.addItem(

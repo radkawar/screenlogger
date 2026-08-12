@@ -372,6 +372,33 @@ final class VisualAuditUITests: XCTestCase {
         )
     }
 
+    func testVisualAuditAudioTranscriptionSettingsAndTimelineCaptions() throws {
+        let app = try launch(
+            route: "--open-library",
+            snapshotSurface: .settings,
+            settingsDestination: "capture",
+            audioTranscription: true
+        )
+        let settings = assertWindow("Settings", in: app)
+        let search = app.searchFields["Search Settings"]
+        XCTAssertTrue(search.waitForExistence(timeout: Self.readinessTimeout))
+        search.click()
+        search.typeText("audio transcription")
+        assertElement("settings.search-result.capture-audio", in: app).click()
+
+        assertElement("capture.audio-transcription", in: app)
+        assertElement("capture.audio.enabled.toggle", in: app)
+        assertElement("capture.audio.computer.toggle", in: app)
+        assertElement("capture.audio.microphone.toggle", in: app)
+        assertElement("capture.audio.status", in: app)
+        capture(settings, named: "ui-audit-settings-audio-transcription-enabled-light")
+
+        assertElement("navigation.settings.timeline", in: app).click()
+        let timeline = assertWindow("Timeline", in: app)
+        assertElement("timeline.transcript", in: app)
+        capture(timeline, named: "ui-audit-timeline-audio-captions-light")
+    }
+
     /// A deliberately short, deterministic product tour intended for screen
     /// recording. It is opt-in so the pauses never slow the ordinary UI suite.
     func testRecordProductTour() throws {
@@ -562,7 +589,8 @@ final class VisualAuditUITests: XCTestCase {
         missingPermission: Bool = false,
         assistantDetected: [String] = [],
         assistantReady: [String] = [],
-        multipleDisplays: Bool = false
+        multipleDisplays: Bool = false,
+        audioTranscription: Bool = false
     ) throws -> XCUIApplication {
         let directory = try XCTUnwrap(dataDirectory)
         let token = try XCTUnwrap(UUID(uuidString: directory.lastPathComponent)).uuidString
@@ -600,6 +628,9 @@ final class VisualAuditUITests: XCTestCase {
 
         if multipleDisplays {
             application.launchEnvironment["SCREENLOG_UI_TEST_MULTIPLE_DISPLAYS"] = "1"
+        }
+        if audioTranscription {
+            application.launchEnvironment["SCREENLOG_UI_TEST_AUDIO_TRANSCRIPTION"] = "active"
         }
 
         if captureIssue {

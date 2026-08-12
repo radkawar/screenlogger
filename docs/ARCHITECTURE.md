@@ -22,6 +22,22 @@ display failure does not discard the other successful images. Capture pauses on
 missing permission, excluded frontmost activity, strict privacy uncertainty,
 inactivity when enabled, or low disk space.
 
+## Audio transcription path
+
+Audio Transcription is an independent opt-in available on macOS 26 or later.
+ScreenCaptureKit emits separate computer-audio and microphone PCM streams.
+Screenlogger gates both streams on capture readiness and the current privacy
+context, then sends them to independent SpeechAnalyzer pipelines using Apple's
+on-device SpeechTranscriber and SpeechDetector modules. The stream starts fail
+closed, application activation closes its sample gate immediately, and an
+exclusion-filter update failure pauses transcription.
+
+Finalized transcript segments are associated with the nearest saved Timeline
+moment and indexed in a dedicated FTS table. The streams remain in memory; no
+audio file is created. Microphone segments are labeled You and system-audio
+segments are labeled Computer. Deleting a moment cascades to its transcript and
+search-index rows.
+
 ## Timeline model
 
 A timestamp is one Timeline moment. A single-display moment has one frame; an
@@ -57,8 +73,9 @@ and fails when the checked-in project differs.
 ## Platform frameworks
 
 The implementation uses public Apple frameworks including SwiftUI, AppKit,
-ScreenCaptureKit, Vision, AVFoundation, ApplicationServices, ServiceManagement,
-OSLog, and Core Graphics, plus system SQLite and compression libraries.
+ScreenCaptureKit, Vision, Speech, AVFoundation, ApplicationServices,
+ServiceManagement, OSLog, and Core Graphics, plus system SQLite and compression
+libraries.
 
 ## Updates
 

@@ -266,6 +266,11 @@ public struct FTSResult: Sendable, Equatable, Codable {
     public var imagePath: String?
     /// True when the still was compacted into video (preview needs extract).
     public var isCompacted: Bool
+    /// Present when the matching text came from on-device audio transcription.
+    public var transcriptSegmentID: Int64?
+    public var transcriptSource: TranscriptSource?
+    public var transcriptStartTimestampMs: Int64?
+    public var transcriptEndTimestampMs: Int64?
 
     public init(
         frameID: Int64,
@@ -276,7 +281,11 @@ public struct FTSResult: Sendable, Equatable, Codable {
         domain: String? = nil,
         snippet: String? = nil,
         imagePath: String? = nil,
-        isCompacted: Bool = false
+        isCompacted: Bool = false,
+        transcriptSegmentID: Int64? = nil,
+        transcriptSource: TranscriptSource? = nil,
+        transcriptStartTimestampMs: Int64? = nil,
+        transcriptEndTimestampMs: Int64? = nil
     ) {
         self.frameID = frameID
         self.timestampMs = timestampMs
@@ -287,6 +296,10 @@ public struct FTSResult: Sendable, Equatable, Codable {
         self.snippet = snippet
         self.imagePath = imagePath
         self.isCompacted = isCompacted
+        self.transcriptSegmentID = transcriptSegmentID
+        self.transcriptSource = transcriptSource
+        self.transcriptStartTimestampMs = transcriptStartTimestampMs
+        self.transcriptEndTimestampMs = transcriptEndTimestampMs
     }
 
     /// Prefer display name, then last bundle path component, else a generic label.
@@ -302,6 +315,78 @@ public struct FTSResult: Sendable, Equatable, Codable {
     public var hasStillThumbnail: Bool {
         guard let imagePath, !imagePath.isEmpty else { return false }
         return FileManager.default.fileExists(atPath: imagePath)
+    }
+}
+
+/// The local audio stream that produced a transcript segment.
+public enum TranscriptSource: String, Sendable, Equatable, Codable, CaseIterable {
+    case microphone
+    case computer
+
+    public var label: String {
+        switch self {
+        case .microphone: return "You"
+        case .computer: return "Computer"
+        }
+    }
+}
+
+/// A finalized, on-device transcript associated with the closest captured moment.
+/// Audio samples are never retained by this model or its database table.
+public struct TranscriptSegment: Sendable, Equatable, Codable, Identifiable {
+    public var id: Int64
+    public var frameID: Int64
+    public var startTimestampMs: Int64
+    public var endTimestampMs: Int64
+    public var source: TranscriptSource
+    public var text: String
+    public var localeIdentifier: String?
+    public var confidence: Double?
+
+    public init(
+        id: Int64,
+        frameID: Int64,
+        startTimestampMs: Int64,
+        endTimestampMs: Int64,
+        source: TranscriptSource,
+        text: String,
+        localeIdentifier: String? = nil,
+        confidence: Double? = nil
+    ) {
+        self.id = id
+        self.frameID = frameID
+        self.startTimestampMs = startTimestampMs
+        self.endTimestampMs = endTimestampMs
+        self.source = source
+        self.text = text
+        self.localeIdentifier = localeIdentifier
+        self.confidence = confidence
+    }
+}
+
+/// A transcript ready to persist after on-device recognition finalizes it.
+public struct TranscriptSegmentDraft: Sendable, Equatable {
+    public var startTimestampMs: Int64
+    public var endTimestampMs: Int64
+    public var source: TranscriptSource
+    public var text: String
+    public var localeIdentifier: String?
+    public var confidence: Double?
+
+    public init(
+        startTimestampMs: Int64,
+        endTimestampMs: Int64,
+        source: TranscriptSource,
+        text: String,
+        localeIdentifier: String? = nil,
+        confidence: Double? = nil
+    ) {
+        self.startTimestampMs = startTimestampMs
+        self.endTimestampMs = endTimestampMs
+        self.source = source
+        self.text = text
+        self.localeIdentifier = localeIdentifier
+        self.confidence = confidence
     }
 }
 
@@ -489,6 +574,8 @@ public struct TimelineFrame: Sendable, Equatable, Codable, Identifiable {
     public var videoIndex: Int?
     /// Global display geometry for this view of a synchronized moment.
     public var captureDisplay: CaptureDisplayRect?
+    /// Finalized captions associated with this moment. Optional for rolling XPC compatibility.
+    public var transcriptSegments: [TranscriptSegment]?
 
     public init(
         id: Int64,
@@ -506,7 +593,8 @@ public struct TimelineFrame: Sendable, Equatable, Codable, Identifiable {
         segmentID: Int64? = nil,
         videoID: Int64? = nil,
         videoIndex: Int? = nil,
-        captureDisplay: CaptureDisplayRect? = nil
+        captureDisplay: CaptureDisplayRect? = nil,
+        transcriptSegments: [TranscriptSegment]? = nil
     ) {
         self.id = id
         self.timestampMs = timestampMs
@@ -524,6 +612,7 @@ public struct TimelineFrame: Sendable, Equatable, Codable, Identifiable {
         self.videoID = videoID
         self.videoIndex = videoIndex
         self.captureDisplay = captureDisplay
+        self.transcriptSegments = transcriptSegments
     }
 
     /// Still file gone but frame lives in a compacted video - show list placeholder, extract on select.

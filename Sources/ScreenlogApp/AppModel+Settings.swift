@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import ScreenlogCore
 
@@ -65,6 +66,10 @@ extension AppModel {
         if d.object(forKey: ProductPreferenceKey.differentialOCR) != nil {
             differentialOCREnabled = snap.differentialOCR
         }
+        let audio = AudioTranscriptionPreferenceStore.load(from: d)
+        audioTranscriptionEnabled = audio.isEnabled
+        computerAudioTranscriptionEnabled = audio.computerAudioEnabled
+        microphoneTranscriptionEnabled = audio.microphoneEnabled
         if let raw = d.string(forKey: ProductPreferenceKey.accentColor),
             let accent = AccentColorPreference(rawValue: raw)
         {
@@ -146,6 +151,7 @@ extension AppModel {
             displayMode: captureDisplayMode
         )
         applySnapshotPrefsToEngine()
+        applyAudioTranscriptionSettingsToEngine()
     }
 
     func applySnapshotPrefsToEngine() {
@@ -159,6 +165,72 @@ extension AppModel {
             ocrLanguages: langs,
             differentialOCR: differentialOCREnabled
         )
+    }
+
+    func persistAndApplyAudioTranscriptionSettings() {
+        let snapshot = currentAudioTranscriptionSettings
+        AudioTranscriptionPreferenceStore.save(snapshot, to: preferences)
+        engine.applyAudioTranscriptionSettings(snapshot)
+    }
+
+    func applyAudioTranscriptionSettingsToEngine() {
+        engine.applyAudioTranscriptionSettings(currentAudioTranscriptionSettings)
+    }
+
+    var currentAudioTranscriptionSettings: AudioTranscriptionPreferenceStore.Snapshot {
+        AudioTranscriptionPreferenceStore.Snapshot(
+            isEnabled: audioTranscriptionEnabled,
+            computerAudioEnabled: computerAudioTranscriptionEnabled,
+            microphoneEnabled: microphoneTranscriptionEnabled
+        )
+    }
+
+    /// Called only from the explicit Settings switch. Loading persisted state
+    /// never invokes the microphone prompt.
+    func setAudioTranscriptionEnabledFromUserAction(_ enabled: Bool) {
+        guard enabled, microphoneTranscriptionEnabled,
+            MicrophoneAuthorization.current == .notDetermined
+        else {
+            audioTranscriptionEnabled = enabled
+            return
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = await MicrophoneAuthorization.request()
+            self.audioTranscriptionEnabled = true
+        }
+    }
+
+    /// A microphone permission prompt is also appropriate when the user adds
+    /// the microphone after starting in computer-audio-only mode.
+    func setMicrophoneTranscriptionEnabledFromUserAction(_ enabled: Bool) {
+        guard enabled, audioTranscriptionEnabled,
+            MicrophoneAuthorization.current == .notDetermined
+        else {
+            microphoneTranscriptionEnabled = enabled
+            return
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = await MicrophoneAuthorization.request()
+            self.microphoneTranscriptionEnabled = true
+        }
+    }
+
+    func retryMicrophoneAuthorizationFromUserAction() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if MicrophoneAuthorization.current == .notDetermined {
+                _ = await MicrophoneAuthorization.request()
+            } else if MicrophoneAuthorization.current != .authorized {
+                if let url = URL(
+                    string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Microphone"
+                ) {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            self.applyAudioTranscriptionSettingsToEngine()
+        }
     }
 
     /// Pure map of current UI storage mode to engine maintenance plan (unit-tested).
