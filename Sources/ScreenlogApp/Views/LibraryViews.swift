@@ -262,7 +262,7 @@ struct SearchPane: View {
                     )
                 }
                 .buttonStyle(.borderless)
-                .help("Refine results by time, website, application, or session")
+                .help("Refine results by content, time, website, application, or session")
                 .accessibilityValue(
                     model.activeLibrarySearchFilterCount == 0
                         ? "No filters active"

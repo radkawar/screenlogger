@@ -8,11 +8,12 @@ extension ScreenlogCLIMain {
     static func search(_ args: [String], client: ScreenlogXPCClient) throws {
         let q =
             try stringFlag(args, name: "--query")
-            ?? positionalArguments(args, valueFlags: ["--query", "--limit"]).first
+            ?? positionalArguments(args, valueFlags: ["--query", "--limit", "--content"]).first
             ?? ""
         let limit = try intFlag(args, name: "--limit", allowed: 1...500) ?? 50
+        let content = try searchContentFlag(args)
         let json = args.contains("--json")
-        try printFTS(query: q, limit: limit, json: json, client: client)
+        try printFTS(query: q, limit: limit, content: content, json: json, client: client)
     }
 
     static func query(_ args: [String], client: ScreenlogXPCClient) throws {
@@ -24,11 +25,12 @@ extension ScreenlogCLIMain {
         case "fts":
             let q =
                 try stringFlag(rest, name: "--query")
-                ?? positionalArguments(rest, valueFlags: ["--query", "--limit"]).first
+                ?? positionalArguments(rest, valueFlags: ["--query", "--limit", "--content"]).first
                 ?? ""
             let limit = try intFlag(rest, name: "--limit", allowed: 1...500) ?? 50
+            let content = try searchContentFlag(rest)
             let json = rest.contains("--json")
-            try printFTS(query: q, limit: limit, json: json, client: client)
+            try printFTS(query: q, limit: limit, content: content, json: json, client: client)
         case "frame":
             if let at = try stringFlag(rest, name: "--at") {
                 let ms = try parseTimestampMs(at)
@@ -70,15 +72,23 @@ extension ScreenlogCLIMain {
         }
     }
 
-    static func printFTS(query: String, limit: Int, json: Bool, client: ScreenlogXPCClient) throws {
+    static func printFTS(
+        query: String,
+        limit: Int,
+        content: LibrarySearchContent,
+        json: Bool,
+        client: ScreenlogXPCClient
+    ) throws {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else {
-            throw CLIError.usage("search <QUERY> [--limit 1...500] [--json]")
+            throw CLIError.usage(
+                "search <QUERY> [--content all|screen|transcripts] [--limit 1...500] [--json]"
+            )
         }
         guard normalized.utf8.count <= 4_096 else {
             throw CLIError.message("query exceeds 4096 bytes")
         }
-        let results = try client.fts(query: normalized, limit: limit)
+        let results = try client.fts(query: normalized, limit: limit, content: content)
         if json {
             let enc = JSONEncoder()
             enc.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -90,6 +100,19 @@ extension ScreenlogCLIMain {
             if results.isEmpty {
                 FileHandle.standardError.write(Data("no matches\n".utf8))
             }
+        }
+    }
+
+    private static func searchContentFlag(_ args: [String]) throws -> LibrarySearchContent {
+        guard let raw = try stringFlag(args, name: "--content")?.lowercased() else {
+            return .all
+        }
+        switch raw {
+        case "all": return .all
+        case "screen", "text", "ocr": return .screenText
+        case "transcripts", "transcript", "audio": return .transcripts
+        default:
+            throw CLIError.usage("--content must be all, screen, or transcripts")
         }
     }
 

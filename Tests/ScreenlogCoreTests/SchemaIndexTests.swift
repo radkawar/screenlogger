@@ -83,6 +83,37 @@ final class SchemaIndexTests: XCTestCase {
         XCTAssertEqual(SQLiteColumn.int64(stmt, 0), Int64(Schema.currentVersion))
     }
 
+    func testNearestFrameDirectionalProbesUseTimestampIndex() throws {
+        for comparisonAndOrder in [("<=", "DESC"), (">=", "ASC")] {
+            let (comparison, order) = comparisonAndOrder
+            let stmt = try store.db.prepare(
+                """
+                EXPLAIN QUERY PLAN
+                SELECT id FROM frame
+                WHERE timestamp \(comparison) ?
+                ORDER BY timestamp \(order), id ASC
+                LIMIT 1
+                """
+            )
+            defer { sqlite3_finalize(stmt) }
+            SQLiteBind.int64(stmt, 1, 1_000)
+            var details: [String] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let detail = SQLiteColumn.text(stmt, 3) {
+                    details.append(detail)
+                }
+            }
+            XCTAssertTrue(
+                details.contains { $0.contains("SEARCH frame USING") },
+                "Expected an indexed frame search, got: \(details)"
+            )
+            XCTAssertFalse(
+                details.contains { $0.contains("SCAN frame") },
+                "Nearest-frame lookup must not scan the frame table: \(details)"
+            )
+        }
+    }
+
     func testCoreTablesExist() throws {
         let tables = try masterNames(type: "table", in: store.db)
         for name in [

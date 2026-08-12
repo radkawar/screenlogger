@@ -171,10 +171,17 @@ struct HistoryPane: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            if let segments = model.selectedTimelineFrame?.transcriptSegments,
-                !segments.isEmpty
+            if let selectedTimestampMs = model.selectedTimelineFrame?.timestampMs,
+                !TimelineTranscriptPresentation.visiblePassages(
+                    from: model.timelineTranscriptPassages,
+                    selectedTimestampMs: selectedTimestampMs
+                ).isEmpty
             {
-                TimelineTranscriptRows(segments: segments)
+                TimelineTranscriptRows(
+                    passages: model.timelineTranscriptPassages,
+                    selectedTimestampMs: selectedTimestampMs,
+                    accent: model.accentSwiftUIColor
+                )
             }
 
             bottomChrome
@@ -265,46 +272,69 @@ struct HistoryPane: View {
 }
 
 private struct TimelineTranscriptRows: View {
-    let segments: [TranscriptSegment]
+    let passages: [TimelineTranscriptPresentation.Passage]
+    let selectedTimestampMs: Int64
+    let accent: Color
+
+    private var visiblePassages: [TimelineTranscriptPresentation.Passage] {
+        TimelineTranscriptPresentation.visiblePassages(
+            from: passages,
+            selectedTimestampMs: selectedTimestampMs
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            ForEach(Array(segments.prefix(3))) { segment in
+            ForEach(visiblePassages) { passage in
+                let isActive = passage.contains(timestampMs: selectedTimestampMs)
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Label(
-                        segment.source.label,
-                        systemImage: segment.source == .microphone ? "mic.fill" : "waveform"
+                        passage.source.label,
+                        systemImage: passage.source == .microphone ? "mic.fill" : "waveform"
                     )
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.68))
+                    .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.68))
                     .frame(width: 88, alignment: .leading)
 
-                    Text(segment.text)
+                    Text(passage.text)
                         .font(.callout)
-                        .foregroundStyle(.white.opacity(0.92))
-                        .lineLimit(2)
+                        .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.88))
+                        .lineLimit(isActive ? 3 : 2)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Text(SLTimeFormat.shortTime(segment.startTimestampMs))
+                    Text(SLTimeFormat.shortTime(passage.startTimestampMs))
                         .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.white.opacity(0.46))
+                        .foregroundStyle(isActive ? Color.white.opacity(0.76) : Color.white.opacity(0.46))
+                }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 7)
+                .background(
+                    isActive ? accent.opacity(0.22) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
+                .overlay {
+                    if isActive {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(accent.opacity(0.72), lineWidth: 1)
+                    }
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(
-                    "\(segment.source.label), \(segment.text), \(SLTimeFormat.shortTime(segment.startTimestampMs))"
+                    "\(isActive ? "Currently speaking, " : "")\(passage.source.label), \(passage.text), \(SLTimeFormat.shortTime(passage.startTimestampMs))"
                 )
+                .accessibilityAddTraits(isActive ? .isSelected : [])
             }
 
-            if segments.count > 3 {
-                Text("\(segments.count - 3) more transcript segments in this moment")
+            if passages.count > visiblePassages.count {
+                Text("\(passages.count) transcript passages in this timeline")
                     .font(.caption2)
                     .foregroundStyle(.white.opacity(0.5))
-                    .padding(.leading, 98)
+                    .padding(.leading, 9)
             }
         }
         .padding(.horizontal, 18)
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.black.opacity(0.94))
         .overlay(alignment: .top) {

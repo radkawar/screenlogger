@@ -98,7 +98,7 @@ enum ScreenlogCLIMain {
           screenlog [--data-dir PATH] <command>
 
         Commands:
-          search <QUERY> [--limit N] [--json]
+          search <QUERY> [--content all|screen|transcripts] [--limit N] [--json]
           usage time|top-applications|top-domains|sessions
           list applications|domains
           query frame|image|axtree|sample|ocrboxes|fts ...
@@ -109,6 +109,7 @@ enum ScreenlogCLIMain {
           compact | retention
 
         `skill` and `install-skill` do not require the app. All other commands do.
+        Search combines screen text and transcripts by default.
         Search operators: app:, site:, date:, since:, before:.
         """
 }

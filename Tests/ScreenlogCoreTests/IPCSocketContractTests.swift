@@ -89,6 +89,23 @@ final class IPCSocketContractTests: XCTestCase {
             try XCTUnwrap(json.range(of: "accessibility")?.lowerBound), try XCTUnwrap(json.range(of: "screen_recording")?.lowerBound))
     }
 
+    func testTranscriptSearchScopeRoundTripsOnTheWire() throws {
+        let request = IPCRequest(
+            id: "transcript-scope",
+            cmd: .fts,
+            query: "roadmap",
+            searchContent: .transcripts,
+            limit: 12
+        )
+
+        let encoded = try IPCFrame.encode(request)
+        let decoded = try IPCFrame.decodeRequest(from: Data(encoded.dropFirst(4)))
+
+        XCTAssertEqual(decoded.searchContent, .transcripts)
+        XCTAssertEqual(decoded.query, "roadmap")
+        XCTAssertEqual(decoded.limit, 12)
+    }
+
     func testLegacyAppEnvelopeFailsBeforePayloadDecoding() throws {
         let legacyJSON = Data(#"{"id":"legacy-app","ok":true,"data":"bm90LXRoZS1leHBlY3RlZC1wYXlsb2Fk"}"#.utf8)
         let response = try JSONDecoder().decode(IPCResponse.self, from: legacyJSON)

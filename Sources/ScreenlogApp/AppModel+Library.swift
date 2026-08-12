@@ -111,8 +111,9 @@ extension AppModel {
         recentSearchQueries = recentSearchStore.all()
     }
 
-    /// Reset all client-side search filters (app/domain/time/session).
+    /// Reset all client-side search filters (content/app/domain/time/session).
     func clearSearchFilters() {
+        searchContent = .all
         searchAppFilter = nil
         searchDomainFilter = nil
         searchTimeFilter = nil

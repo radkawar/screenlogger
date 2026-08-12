@@ -40,8 +40,21 @@ public final class ScreenlogXPCClient: NSObject, ScreenlogClientProtocol {
         try decode(socket.call(IPCRequest(cmd: .status)).data)
     }
 
-    public func fts(query: String, limit: Int = 50) throws -> [FTSResult] {
-        try decode(socket.call(IPCRequest(cmd: .fts, query: query, limit: limit)).data)
+    public func fts(
+        query: String,
+        limit: Int = 50,
+        content: LibrarySearchContent = .all
+    ) throws -> [FTSResult] {
+        try decode(
+            socket.call(
+                IPCRequest(
+                    cmd: .fts,
+                    query: query,
+                    searchContent: content,
+                    limit: limit
+                )
+            ).data
+        )
     }
 
     public func stats() throws -> RecordingStats {

@@ -22,10 +22,14 @@ final class AppModel: ObservableObject {
     @Published var timeline: [TimelineFrame] = [] {
         didSet {
             timelineNavigationIndex = TimelineNavigationIndex(frames: timeline)
+            timelineTranscriptPassages = TimelineTranscriptPresentation.passages(from: timeline)
         }
     }
     /// Rebuilt once per loaded window so selection-driven UI reads do not rescan the Timeline.
     var timelineNavigationIndex = TimelineNavigationIndex(frames: [])
+    /// UI-only grouping rebuilt once per loaded Timeline window. Canonical
+    /// transcript rows remain untouched for search, export, and deletion.
+    private(set) var timelineTranscriptPassages: [TimelineTranscriptPresentation.Passage] = []
     /// Display choice survives single-display gaps while stepping or replaying.
     /// It changes only when a new Timeline context is opened or the person
     /// explicitly chooses another captured display.
@@ -80,6 +84,9 @@ final class AppModel: ObservableObject {
     @Published var searchSessionScoped = false
     /// Optional relative-time filter: today | yesterday | lastWeek | nil.
     @Published var searchTimeFilter: SearchTimeFilter? = nil
+    /// Unified by default; people can narrow a search to visible text or
+    /// finalized on-device transcripts without changing their query.
+    @Published var searchContent: LibrarySearchContent = .all
     /// Recent free-text queries for empty-state chips.
     @Published var recentSearchQueries: [String] = []
     /// Last parsed operator query (for chips / highlight tokens).

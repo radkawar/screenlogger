@@ -1,6 +1,14 @@
 import Foundation
 import SQLite3
 
+/// Which indexed text source participates in a Library search. The default
+/// preserves Screenlogger's unified search across visible and spoken content.
+public enum LibrarySearchContent: String, Codable, CaseIterable, Sendable {
+    case all
+    case screenText = "screen"
+    case transcripts
+}
+
 /// Constraints for one Library query.
 ///
 /// Every non-nil field is applied by SQLite before ordering and limiting the
@@ -16,6 +24,7 @@ public struct LibrarySearchQuery: Equatable, Sendable {
     public var domain: String?
     public var fromTimestampMs: Int64?
     public var toTimestampMs: Int64?
+    public var content: LibrarySearchContent
 
     public init(
         text: String = "",
@@ -24,7 +33,8 @@ public struct LibrarySearchQuery: Equatable, Sendable {
         appBundleID: String? = nil,
         domain: String? = nil,
         fromTimestampMs: Int64? = nil,
-        toTimestampMs: Int64? = nil
+        toTimestampMs: Int64? = nil,
+        content: LibrarySearchContent = .all
     ) {
         self.text = text
         self.appFilter = appFilter
@@ -33,6 +43,7 @@ public struct LibrarySearchQuery: Equatable, Sendable {
         self.domain = domain
         self.fromTimestampMs = fromTimestampMs
         self.toTimestampMs = toTimestampMs
+        self.content = content
     }
 }
 
@@ -177,6 +188,7 @@ extension Store {
         guard
             !match.isEmpty || appFilter != nil || siteFilter != nil
                 || appBundleID != nil || domain != nil || hasTimeConstraint
+                || query.content != .all
         else {
             return []
         }
@@ -211,50 +223,62 @@ extension Store {
             whereParts.append("f.timestamp < ?")
         }
         let whereSQL = whereParts.joined(separator: " AND ")
+        let filterWhereSQL = whereSQL.isEmpty ? "1 = 1" : whereSQL
         let limit = min(maximumLimit, max(1, requestedLimit))
         let sql: String
         if usesFTS {
             let constrainedWhere = whereSQL.isEmpty ? "" : " AND \(whereSQL)"
+            let screenTextCandidates = """
+                SELECT
+                    f.id AS frame_id,
+                    f.timestamp AS timestamp_ms,
+                    snippet(ocr_fts, 0, '[', ']', '...', 16) AS snippet_foreground,
+                    snippet(ocr_fts, 1, '[', ']', '...', 16) AS snippet_background,
+                    snippet(ocr_fts, 2, '[', ']', '...', 16) AS snippet_title,
+                    NULL AS snippet_transcript,
+                    NULL AS transcript_id,
+                    NULL AS transcript_source,
+                    NULL AS transcript_start,
+                    NULL AS transcript_end
+                FROM ocr_fts
+                JOIN frame f ON f.id = ocr_fts.rowid
+                LEFT JOIN segment s ON s.id = f.segment
+                LEFT JOIN application a ON a.id = s.application
+                LEFT JOIN domain d ON d.id = s.domain
+                WHERE ocr_fts MATCH ?\(constrainedWhere)
+                """
+            let transcriptCandidates = """
+                SELECT
+                    f.id AS frame_id,
+                    f.timestamp AS timestamp_ms,
+                    NULL AS snippet_foreground,
+                    NULL AS snippet_background,
+                    NULL AS snippet_title,
+                    snippet(transcript_fts, 0, '[', ']', '...', 16) AS snippet_transcript,
+                    ts.id AS transcript_id,
+                    ts.source AS transcript_source,
+                    ts.start_timestamp AS transcript_start,
+                    ts.end_timestamp AS transcript_end
+                FROM transcript_fts
+                JOIN transcript_segment ts ON ts.id = transcript_fts.rowid
+                JOIN frame f ON f.id = ts.frame_id
+                LEFT JOIN segment s ON s.id = f.segment
+                LEFT JOIN application a ON a.id = s.application
+                LEFT JOIN domain d ON d.id = s.domain
+                WHERE transcript_fts MATCH ?\(constrainedWhere)
+                """
+            let candidates =
+                switch query.content {
+                case .all:
+                    screenTextCandidates + "\nUNION ALL\n" + transcriptCandidates
+                case .screenText:
+                    screenTextCandidates
+                case .transcripts:
+                    transcriptCandidates
+                }
             sql = """
                 WITH candidate_matches AS (
-                    SELECT
-                        f.id AS frame_id,
-                        f.timestamp AS timestamp_ms,
-                        snippet(ocr_fts, 0, '[', ']', '...', 16) AS snippet_foreground,
-                        snippet(ocr_fts, 1, '[', ']', '...', 16) AS snippet_background,
-                        snippet(ocr_fts, 2, '[', ']', '...', 16) AS snippet_title,
-                        NULL AS snippet_transcript,
-                        NULL AS transcript_id,
-                        NULL AS transcript_source,
-                        NULL AS transcript_start,
-                        NULL AS transcript_end
-                    FROM ocr_fts
-                    JOIN frame f ON f.id = ocr_fts.rowid
-                    LEFT JOIN segment s ON s.id = f.segment
-                    LEFT JOIN application a ON a.id = s.application
-                    LEFT JOIN domain d ON d.id = s.domain
-                    WHERE ocr_fts MATCH ?\(constrainedWhere)
-
-                    UNION ALL
-
-                    SELECT
-                        f.id AS frame_id,
-                        f.timestamp AS timestamp_ms,
-                        NULL AS snippet_foreground,
-                        NULL AS snippet_background,
-                        NULL AS snippet_title,
-                        snippet(transcript_fts, 0, '[', ']', '...', 16) AS snippet_transcript,
-                        ts.id AS transcript_id,
-                        ts.source AS transcript_source,
-                        ts.start_timestamp AS transcript_start,
-                        ts.end_timestamp AS transcript_end
-                    FROM transcript_fts
-                    JOIN transcript_segment ts ON ts.id = transcript_fts.rowid
-                    JOIN frame f ON f.id = ts.frame_id
-                    LEFT JOIN segment s ON s.id = f.segment
-                    LEFT JOIN application a ON a.id = s.application
-                    LEFT JOIN domain d ON d.id = s.domain
-                    WHERE transcript_fts MATCH ?\(constrainedWhere)
+                    \(candidates)
                 ), ranked_matches AS (
                     SELECT *,
                         ROW_NUMBER() OVER (
@@ -292,6 +316,40 @@ extension Store {
                 LEFT JOIN domain d ON d.id = s.domain
                 ORDER BY f.timestamp DESC, f.id DESC
                 """
+        } else if query.content == .transcripts {
+            sql = """
+                SELECT
+                    f.id,
+                    f.timestamp,
+                    f.title,
+                    a.bundle_id,
+                    a.display_name,
+                    d.normalized_domain,
+                    NULL,
+                    NULL,
+                    NULL,
+                    substr(ts.text, 1, 161),
+                    f.image_path,
+                    f.video,
+                    ts.id,
+                    ts.source,
+                    ts.start_timestamp,
+                    ts.end_timestamp
+                FROM frame f
+                JOIN transcript_segment ts ON ts.id = (
+                    SELECT newest.id
+                    FROM transcript_segment newest
+                    WHERE newest.frame_id = f.id
+                    ORDER BY newest.id DESC
+                    LIMIT 1
+                )
+                LEFT JOIN segment s ON s.id = f.segment
+                LEFT JOIN application a ON a.id = s.application
+                LEFT JOIN domain d ON d.id = s.domain
+                WHERE \(filterWhereSQL)
+                ORDER BY f.timestamp DESC, f.id DESC
+                LIMIT ?
+                """
         } else {
             sql = """
                 WITH matching_moments AS (
@@ -300,7 +358,7 @@ extension Store {
                     LEFT JOIN segment s ON s.id = f.segment
                     LEFT JOIN application a ON a.id = s.application
                     LEFT JOIN domain d ON d.id = s.domain
-                    WHERE \(whereSQL)
+                    WHERE \(filterWhereSQL)
                     GROUP BY f.timestamp
                     ORDER BY f.timestamp DESC
                     LIMIT ?
@@ -366,12 +424,16 @@ extension Store {
             }
         }
         if usesFTS {
-            SQLiteBind.text(stmt, bind, match)
-            bind += 1
-            bindConstraints()
-            SQLiteBind.text(stmt, bind, match)
-            bind += 1
-            bindConstraints()
+            if query.content != .transcripts {
+                SQLiteBind.text(stmt, bind, match)
+                bind += 1
+                bindConstraints()
+            }
+            if query.content != .screenText {
+                SQLiteBind.text(stmt, bind, match)
+                bind += 1
+                bindConstraints()
+            }
         } else {
             bindConstraints()
         }

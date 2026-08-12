@@ -20,19 +20,40 @@ extension Store {
 
     /// Frame whose `timestamp` is closest to `timestampMs` (ties to lower id).
     public func frameNearest(timestampMs: Int64) throws -> FrameRow? {
-        let sql = """
-            SELECT id, timestamp, image_path, width, height, foreground, background, title,
-                   segment, video, video_index, is_inactive, ax_root_hash,
-                   capture_display_x, capture_display_y, capture_display_width, capture_display_height
-            FROM frame
-            ORDER BY ABS(timestamp - ?) ASC, id ASC
-            LIMIT 1
-            """
-        let stmt = try db.prepare(sql)
-        defer { sqlite3_finalize(stmt) }
-        SQLiteBind.int64(stmt, 1, timestampMs)
-        guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
-        return Self.frameRow(from: stmt)
+        func candidate(comparison: String, ordering: String) throws -> FrameRow? {
+            let sql = """
+                SELECT id, timestamp, image_path, width, height, foreground, background, title,
+                       segment, video, video_index, is_inactive, ax_root_hash,
+                       capture_display_x, capture_display_y, capture_display_width, capture_display_height
+                FROM frame
+                WHERE timestamp \(comparison) ?
+                ORDER BY timestamp \(ordering), id ASC
+                LIMIT 1
+                """
+            let stmt = try db.prepare(sql)
+            defer { sqlite3_finalize(stmt) }
+            SQLiteBind.int64(stmt, 1, timestampMs)
+            guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+            return Self.frameRow(from: stmt)
+        }
+
+        let before = try candidate(comparison: "<=", ordering: "DESC")
+        let after = try candidate(comparison: ">=", ordering: "ASC")
+        guard let before else { return after }
+        guard let after else { return before }
+
+        // Bias signed values into monotonically ordered UInt64 space so even
+        // extreme test inputs cannot overflow while computing a distance.
+        let signBit = UInt64(1) << 63
+        let target = UInt64(bitPattern: timestampMs) ^ signBit
+        let beforeValue = UInt64(bitPattern: before.timestampMs) ^ signBit
+        let afterValue = UInt64(bitPattern: after.timestampMs) ^ signBit
+        let beforeDistance = target - beforeValue
+        let afterDistance = afterValue - target
+        if beforeDistance != afterDistance {
+            return beforeDistance < afterDistance ? before : after
+        }
+        return before.id <= after.id ? before : after
     }
 
     /// Latest frame at or before `timestampMs`, if any.

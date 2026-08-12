@@ -60,6 +60,26 @@ struct LibraryFilterPanel: View {
                     }
                 }
 
+                filterSection("Content") {
+                    VStack(alignment: .leading, spacing: 2) {
+                        contentFilterRow(
+                            .all,
+                            label: "All content",
+                            systemImage: "text.magnifyingglass"
+                        )
+                        contentFilterRow(
+                            .screenText,
+                            label: "Screen text",
+                            systemImage: "text.viewfinder"
+                        )
+                        contentFilterRow(
+                            .transcripts,
+                            label: "Transcripts",
+                            systemImage: "waveform"
+                        )
+                    }
+                }
+
                 filterSection("Time") {
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(AppModel.SearchTimeFilter.allCases) { tf in
@@ -143,6 +163,19 @@ struct LibraryFilterPanel: View {
 
     private func clearAllFilters() {
         model.clearAllLibrarySearchFilters()
+    }
+
+    private func contentFilterRow(
+        _ content: LibrarySearchContent,
+        label: String,
+        systemImage: String
+    ) -> some View {
+        filterRow(selected: model.searchContent == content) {
+            model.setSearchContent(content)
+        } label: {
+            Label(label, systemImage: systemImage)
+        }
+        .accessibilityIdentifier("library.filter.content.\(content.rawValue)")
     }
 
     private var exactDateFilterIsActive: Bool {

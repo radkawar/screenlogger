@@ -84,6 +84,7 @@
 		36C3C7FAE24B412AAFACD03C /* ScreenlogCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 059E20E1808605004DE6A22E /* ScreenlogCore.framework */; };
 		37683E1D6027C5131427E8CE /* AudioTranscriptionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A9FEE8360578A5B2A20C91 /* AudioTranscriptionTests.swift */; };
 		3785CBFD7CE9529DC315C194 /* LibrarySearchPagePresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA5683ECC91F6140EF70B46 /* LibrarySearchPagePresentation.swift */; };
+		37A83E36D3A64EB2A20FF28F /* TimelineTranscriptPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D459EF23BB29485AD3EC28C /* TimelineTranscriptPresentation.swift */; };
 		37E720D182FED0225712EAEC /* KeyboardShortcutStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB27CE56A942AFCAA4BF7422 /* KeyboardShortcutStoreTests.swift */; };
 		3892517437E4E3C3B26470D9 /* AppModel+StorageMaintenance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C92874E224C2619A7CBB0D5 /* AppModel+StorageMaintenance.swift */; };
 		38F0AEBD3ABB5581713AC290 /* DifferentialOCRMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = B93D68A240B9D67EC609B35F /* DifferentialOCRMath.swift */; };
@@ -170,6 +171,7 @@
 		70BBDECA5C79F415725ACCDA /* FirstRunValueProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = 951DB9CF18BC16DA2DADEE24 /* FirstRunValueProgress.swift */; };
 		71269F082909E3951BBC612E /* TimelineNoticeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CF972149919D3522598D738 /* TimelineNoticeTests.swift */; };
 		71575AC3B3B50B219C067237 /* VideoCompactionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEC2E9AE0E136E919BA96DBE /* VideoCompactionService.swift */; };
+		71A7E0C807FE881DA9796808 /* TimelineTranscriptPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6962C28C457C80E663E73FD4 /* TimelineTranscriptPresentationTests.swift */; };
 		71EEB390F0597B434640E360 /* AppInstallLocation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00EFDDAFC07D767BB12724CD /* AppInstallLocation.swift */; };
 		71F583772A24D51637210AE7 /* MainShellController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3222EED796BF92A5C9880B9C /* MainShellController.swift */; };
 		722F24DE3A9C0682187F6D26 /* SettingsRecoveryPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A388CEA721CB4033A5E890A7 /* SettingsRecoveryPresentation.swift */; };
@@ -187,6 +189,7 @@
 		7A94ADE71A6C42E6DFBC49FB /* TimelineStagePanGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D518DF88A841CAAEDB8C4EE4 /* TimelineStagePanGeometryTests.swift */; };
 		7B550EBA1A096C6EA7277A73 /* LibraryRestoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C061AD457544E2ECBED00710 /* LibraryRestoreModels.swift */; };
 		7B656E9953A40CFFF6303DF9 /* MetricKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0461A95DD85D08E9343B41F9 /* MetricKit.framework */; };
+		7E10D2A439AEC31F1FF161D0 /* TimelineTranscriptPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D459EF23BB29485AD3EC28C /* TimelineTranscriptPresentation.swift */; };
 		7F482AE2BFE5C095D245DFD0 /* TimelineActivityPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92ACD9CE0385BDA298804F71 /* TimelineActivityPresentation.swift */; };
 		7F76A681B3D632A4251E4C2B /* RecordedDomainLoadStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5114E12D250BB6A89511A5BE /* RecordedDomainLoadStateTests.swift */; };
 		7F7D2B65A55EFC529071B716 /* Paths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29D15D20C4235778F48FB219 /* Paths.swift */; };
@@ -490,6 +493,7 @@
 		08760A4223BC376492BBD374 /* SupportUserGuideSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportUserGuideSheet.swift; sourceTree = "<group>"; };
 		09B7D3755B736B9D9F645A87 /* TimelineStageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineStageView.swift; sourceTree = "<group>"; };
 		0C0C474D03A2B56D077A292B /* Store+StructuredSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Store+StructuredSearch.swift"; sourceTree = "<group>"; };
+		0D459EF23BB29485AD3EC28C /* TimelineTranscriptPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineTranscriptPresentation.swift; sourceTree = "<group>"; };
 		0E06E0EF5ED98A58B68F6CB6 /* AssistantIntegrationsSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantIntegrationsSettingsSection.swift; sourceTree = "<group>"; };
 		0F59F3FF883C5AD598024AE4 /* CLIDiagnosticIssue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIDiagnosticIssue.swift; sourceTree = "<group>"; };
 		12A1F3F0E27A7F4B991D8232 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -590,6 +594,7 @@
 		66F092F3A43E725E41D42248 /* LibraryAssistantHandoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryAssistantHandoff.swift; sourceTree = "<group>"; };
 		67151223145954BB4784A9A5 /* CLICommandAvailabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLICommandAvailabilityTests.swift; sourceTree = "<group>"; };
 		673FBECDC163B16EA9C3EB08 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
+		6962C28C457C80E663E73FD4 /* TimelineTranscriptPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineTranscriptPresentationTests.swift; sourceTree = "<group>"; };
 		69B8003C01D0438BB7FC6A9D /* KeyboardShortcutAppBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardShortcutAppBridge.swift; sourceTree = "<group>"; };
 		69FA09AF0A969C5326D4C23C /* AppearanceSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettingsPane.swift; sourceTree = "<group>"; };
 		6AC08C5527EBED63998E8DFA /* AssistantIntegrationService+Inspection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AssistantIntegrationService+Inspection.swift"; sourceTree = "<group>"; };
@@ -936,6 +941,7 @@
 				6CD0A9FA86BF94DC3F92B0C5 /* SettingsWindowLayoutTests.swift */,
 				4ABE8A5B78B03CA437B2745F /* StorageConfidencePresentationTests.swift */,
 				7CF972149919D3522598D738 /* TimelineNoticeTests.swift */,
+				6962C28C457C80E663E73FD4 /* TimelineTranscriptPresentationTests.swift */,
 			);
 			path = ScreenlogAppTests;
 			sourceTree = "<group>";
@@ -1273,6 +1279,7 @@
 				AD0250C517F55D993063D0AD /* TimelineDisplayPresentation.swift */,
 				D6CCB940C3BF2C7130A940AE /* TimelineNotice.swift */,
 				0692CA7889DDA1FE074742D3 /* TimelinePresentationModels.swift */,
+				0D459EF23BB29485AD3EC28C /* TimelineTranscriptPresentation.swift */,
 			);
 			path = ScreenlogApp;
 			sourceTree = "<group>";
@@ -1890,6 +1897,7 @@
 				2B11D31DE04B3A8B95EBA3E8 /* TimelinePresentationModels.swift in Sources */,
 				4F31B45B6F23E50633DEE5EF /* TimelineStageView.swift in Sources */,
 				618FA93E353885AFFE2642BC /* TimelineStateViews.swift in Sources */,
+				7E10D2A439AEC31F1FF161D0 /* TimelineTranscriptPresentation.swift in Sources */,
 				43D05DE2C89049AE29E6AED0 /* TimelineViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -2012,6 +2020,8 @@
 				C79E88728739884012E2232A /* TimelineDisplayPresentation.swift in Sources */,
 				0F97B2015BD670D2361B9030 /* TimelineNotice.swift in Sources */,
 				71269F082909E3951BBC612E /* TimelineNoticeTests.swift in Sources */,
+				37A83E36D3A64EB2A20FF28F /* TimelineTranscriptPresentation.swift in Sources */,
+				71A7E0C807FE881DA9796808 /* TimelineTranscriptPresentationTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

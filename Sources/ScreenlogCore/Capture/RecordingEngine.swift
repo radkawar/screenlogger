@@ -491,6 +491,8 @@ public final class RecordingEngine: ObservableObject {
 
     private var task: Task<Void, Never>?
     private var maintenanceTask: Task<Void, Never>?
+    private var audioControlTask: Task<Void, Never>?
+    private var audioControlRevision: UInt64 = 0
     private let pipeline = CapturePipeline()
     private let audioTranscription = AudioTranscriptionCoordinator()
     private var store: Store?
@@ -537,7 +539,8 @@ public final class RecordingEngine: ObservableObject {
                 ocrLanguages: langs,
                 differentialOCR: diff
             )
-            await reconcileAudioTranscription()
+            guard !Task.isCancelled else { return }
+            scheduleAudioReconciliation()
         }
     }
 
@@ -547,7 +550,26 @@ public final class RecordingEngine: ObservableObject {
         _ settings: AudioTranscriptionPreferenceStore.Snapshot
     ) {
         audioTranscriptionSettings = settings
-        Task { await reconcileAudioTranscription() }
+        scheduleAudioReconciliation()
+    }
+
+    private func scheduleAudioReconciliation(markCaptureAvailable: Bool = false) {
+        audioControlRevision &+= 1
+        let requestedRevision = audioControlRevision
+        audioControlTask?.cancel()
+        audioControlTask = Task { [weak self] in
+            guard let self,
+                !Task.isCancelled,
+                self.audioControlRevision == requestedRevision
+            else { return }
+            if markCaptureAvailable {
+                await audioTranscription.setCaptureAvailable(true)
+            }
+            guard !Task.isCancelled,
+                self.audioControlRevision == requestedRevision
+            else { return }
+            await reconcileAudioTranscription()
+        }
     }
 
     private func reconcileAudioTranscription() async {
@@ -616,7 +638,7 @@ public final class RecordingEngine: ObservableObject {
         Task { await pipeline.setDisplayMode(displayMode) }
         applyCaptureQualityToPipeline()
         if previousPauseWhenAddressUnavailable != self.pauseWhenBrowserAddressUnavailable {
-            Task { await reconcileAudioTranscription() }
+            scheduleAudioReconciliation()
         }
     }
 
@@ -664,10 +686,7 @@ public final class RecordingEngine: ObservableObject {
         // Unstructured task: awaits on pipeline release MainActor during OCR/encode/DB.
         task = Task { [weak self] in await self?.runLoop() }
         maintenanceTask = Task { [weak self] in await self?.maintenanceLoop() }
-        Task {
-            await audioTranscription.setCaptureAvailable(true)
-            await reconcileAudioTranscription()
-        }
+        scheduleAudioReconciliation(markCaptureAvailable: true)
         log.info("recording started interval=\(self.intervalSeconds)s")
         return isRecording
     }
@@ -680,8 +699,12 @@ public final class RecordingEngine: ObservableObject {
         task = nil
         maintenanceTask?.cancel()
         maintenanceTask = nil
+        audioControlRevision &+= 1
+        audioControlTask?.cancel()
         audioTranscription.deactivateImmediately()
-        Task { await audioTranscription.stop() }
+        audioControlTask = Task { [audioTranscription] in
+            await audioTranscription.stop()
+        }
         pausedForDisk = false
         pausedForInactivity = false
         pauseReason = nil
@@ -696,12 +719,18 @@ public final class RecordingEngine: ObservableObject {
         isRecording = false
         let captureTask = task
         let backgroundMaintenanceTask = maintenanceTask
+        let previousAudioControlTask = audioControlTask
         captureTask?.cancel()
         backgroundMaintenanceTask?.cancel()
         task = nil
         maintenanceTask = nil
+        audioControlRevision &+= 1
+        previousAudioControlTask?.cancel()
+        audioControlTask = nil
+        audioTranscription.deactivateImmediately()
         _ = await captureTask?.result
         _ = await backgroundMaintenanceTask?.result
+        _ = await previousAudioControlTask?.result
         await audioTranscription.stop()
         store = nil
         dataRoot = nil

@@ -144,6 +144,7 @@ public struct IPCRequest: Codable, Sendable {
     public var protocolMaximumVersion: Int?
     public var clientVersion: String?
     public var query: String?
+    public var searchContent: LibrarySearchContent?
     public var limit: Int?
     public var minSegLen: Int?
     public var gapMinutes: Int?
@@ -156,6 +157,7 @@ public struct IPCRequest: Codable, Sendable {
         id: String = UUID().uuidString, cmd: IPCCommand, protocolMinimumVersion: Int? = ScreenlogIPCProtocol.minimumSupportedVersion,
         protocolMaximumVersion: Int? = ScreenlogIPCProtocol.maximumSupportedVersion, clientVersion: String? = ScreenlogCore.version,
         query: String? = nil,
+        searchContent: LibrarySearchContent? = nil,
         limit: Int? = nil, minSegLen: Int? = nil, gapMinutes: Int? = nil, frameID: Int64? = nil, timestampMs: Int64? = nil,
         outPath: String? = nil,
         preferBase64: Bool? = nil
@@ -166,6 +168,7 @@ public struct IPCRequest: Codable, Sendable {
         self.protocolMaximumVersion = protocolMaximumVersion
         self.clientVersion = clientVersion
         self.query = query
+        self.searchContent = searchContent
         self.limit = limit
         self.minSegLen = minSegLen
         self.gapMinutes = gapMinutes
@@ -603,7 +606,13 @@ public final class ScreenlogSocketHost: @unchecked Sendable {
                 case .fts:
                     guard let store else { return .fail(id: req.id, "store unavailable") }
                     let data = try JSONEncoder().encode(
-                        try store.searchLibrary(query: req.query ?? "", limit: req.limit ?? 50)
+                        try store.searchLibrary(
+                            query: LibrarySearchQuery(
+                                text: req.query ?? "",
+                                content: req.searchContent ?? .all
+                            ),
+                            limit: req.limit ?? 50
+                        )
                     )
                     return .ok(id: req.id, data: data)
                 case .stats:

@@ -1,11 +1,11 @@
 ---
 name: screenlog-cli-skill
-description: Search and reconstruct the user's past on-screen activity (screenshots, OCR text, app and domain usage) with the screenlog CLI. Use whenever the user references something they personally did, saw, or read - "what did I do", "find that thing I saw", "how much time did I spend on X", "summarize my research on Y".
+description: Search and reconstruct the user's past activity (screenshots, screen text, optional audio transcripts, app and domain usage) with the screenlog CLI. Use whenever the user references something they personally did, saw, heard, or read - "what did I do", "find that thing I saw", "what was said in that meeting", "how much time did I spend on X", "summarize my research on Y".
 ---
 
 # Screenlogger CLI Skill
 
-Screenlogger keeps a **local** database of the user's past activity on this Mac: screenshots captured on an interval with searchable metadata (OCR text, application, domain, window title). Screenlogger does not upload this Library or require a cloud account. If an external assistant runs `screenlog`, that assistant's own settings and privacy policy govern the query and command output it receives.
+Screenlogger keeps a **local** database of the user's past activity on this Mac: screenshots captured on an interval with searchable screen text, application, domain, and window-title metadata. When the user opts into continuous on-device audio transcription, finalized transcript text is searchable too; Screenlogger does not retain audio. Screenlogger does not upload this Library or require a cloud account. If an external assistant runs `screenlog`, that assistant's own settings and privacy policy govern the query and command output it receives.
 
 The CLI is `screenlog` (often installed at `~/.local/bin/screenlog`). **Screenlogger.app must be running** - the CLI is a thin client and never opens the database itself. `screenlog -h` and `screenlog <subcommand>` usage lines are the authoritative reference for flags; this file only says what each command is for. This skill needs a shell: if you cannot run `screenlog`, tell the user to ask from an AI coding agent (Claude Code, Codex, Cursor, Grok Build) instead of guessing at invocations.
 
@@ -15,7 +15,7 @@ If the app is not running you will get a connection error - open Screenlogger.ap
 
 ### Search & query
 
-- `screenlog search <QUERY> [--limit N] [--json]` - search OCR text and titles; supports the same `app:`, `site:`, `date:`, `since:`, and `before:` refinements as the Library (preferred entry point for "find that thing I saw")
+- `screenlog search <QUERY> [--content all|screen|transcripts] [--limit N] [--json]` - search screen text and transcripts together by default; use `--content screen` for visible text only or `--content transcripts` for spoken content only. Supports the same `app:`, `site:`, `date:`, `since:`, and `before:` refinements as the Library.
 - `screenlog query fts <QUERY> [--limit N] [--json]` - same search as `search` (lower-level alias)
 - `screenlog query frame --id N | --at <iso-or-epoch> [--show-ocr]` - frame metadata; `--show-ocr` adds OCR text
 - `screenlog query image --at ... | --id N [--out path] [--base64] [--json]` - export the screenshot (also available as top-level `screenlog image ...`)
@@ -74,6 +74,7 @@ Output is compact by default; pass `--json` where supported for structured outpu
 ## How to interpret the data (very important)
 
 - Frames are screenshots of the whole interface the user was looking at. OCR is a strong but sometimes noisy signal - if something feels off, it might be misread letters or messy reading order.
+- A result with `transcriptSource` set came from optional on-device transcription. `microphone` is the user's input; `computer` is audio played by the Mac. Transcript text can contain recognition mistakes, so confirm important claims with nearby results and context.
 - Content visible in a frame was not necessarily *created* at capture time - look for embedded timestamps (message times, file dates) or infer timing from surrounding activity.
 - Frames are recorded on a regular interval (roughly ~2 seconds when recording) and sorted chronologically. Use individual frames for facts; use samples and sessions to reconstruct workflows.
 - More recent frames tend to have more up-to-date information.
@@ -96,6 +97,7 @@ Output is compact by default; pass `--json` where supported for structured outpu
 - Output can get large: choose gap values, limits, and time bounds deliberately. `--gap 10` surfaces short breaks; larger gaps merge more activity into fewer sessions.
 - Start with a small `--limit` and widen only if needed.
 - Refine in one query when possible: `screenlog search 'invoice app:Safari site:example.com since:2026-07-01' --json`.
+- For meeting or presentation speech, start with `screenlog search 'roadmap' --content transcripts --json`. For words visibly shown on screen, use `--content screen`. Omit `--content` when either kind of evidence is useful.
 - Use `list applications` / `list domains` when you need exact filter values or names.
 
 ## Guardrails for the output

@@ -48,6 +48,7 @@ extension AppModel {
         searchAppFilter != nil
             || searchDomainFilter != nil
             || searchTimeFilter != nil
+            || searchContent != .all
             || (searchSessionScoped && selectedSession != nil)
     }
 
@@ -64,6 +65,7 @@ extension AppModel {
             searchAppFilter != nil,
             searchDomainFilter != nil,
             searchTimeFilter != nil,
+            searchContent != .all,
             searchSessionScoped && selectedSession != nil,
         ].filter { $0 }.count
     }
@@ -499,7 +501,8 @@ extension AppModel {
             appFilter: parsed.appFilter,
             siteFilter: parsed.siteFilter,
             fromTimestampMs: bounds.fromTimestampMs,
-            toTimestampMs: bounds.toTimestampMs
+            toTimestampMs: bounds.toTimestampMs,
+            content: searchContent
         )
         let results = LibrarySearchQuery(
             text: parsed.ftsText,
@@ -508,7 +511,8 @@ extension AppModel {
             appBundleID: searchAppFilter,
             domain: searchDomainFilter,
             fromTimestampMs: bounds.fromTimestampMs,
-            toTimestampMs: bounds.toTimestampMs
+            toTimestampMs: bounds.toTimestampMs,
+            content: searchContent
         )
         guard Self.hasConstraint(results) else { return nil }
         return (facets: Self.hasConstraint(base) ? base : nil, results: results)
@@ -554,6 +558,7 @@ extension AppModel {
             || query.domain != nil
             || query.fromTimestampMs != nil
             || query.toTimestampMs != nil
+            || query.content != .all
     }
 
     func refreshSearchAutocomplete(for autocompleteInput: String? = nil) {
@@ -777,6 +782,12 @@ extension AppModel {
 
     func setSearchSessionScoped(_ scoped: Bool) {
         searchSessionScoped = scoped && selectedSession != nil
+        librarySearchFilterDidChange()
+    }
+
+    func setSearchContent(_ content: LibrarySearchContent) {
+        guard searchContent != content else { return }
+        searchContent = content
         librarySearchFilterDidChange()
     }
 

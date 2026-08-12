@@ -9,11 +9,50 @@ private let transcriptionSessionLog = Logger(
     category: "audio-transcription-session"
 )
 
+struct AudioAnalyzerTimeline {
+    private(set) var endTime: CMTime?
+
+    mutating func startTime(
+        relativePresentationTime: CMTime,
+        frameLength: AVAudioFrameCount,
+        sampleRate: Double
+    ) -> CMTime {
+        let zero = CMTime.zero
+        let proposed: CMTime
+        if relativePresentationTime.isValid,
+            relativePresentationTime.isNumeric,
+            CMTimeCompare(relativePresentationTime, zero) >= 0
+        {
+            proposed = relativePresentationTime
+        } else {
+            proposed = endTime ?? zero
+        }
+
+        let start: CMTime
+        if let endTime, CMTimeCompare(proposed, endTime) < 0 {
+            start = endTime
+        } else {
+            start = proposed
+        }
+        let duration = CMTime(
+            value: CMTimeValue(frameLength),
+            timescale: CMTimeScale(max(1, Int32(sampleRate.rounded())))
+        )
+        endTime = CMTimeAdd(start, duration)
+        return start
+    }
+
+    mutating func reset() {
+        endTime = nil
+    }
+}
+
 enum OnDeviceTranscriptionError: LocalizedError {
     case speechUnavailable
     case unsupportedLocale
     case modelUnavailable
     case incompatibleAudioFormat
+    case analyzerClosed
 
     var errorDescription: String? {
         switch self {
@@ -25,6 +64,8 @@ enum OnDeviceTranscriptionError: LocalizedError {
             return "The on-device speech model could not be prepared."
         case .incompatibleAudioFormat:
             return "The current audio format cannot be transcribed."
+        case .analyzerClosed:
+            return "The on-device speech analyzer stopped accepting audio."
         }
     }
 }
@@ -50,11 +91,7 @@ enum OnDeviceSpeechPreparation {
             locale: locale,
             preset: .timeIndexedProgressiveTranscription
         )
-        let detector = SpeechDetector(
-            detectionOptions: .init(sensitivityLevel: .medium),
-            reportResults: false
-        )
-        let modules: [any SpeechModule] = [transcriber, detector]
+        let modules: [any SpeechModule] = [transcriber]
         switch await AssetInventory.status(forModules: modules) {
         case .installed:
             progressHandler(1)
@@ -86,11 +123,16 @@ enum OnDeviceSpeechPreparation {
 /// the Store.
 @available(macOS 26.0, *)
 actor OnDeviceTranscriptionSession {
+    private struct PendingInput {
+        let buffer: AVAudioPCMBuffer
+        let presentationTime: CMTime
+        let observedAtMs: Int64
+    }
+
     private let source: TranscriptSource
     private let locale: Locale
     private let store: Store
     private let transcriber: SpeechTranscriber
-    private let detector: SpeechDetector
     private let analyzer: SpeechAnalyzer
 
     private var inputContinuation: AsyncStream<AnalyzerInput>.Continuation?
@@ -101,7 +143,10 @@ actor OnDeviceTranscriptionSession {
     private var outputFormat: AVAudioFormat?
     private var sourceTimeAnchor: CMTime?
     private var wallClockAnchorMs: Int64?
-    private var isPrepared = false
+    private var analyzerTimeline = AudioAnalyzerTimeline()
+    private var terminalFailureDetail: String?
+    private var droppedAnalyzerInputCount = 0
+    private var preparationGate = AudioTranscriptionPreparationGate<PendingInput>()
 
     init(source: TranscriptSource, locale: Locale, store: Store) {
         self.source = source
@@ -111,11 +156,13 @@ actor OnDeviceTranscriptionSession {
             locale: locale,
             preset: .timeIndexedProgressiveTranscription
         )
-        self.detector = SpeechDetector(
-            detectionOptions: .init(sensitivityLevel: .medium),
-            reportResults: false
+        self.analyzer = SpeechAnalyzer(
+            modules: [transcriber],
+            options: SpeechAnalyzer.Options(
+                priority: .utility,
+                modelRetention: .lingering
+            )
         )
-        self.analyzer = SpeechAnalyzer(modules: [transcriber, detector])
     }
 
     func append(
@@ -123,63 +170,149 @@ actor OnDeviceTranscriptionSession {
         presentationTime: CMTime,
         observedAtMs: Int64
     ) async throws {
-        if !isPrepared {
-            try await prepare(for: buffer.format)
-            sourceTimeAnchor = presentationTime
-            wallClockAnchorMs = observedAtMs
+        if terminalFailureDetail != nil {
+            throw OnDeviceTranscriptionError.analyzerClosed
         }
-        guard let inputFormat, inputFormat == buffer.format,
-            let converted = try convertedBuffer(from: buffer),
+        let input = PendingInput(
+            buffer: buffer,
+            presentationTime: presentationTime,
+            observedAtMs: observedAtMs
+        )
+        switch preparationGate.enqueue(input) {
+        case .queued, .discarded:
+            return
+        case .process(let readyInput):
+            try yieldPrepared(readyInput)
+        case .beginPreparation(let token):
+            do {
+                try await prepareAnalyzer(for: buffer.format)
+            } catch {
+                guard preparationGate.fail(token: token) else { return }
+                resetResources()
+                throw error
+            }
+            guard var pending = preparationGate.complete(token: token) else {
+                await analyzer.cancelAndFinishNow()
+                resetResources()
+                return
+            }
+            pending.sort {
+                CMTimeCompare($0.presentationTime, $1.presentationTime) < 0
+            }
+            guard let first = pending.first else {
+                preparationGate.finish()
+                resetResources()
+                return
+            }
+            sourceTimeAnchor = first.presentationTime
+            wallClockAnchorMs = first.observedAtMs
+            startTasks()
+            do {
+                for input in pending {
+                    try yieldPrepared(input)
+                }
+            } catch {
+                preparationGate.finish()
+                throw error
+            }
+        }
+    }
+
+    private func yieldPrepared(_ input: PendingInput) throws {
+        guard let inputFormat, inputFormat == input.buffer.format,
             let sourceTimeAnchor
         else {
             throw OnDeviceTranscriptionError.incompatibleAudioFormat
         }
-        let relativeTime = CMTimeSubtract(presentationTime, sourceTimeAnchor)
-        inputContinuation?.yield(
-            AnalyzerInput(
-                buffer: converted,
-                bufferStartTime: relativeTime.isValid ? relativeTime : nil
+        let relativeTime = CMTimeSubtract(input.presentationTime, sourceTimeAnchor)
+        let converted = try convertedBuffers(from: input.buffer)
+        for buffer in converted {
+            let startTime = analyzerTimeline.startTime(
+                relativePresentationTime: relativeTime,
+                frameLength: buffer.frameLength,
+                sampleRate: buffer.format.sampleRate
             )
+            try yieldAnalyzerBuffer(buffer, startTime: startTime)
+        }
+    }
+
+    private func yieldAnalyzerBuffer(
+        _ buffer: AVAudioPCMBuffer,
+        startTime: CMTime?
+    ) throws {
+        guard let inputContinuation else {
+            throw OnDeviceTranscriptionError.analyzerClosed
+        }
+        let result = inputContinuation.yield(
+            AnalyzerInput(buffer: buffer, bufferStartTime: startTime)
         )
+        switch result {
+        case .enqueued:
+            break
+        case .dropped:
+            droppedAnalyzerInputCount += 1
+            if droppedAnalyzerInputCount == 1
+                || droppedAnalyzerInputCount.isMultiple(of: 64)
+            {
+                transcriptionSessionLog.warning(
+                    "audio analyzer source=\(self.source.rawValue, privacy: .public) dropped \(self.droppedAnalyzerInputCount, privacy: .public) queued inputs"
+                )
+            }
+        case .terminated:
+            throw OnDeviceTranscriptionError.analyzerClosed
+        @unknown default:
+            throw OnDeviceTranscriptionError.analyzerClosed
+        }
     }
 
     func finish() async {
-        guard isPrepared else { return }
+        let previousPhase = preparationGate.finish()
+        if previousPhase == .ready {
+            do {
+                try flushConverterTail()
+            } catch {
+                transcriptionSessionLog.error(
+                    "audio converter flush failed: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
         inputContinuation?.finish()
         inputContinuation = nil
-        do {
-            try await analyzer.finalizeAndFinishThroughEndOfInput()
-        } catch {
-            transcriptionSessionLog.error(
-                "audio analyzer finalization failed: \(error.localizedDescription, privacy: .public)"
-            )
+        switch previousPhase {
+        case .ready:
+            do {
+                try await analyzer.finalizeAndFinishThroughEndOfInput()
+            } catch {
+                transcriptionSessionLog.error(
+                    "audio analyzer finalization failed: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        case .idle, .preparing, .finished:
+            // Preparation is already in flight inside SpeechAnalyzer. The
+            // invalidated gate discards its completion; calling a second
+            // analyzer lifecycle method concurrently would recreate the race
+            // this state machine is designed to prevent.
+            break
         }
         _ = await analysisTask?.result
         _ = await resultTask?.result
-        analysisTask = nil
-        resultTask = nil
-        converter = nil
-        inputFormat = nil
-        outputFormat = nil
-        isPrepared = false
+        resetResources()
     }
 
     func cancel() async {
+        let previousPhase = preparationGate.finish()
         inputContinuation?.finish()
         inputContinuation = nil
-        await analyzer.cancelAndFinishNow()
         analysisTask?.cancel()
         resultTask?.cancel()
-        analysisTask = nil
-        resultTask = nil
-        converter = nil
-        inputFormat = nil
-        outputFormat = nil
-        isPrepared = false
+        if previousPhase == .ready {
+            await analyzer.cancelAndFinishNow()
+        }
+        resetResources()
     }
 
-    private func prepare(for naturalFormat: AVAudioFormat) async throws {
-        let modules: [any SpeechModule] = [transcriber, detector]
+    private func prepareAnalyzer(for naturalFormat: AVAudioFormat) async throws {
+        let modules: [any SpeechModule] = [transcriber]
         guard
             let compatibleFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
                 compatibleWith: modules,
@@ -188,39 +321,53 @@ actor OnDeviceTranscriptionSession {
         else {
             throw OnDeviceTranscriptionError.incompatibleAudioFormat
         }
-        guard let converter = AVAudioConverter(from: naturalFormat, to: compatibleFormat) else {
-            throw OnDeviceTranscriptionError.incompatibleAudioFormat
+        let converter: AVAudioConverter?
+        if naturalFormat == compatibleFormat {
+            converter = nil
+        } else {
+            guard let audioConverter = AVAudioConverter(from: naturalFormat, to: compatibleFormat)
+            else {
+                throw OnDeviceTranscriptionError.incompatibleAudioFormat
+            }
+            audioConverter.primeMethod = .none
+            converter = audioConverter
         }
         try await analyzer.prepareToAnalyze(in: compatibleFormat)
-
-        let (stream, continuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
-        inputContinuation = continuation
         inputFormat = naturalFormat
         outputFormat = compatibleFormat
         self.converter = converter
-        isPrepared = true
+    }
 
-        analysisTask = Task { [analyzer] in
+    private func startTasks() {
+        let (stream, continuation) = AsyncStream.makeStream(
+            of: AnalyzerInput.self,
+            bufferingPolicy: .bufferingNewest(64)
+        )
+        inputContinuation = continuation
+
+        analysisTask = Task { [weak self, analyzer] in
             do {
-                try await analyzer.start(inputSequence: stream)
+                _ = try await analyzer.analyzeSequence(stream)
             } catch is CancellationError {
             } catch {
                 transcriptionSessionLog.error(
                     "audio analyzer input failed: \(error.localizedDescription, privacy: .public)"
                 )
+                await self?.markTerminalFailure(error.localizedDescription)
             }
         }
 
         let source = self.source
         let localeIdentifier = locale.identifier
-        resultTask = Task { [transcriber, store] in
+        let wallClockAnchorMs = self.wallClockAnchorMs
+        resultTask = Task { [weak self, transcriber, store] in
             do {
                 for try await result in transcriber.results {
                     guard result.isFinal else { continue }
                     let text = String(result.text.characters)
                         .trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !text.isEmpty,
-                        let anchorMs = self.wallClockAnchorMs
+                        let anchorMs = wallClockAnchorMs
                     else { continue }
                     let startSeconds = max(0, result.range.start.seconds)
                     let durationSeconds = max(0, result.range.duration.seconds)
@@ -247,36 +394,105 @@ actor OnDeviceTranscriptionSession {
                 transcriptionSessionLog.error(
                     "audio analyzer results failed for \(source.rawValue, privacy: .public): \(error.localizedDescription, privacy: .public)"
                 )
+                await self?.markTerminalFailure(error.localizedDescription)
             }
         }
     }
 
-    private func convertedBuffer(
+    private func markTerminalFailure(_ detail: String) {
+        guard preparationGate.phase == .ready else { return }
+        terminalFailureDetail = detail
+        inputContinuation?.finish()
+        inputContinuation = nil
+    }
+
+    private func resetResources() {
+        inputContinuation = nil
+        analysisTask = nil
+        resultTask = nil
+        converter = nil
+        inputFormat = nil
+        outputFormat = nil
+        sourceTimeAnchor = nil
+        wallClockAnchorMs = nil
+        analyzerTimeline.reset()
+        terminalFailureDetail = nil
+        droppedAnalyzerInputCount = 0
+    }
+
+    private func convertedBuffers(
         from input: AVAudioPCMBuffer
-    ) throws -> AVAudioPCMBuffer? {
-        guard let converter, let outputFormat else { return nil }
+    ) throws -> [AVAudioPCMBuffer] {
+        guard let inputFormat, let outputFormat else { return [] }
+        if inputFormat == outputFormat { return [input] }
+        guard let converter else { return [] }
         let ratio = outputFormat.sampleRate / max(1, input.format.sampleRate)
         let capacity = AVAudioFrameCount(ceil(Double(input.frameLength) * ratio)) + 1
-        guard
-            let output = AVAudioPCMBuffer(
-                pcmFormat: outputFormat,
-                frameCapacity: max(1, capacity)
-            )
-        else { return nil }
-
+        var outputs: [AVAudioPCMBuffer] = []
         var supplied = false
-        var conversionError: NSError?
-        let status = converter.convert(to: output, error: &conversionError) { _, inputStatus in
-            guard !supplied else {
-                inputStatus.pointee = .noDataNow
+        for _ in 0..<8 {
+            guard
+                let output = AVAudioPCMBuffer(
+                    pcmFormat: outputFormat,
+                    frameCapacity: max(1, capacity)
+                )
+            else { return outputs }
+            var conversionError: NSError?
+            let status = converter.convert(to: output, error: &conversionError) {
+                _, inputStatus in
+                guard !supplied else {
+                    inputStatus.pointee = .noDataNow
+                    return nil
+                }
+                supplied = true
+                inputStatus.pointee = .haveData
+                return input
+            }
+            if let conversionError { throw conversionError }
+            if output.frameLength > 0 { outputs.append(output) }
+            switch status {
+            case .haveData:
+                continue
+            case .inputRanDry, .endOfStream:
+                return outputs
+            case .error:
+                throw OnDeviceTranscriptionError.incompatibleAudioFormat
+            @unknown default:
+                throw OnDeviceTranscriptionError.incompatibleAudioFormat
+            }
+        }
+        return outputs
+    }
+
+    private func flushConverterTail() throws {
+        guard let converter, let outputFormat else { return }
+        let capacity = AVAudioFrameCount(max(1, outputFormat.sampleRate / 10))
+        for _ in 0..<8 {
+            guard
+                let output = AVAudioPCMBuffer(
+                    pcmFormat: outputFormat,
+                    frameCapacity: capacity
+                )
+            else { return }
+            var conversionError: NSError?
+            let status = converter.convert(to: output, error: &conversionError) {
+                _, inputStatus in
+                inputStatus.pointee = .endOfStream
                 return nil
             }
-            supplied = true
-            inputStatus.pointee = .haveData
-            return input
+            if let conversionError { throw conversionError }
+            if output.frameLength > 0 {
+                let startTime = analyzerTimeline.startTime(
+                    relativePresentationTime: analyzerTimeline.endTime ?? .zero,
+                    frameLength: output.frameLength,
+                    sampleRate: output.format.sampleRate
+                )
+                try yieldAnalyzerBuffer(output, startTime: startTime)
+            }
+            if status == .endOfStream { return }
+            if status == .error {
+                throw OnDeviceTranscriptionError.incompatibleAudioFormat
+            }
         }
-        if let conversionError { throw conversionError }
-        guard status == .haveData || status == .inputRanDry else { return nil }
-        return output.frameLength > 0 ? output : nil
     }
 }

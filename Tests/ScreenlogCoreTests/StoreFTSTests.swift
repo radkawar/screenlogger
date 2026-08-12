@@ -610,12 +610,18 @@ final class StoreFTSTests: XCTestCase {
 
         let nearest = try store.frameNearest(timestampMs: 5_200)
         XCTAssertEqual(nearest?.id, b)
+        XCTAssertEqual(try store.frameNearest(timestampMs: 3_000)?.id, a)
 
         let before = try store.frameAtOrBefore(timestampMs: 4_999)
         XCTAssertEqual(before?.id, a)
 
         let exact = try store.frameNearest(timestampMs: 9_000)
         XCTAssertEqual(exact?.id, c)
+
+        let lowerTie = try store.insertSeedFrame(timestampMs: 7_000, foreground: "tie-a")
+        _ = try store.insertSeedFrame(timestampMs: 7_000, foreground: "tie-b")
+        XCTAssertEqual(try store.frameNearest(timestampMs: 7_000)?.id, lowerTie)
+        XCTAssertEqual(try store.frameNearest(timestampMs: 7_001)?.id, lowerTie)
 
         let emptyRoot = tempRoot.appendingPathComponent("empty-db", isDirectory: true)
         let empty = try Store(root: emptyRoot)

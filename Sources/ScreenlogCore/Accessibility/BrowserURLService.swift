@@ -84,6 +84,10 @@ public final class BrowserURLService: @unchecked Sendable {
         }
 
         let appEl = AXUIElementCreateApplication(app.processIdentifier)
+        // An unresponsive browser must not stall capture privacy evaluation or
+        // the app's main actor. The caller treats an AX timeout as an unknown
+        // address and applies its configured fail-closed policy.
+        AXUIElementSetMessagingTimeout(appEl, 0.15)
         var nodes = 0
         let rawURL = findURL(in: appEl, depth: 0, nodes: &nodes)
         let website = rawURL.flatMap(Self.normalizedWebsite)
