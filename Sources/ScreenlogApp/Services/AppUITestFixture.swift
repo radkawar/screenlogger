@@ -41,6 +41,7 @@ import ScreenlogCore
             let loginItemSimulation: LoginItemSimulation?
             let applicationDiscoveryIssue: ApplicationDiscoveryError?
             let permissions: PermissionsSnapshot
+            let microphoneAuthorization: MicrophoneAuthorization
             let seedsHistory: Bool
             let grantsPermissionAfterOpeningSettings: Bool
             let grantsPermissionsSequentially: Bool
@@ -56,6 +57,7 @@ import ScreenlogCore
             let firstRunFrameDelayMilliseconds: UInt64?
             let seedsMultipleDisplays: Bool
             let presentsAudioTranscription: Bool
+            let audioTranscriptionPhase: AudioTranscriptionPhase?
         }
 
         /// Assistant discovery and readiness are explicit fixture inputs. The
@@ -167,6 +169,11 @@ import ScreenlogCore
                 default:
                     PermissionsSnapshot(screenRecording: true, accessibility: true)
                 }
+            let microphoneAuthorization =
+                MicrophoneAuthorization(
+                    rawValue: environment["SCREENLOG_UI_TEST_MICROPHONE_PERMISSION"]
+                        ?? "notDetermined"
+                ) ?? .notDetermined
             return Configuration(
                 root: root,
                 captureIssue: captureIssue,
@@ -179,6 +186,7 @@ import ScreenlogCore
                     ? .catalogUnavailable
                     : nil,
                 permissions: permissions,
+                microphoneAuthorization: microphoneAuthorization,
                 seedsHistory: permissions.isCaptureReady
                     || environment["SCREENLOG_UI_TEST_SEED_HISTORY_WITHOUT_PERMISSION"] == "1",
                 grantsPermissionAfterOpeningSettings:
@@ -212,7 +220,10 @@ import ScreenlogCore
                 ] == "1",
                 presentsAudioTranscription: environment[
                     "SCREENLOG_UI_TEST_AUDIO_TRANSCRIPTION"
-                ] == "active"
+                ] != nil,
+                audioTranscriptionPhase: environment[
+                    "SCREENLOG_UI_TEST_AUDIO_TRANSCRIPTION"
+                ].flatMap(AudioTranscriptionPhase.init(rawValue:))
             )
         }()
 
@@ -226,6 +237,10 @@ import ScreenlogCore
 
         static var permissionsSnapshot: PermissionsSnapshot? {
             permissionsOverride ?? configuration?.permissions
+        }
+
+        static var microphoneAuthorization: MicrophoneAuthorization {
+            configuration?.microphoneAuthorization ?? .notDetermined
         }
 
         static var shouldFailLibrarySearch: Bool {
@@ -480,6 +495,8 @@ import ScreenlogCore
         static func applyPresentationOverridesIfRequested(on model: AppModel) {
             guard let configuration else { return }
 
+            model.microphoneAuthorization = configuration.microphoneAuthorization
+
             switch configuration.appearance {
             case "light": model.appearancePreference = .light
             case "dark": model.appearancePreference = .dark
@@ -495,9 +512,12 @@ import ScreenlogCore
                 model.microphoneTranscriptionEnabled = true
                 model.isLoadingSettings = false
                 model.audioTranscriptionStatus = AudioTranscriptionStatus(
-                    phase: .active,
-                    activeSources: Set(TranscriptSource.allCases),
-                    detail: "Transcribing microphone and computer audio on this Mac."
+                    phase: configuration.audioTranscriptionPhase ?? .active,
+                    activeSources: configuration.audioTranscriptionPhase == .active
+                        ? Set(TranscriptSource.allCases) : [],
+                    detail: audioTranscriptionDetail(
+                        phase: configuration.audioTranscriptionPhase ?? .active
+                    )
                 )
             }
             model.applyAppearancePreference()
@@ -508,6 +528,31 @@ import ScreenlogCore
                     ? .accessibilityHighContrastDarkAqua
                     : .accessibilityHighContrastAqua
             )
+        }
+
+        private static func audioTranscriptionDetail(
+            phase: AudioTranscriptionPhase
+        ) -> String {
+            switch phase {
+            case .active:
+                return "Transcribing microphone and computer audio on this Mac."
+            case .recovering:
+                return "Display awake. Reconnecting audio transcription..."
+            case .failed:
+                return "Audio transcription couldn't reconnect automatically. Choose Try Again."
+            case .permissionRequired:
+                return "Allow Microphone access to transcribe your voice."
+            case .capturePaused:
+                return "The display is off. Audio transcription will resume automatically when it wakes."
+            case .preparing:
+                return "Preparing Apple's on-device speech model..."
+            case .privacyPaused:
+                return "Transcription is paused for protected activity."
+            case .unavailable:
+                return AudioTranscriptionSupport.requirementDescription
+            case .off:
+                return "Audio transcription is off."
+            }
         }
 
         static func startCaptureIfRequested(on model: AppModel) -> Bool {

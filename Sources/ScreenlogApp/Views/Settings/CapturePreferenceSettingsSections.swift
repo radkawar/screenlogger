@@ -324,7 +324,7 @@ struct AudioTranscriptionSettingsSection: View {
                     )
 
                     if model.microphoneTranscriptionEnabled,
-                        MicrophoneAuthorization.current != .authorized
+                        model.microphoneAuthorization != .authorized
                     {
                         HStack {
                             Spacer()
@@ -379,7 +379,7 @@ struct AudioTranscriptionSettingsSection: View {
     }
 
     private var microphoneSubtitle: String {
-        switch MicrophoneAuthorization.current {
+        switch model.microphoneAuthorization {
         case .authorized: return "Your voice is labeled You."
         case .notDetermined: return "Your voice is labeled You. Permission is requested only when you enable this."
         case .denied, .restricted: return "Microphone access is unavailable. Computer Audio can still be transcribed."
@@ -387,7 +387,7 @@ struct AudioTranscriptionSettingsSection: View {
     }
 
     private var microphoneButtonTitle: String {
-        MicrophoneAuthorization.current == .notDetermined
+        model.microphoneAuthorization == .notDetermined
             ? "Allow Microphone"
             : "Open Microphone Settings"
     }
@@ -429,13 +429,31 @@ struct AudioTranscriptionSettingsSection: View {
                     ProgressView(value: progress)
                         .progressViewStyle(.linear)
                         .padding(.top, 3)
+                } else if model.audioTranscriptionStatus.phase == .recovering {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(.top, 3)
                 }
             }
             Spacer(minLength: 8)
+            if let statusActionTitle {
+                Button(statusActionTitle) {
+                    model.retryAudioTranscriptionFromUserAction()
+                }
+                .controlSize(.small)
+                .accessibilityIdentifier("capture.audio.status.action")
+            }
         }
         .padding(14)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("capture.audio.status")
+    }
+
+    private var statusActionTitle: String? {
+        AudioTranscriptionPermissionPresentation.statusActionTitle(
+            phase: model.audioTranscriptionStatus.phase,
+            microphoneAuthorization: model.microphoneAuthorization
+        )
     }
 
     private var statusTitle: String {
@@ -444,6 +462,7 @@ struct AudioTranscriptionSettingsSection: View {
         case .off: return "Off"
         case .permissionRequired: return "Microphone Permission Needed"
         case .preparing: return "Preparing On-Device Model"
+        case .recovering: return "Reconnecting"
         case .active: return "Transcribing"
         case .privacyPaused: return "Paused for Privacy"
         case .capturePaused: return "Waiting for Capture"
@@ -455,6 +474,7 @@ struct AudioTranscriptionSettingsSection: View {
         switch model.audioTranscriptionStatus.phase {
         case .active: return "waveform.circle.fill"
         case .preparing: return "arrow.down.circle"
+        case .recovering: return "arrow.triangle.2.circlepath"
         case .privacyPaused: return "lock.circle"
         case .failed, .permissionRequired: return "exclamationmark.circle"
         case .unavailable, .off, .capturePaused: return "waveform.circle"
@@ -464,7 +484,7 @@ struct AudioTranscriptionSettingsSection: View {
     private var statusColor: Color {
         switch model.audioTranscriptionStatus.phase {
         case .active: return .green
-        case .preparing: return .accentColor
+        case .preparing, .recovering: return .accentColor
         case .privacyPaused: return .orange
         case .failed, .permissionRequired: return .red
         case .unavailable, .off, .capturePaused: return .secondary

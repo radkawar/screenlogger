@@ -185,6 +185,11 @@ private final class AudioStreamOutput: NSObject, SCStreamOutput, @unchecked Send
         didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
         of outputType: SCStreamOutputType
     ) {
+        // A display-backed SCStream always has a visual source. Registering a
+        // deliberately sparse screen sink prevents ScreenCaptureKit from
+        // logging and dropping unclaimed screen frames while this output keeps
+        // doing audio-only work.
+        guard outputType != .screen else { return }
         guard let authorizationRevision = authorization.revisionIfOpen() else { return }
 
         let source: TranscriptSource
@@ -327,6 +332,30 @@ private final class AudioStreamOutput: NSObject, SCStreamOutput, @unchecked Send
     }
 }
 
+@available(macOS 15.0, *)
+func makeAudioTranscriptionStreamConfiguration(
+    sources: Set<TranscriptSource>
+) -> SCStreamConfiguration {
+    let configuration = SCStreamConfiguration()
+    configuration.capturesAudio = sources.contains(.computer)
+    configuration.captureMicrophone = sources.contains(.microphone)
+    configuration.excludesCurrentProcessAudio = true
+    // SpeechTranscriber currently selects 16 kHz mono on Apple silicon.
+    // Asking ScreenCaptureKit for that rate avoids a 48-to-16 kHz resample on
+    // every continuous audio packet.
+    configuration.sampleRate = 16_000
+    configuration.channelCount = 1
+    // ScreenCaptureKit still requires a display-backed visual stream for
+    // system audio. Keep that stream effectively free: two pixels, one queued
+    // frame, and one callback per minute. Audio callbacks remain continuous.
+    configuration.width = 2
+    configuration.height = 2
+    configuration.queueDepth = 1
+    configuration.minimumFrameInterval = CMTime(seconds: 60, preferredTimescale: 600)
+    configuration.showsCursor = false
+    return configuration
+}
+
 @available(macOS 12.3, *)
 private final class AudioStreamDelegate: NSObject, SCStreamDelegate, @unchecked Sendable {
     private let stopped: @Sendable (Error) -> Void
@@ -347,6 +376,14 @@ private struct AudioPrivacyContext: Equatable {
     var pauseDetail: String?
 }
 
+private struct AudioTranscriptionRequest {
+    let sources: Set<TranscriptSource>
+    let store: Store
+    let locale: Locale
+    let exclusions: ExclusionStore
+    let pauseWhenBrowserAddressUnavailable: Bool
+}
+
 /// Owns the opt-in SCStream and its two independent on-device analyzers. The
 /// coordinator never creates an audio file and never invokes a legacy speech
 /// recognizer that could fall back to a server.
@@ -359,9 +396,15 @@ final class AudioTranscriptionCoordinator {
     private var streamDelegate: AnyObject?
     private var pipeline: AnyObject?
     private var privacyTask: Task<Void, Never>?
+    private var recoveryTask: Task<Void, Never>?
     private var workspaceActivationObserver: NSObjectProtocol?
+    private var workspaceLifecycleObservers: [NSObjectProtocol] = []
     private var generation = UUID()
     private var privacyEvaluationRevision: UInt = 0
+    private var recoveryRevision: UInt = 0
+    private var recoverySchedule = AudioStreamRecoverySchedule()
+    private var desiredRequest: AudioTranscriptionRequest?
+    private var displayIsSleeping = false
     private var lastPrivacyContext: AudioPrivacyContext?
     private var applicationFilterIsReady = true
     private var filteredBundleIDs: Set<String> = []
@@ -376,27 +419,99 @@ final class AudioTranscriptionCoordinator {
         }
     }
 
+    init() {
+        let center = NSWorkspace.shared.notificationCenter
+        workspaceLifecycleObservers = [
+            center.addObserver(
+                forName: NSWorkspace.screensDidSleepNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    await self?.handleDisplaySleep()
+                }
+            },
+            center.addObserver(
+                forName: NSWorkspace.willSleepNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    await self?.handleDisplaySleep()
+                }
+            },
+            center.addObserver(
+                forName: NSWorkspace.screensDidWakeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.handleDisplayWake()
+                }
+            },
+            center.addObserver(
+                forName: NSWorkspace.didWakeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.handleDisplayWake()
+                }
+            },
+        ]
+    }
+
     func setCaptureAvailable(_ available: Bool) async {
         guard captureAvailable != available else { return }
         captureAvailable = available
-        privacyEvaluationRevision &+= 1
         if !available {
-            setStreamAcceptsSamples(false)
-        }
-        if !available, #available(macOS 26.0, *),
-            let activePipeline = pipeline as? AudioTranscriptionPipeline
-        {
-            await activePipeline.setAcceptsAudio(
-                false,
-                closeCurrentSegments: true
+            cancelRecovery(resetSchedule: true, clearDesiredRequest: false)
+            await stopActiveResources(
+                finalStatus: AudioTranscriptionStatus(
+                    phase: .capturePaused,
+                    detail: "Audio transcription is paused with capture."
+                )
             )
+            return
         }
-        if !available, stream != nil {
-            status = AudioTranscriptionStatus(
-                phase: .capturePaused,
-                detail: "Audio transcription is paused with capture."
-            )
+        guard desiredRequest != nil else { return }
+        recoverySchedule.reset()
+        scheduleRecovery(detail: "Resuming audio transcription...")
+    }
+
+    func retry() {
+        guard desiredRequest != nil, captureAvailable else { return }
+        recoverySchedule.reset()
+        scheduleRecovery(
+            detail: "Reconnecting audio transcription...",
+            usesInitialDelay: false
+        )
+    }
+
+    private func cancelRecovery(
+        resetSchedule: Bool,
+        clearDesiredRequest: Bool
+    ) {
+        recoveryRevision &+= 1
+        recoveryTask?.cancel()
+        recoveryTask = nil
+        if resetSchedule { recoverySchedule.reset() }
+        if clearDesiredRequest { desiredRequest = nil }
+    }
+
+    private func invalidateActiveResourcesImmediately(
+        finalStatus: AudioTranscriptionStatus?
+    ) {
+        generation = UUID()
+        privacyEvaluationRevision &+= 1
+        setStreamAcceptsSamples(false)
+        privacyTask?.cancel()
+        privacyTask = nil
+        if let workspaceActivationObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(workspaceActivationObserver)
+            self.workspaceActivationObserver = nil
         }
+        if let finalStatus { status = finalStatus }
     }
 
     func apply(
@@ -475,6 +590,19 @@ final class AudioTranscriptionCoordinator {
                     }
                 }
                 guard !Task.isCancelled, generation == requestedGeneration else { return }
+                desiredRequest = AudioTranscriptionRequest(
+                    sources: availableSources,
+                    store: store,
+                    locale: locale,
+                    exclusions: exclusions,
+                    pauseWhenBrowserAddressUnavailable: pauseWhenBrowserAddressUnavailable
+                )
+                if displayIsSleeping {
+                    await stopActiveResources(
+                        finalStatus: displaySleepStatus
+                    )
+                    return
+                }
                 try await startStream(
                     sources: availableSources,
                     store: store,
@@ -489,43 +617,172 @@ final class AudioTranscriptionCoordinator {
                     pauseWhenBrowserAddressUnavailable: pauseWhenBrowserAddressUnavailable,
                     requestedGeneration: requestedGeneration
                 )
+                recoverySchedule.reset()
             }
         } catch is CancellationError {
             return
         } catch {
             guard generation == requestedGeneration else { return }
-            audioLog.error("audio transcription start failed: \(error.localizedDescription, privacy: .public)")
-            await stop(
-                finalStatus: AudioTranscriptionStatus(
-                    phase: .failed,
-                    detail: error.localizedDescription
-                )
+            await handleStartFailure(error)
+        }
+    }
+
+    private var displaySleepStatus: AudioTranscriptionStatus {
+        AudioTranscriptionStatus(
+            phase: .capturePaused,
+            detail: "The display is off. Audio transcription will resume automatically when it wakes."
+        )
+    }
+
+    private func handleDisplaySleep() async {
+        guard !displayIsSleeping else { return }
+        displayIsSleeping = true
+        cancelRecovery(resetSchedule: true, clearDesiredRequest: false)
+        guard desiredRequest != nil else { return }
+        audioLog.info("audio transcription paused because the display slept")
+        await stopActiveResources(finalStatus: displaySleepStatus)
+    }
+
+    private func handleDisplayWake() {
+        guard displayIsSleeping else { return }
+        displayIsSleeping = false
+        recoverySchedule.reset()
+        guard desiredRequest != nil, captureAvailable else { return }
+        audioLog.info("display woke; scheduling audio transcription recovery")
+        scheduleRecovery(detail: "Display awake. Reconnecting audio transcription...")
+    }
+
+    private func handleStartFailure(_ error: Error) async {
+        let error = error as NSError
+        audioLog.error(
+            "audio transcription stream failed domain=\(error.domain, privacy: .public) code=\(error.code, privacy: .public): \(error.localizedDescription, privacy: .public)"
+        )
+        if AudioStreamFailureDisposition.classify(error) == .recoverable,
+            desiredRequest != nil
+        {
+            await stopActiveResources(finalStatus: nil)
+            if displayIsSleeping {
+                status = displaySleepStatus
+            } else {
+                scheduleRecovery(detail: "Audio was interrupted. Reconnecting...")
+            }
+            return
+        }
+        await stop(
+            finalStatus: AudioTranscriptionStatus(
+                phase: .failed,
+                detail: "Audio transcription stopped. Try again, or review microphone access."
             )
+        )
+    }
+
+    private func scheduleRecovery(
+        detail: String,
+        usesInitialDelay: Bool = true
+    ) {
+        guard recoveryTask == nil,
+            desiredRequest != nil,
+            captureAvailable
+        else { return }
+        guard !displayIsSleeping else {
+            status = displaySleepStatus
+            return
+        }
+
+        let delay: TimeInterval
+        if usesInitialDelay {
+            guard let nextDelay = recoverySchedule.nextDelay() else {
+                status = AudioTranscriptionStatus(
+                    phase: .failed,
+                    detail: "Audio transcription couldn't reconnect automatically. Choose Try Again."
+                )
+                return
+            }
+            delay = nextDelay
+        } else {
+            delay = 0
+        }
+
+        recoveryRevision &+= 1
+        let requestedRevision = recoveryRevision
+        status = AudioTranscriptionStatus(
+            phase: .recovering,
+            detail: detail
+        )
+        recoveryTask = Task { @MainActor [weak self] in
+            if delay > 0 {
+                try? await Task.sleep(for: .seconds(delay))
+            }
+            guard let self,
+                !Task.isCancelled,
+                self.recoveryRevision == requestedRevision
+            else { return }
+            self.recoveryTask = nil
+            await self.attemptRecovery()
+        }
+    }
+
+    private func attemptRecovery() async {
+        guard let request = desiredRequest,
+            captureAvailable,
+            !displayIsSleeping
+        else { return }
+        guard #available(macOS 26.0, *) else { return }
+
+        let requestedGeneration = UUID()
+        generation = requestedGeneration
+        status = AudioTranscriptionStatus(
+            phase: .recovering,
+            detail: "Reconnecting audio transcription..."
+        )
+        do {
+            try await startStream(
+                sources: request.sources,
+                store: request.store,
+                locale: request.locale,
+                exclusions: request.exclusions,
+                requestedGeneration: requestedGeneration
+            )
+            guard !Task.isCancelled, generation == requestedGeneration else { return }
+            await startPrivacyMonitoring(
+                sources: request.sources,
+                exclusions: request.exclusions,
+                pauseWhenBrowserAddressUnavailable: request.pauseWhenBrowserAddressUnavailable,
+                requestedGeneration: requestedGeneration
+            )
+            guard generation == requestedGeneration else { return }
+            recoverySchedule.reset()
+            audioLog.info("audio transcription recovered")
+        } catch is CancellationError {
+            return
+        } catch {
+            guard generation == requestedGeneration else { return }
+            await handleStartFailure(error)
         }
     }
 
     func stop(finalStatus: AudioTranscriptionStatus = .off) async {
-        await stop(finalStatus: Optional(finalStatus))
+        cancelRecovery(resetSchedule: true, clearDesiredRequest: true)
+        await stopActiveResources(finalStatus: finalStatus)
     }
 
     /// Close the in-memory sample gate synchronously. Ordinary capture stop is
     /// intentionally synchronous at the UI boundary, while SCStream teardown
     /// still completes asynchronously afterward.
     func deactivateImmediately(finalStatus: AudioTranscriptionStatus? = .off) {
-        generation = UUID()
-        privacyEvaluationRevision &+= 1
-        setStreamAcceptsSamples(false)
-        privacyTask?.cancel()
-        privacyTask = nil
-        if let workspaceActivationObserver {
-            NSWorkspace.shared.notificationCenter.removeObserver(workspaceActivationObserver)
-            self.workspaceActivationObserver = nil
-        }
-        if let finalStatus { status = finalStatus }
+        cancelRecovery(resetSchedule: true, clearDesiredRequest: true)
+        invalidateActiveResourcesImmediately(finalStatus: finalStatus)
     }
 
     private func stop(finalStatus: AudioTranscriptionStatus?) async {
-        deactivateImmediately(finalStatus: finalStatus)
+        cancelRecovery(resetSchedule: true, clearDesiredRequest: true)
+        await stopActiveResources(finalStatus: finalStatus)
+    }
+
+    private func stopActiveResources(
+        finalStatus: AudioTranscriptionStatus?
+    ) async {
+        invalidateActiveResourcesImmediately(finalStatus: finalStatus)
         lastPrivacyContext = nil
         applicationFilterIsReady = true
         filteredBundleIDs = []
@@ -578,18 +835,7 @@ final class AudioTranscriptionCoordinator {
             excludingApplications: excludedApplications,
             exceptingWindows: []
         )
-        let configuration = SCStreamConfiguration()
-        configuration.capturesAudio = sources.contains(.computer)
-        configuration.captureMicrophone = sources.contains(.microphone)
-        configuration.excludesCurrentProcessAudio = true
-        // SpeechTranscriber currently selects 16 kHz mono on Apple silicon.
-        // Asking ScreenCaptureKit for that rate avoids a 48-to-16 kHz
-        // resample on every continuous audio packet.
-        configuration.sampleRate = 16_000
-        configuration.channelCount = 1
-        configuration.width = 2
-        configuration.height = 2
-        configuration.showsCursor = false
+        let configuration = makeAudioTranscriptionStreamConfiguration(sources: sources)
 
         let authorization = AudioSampleAuthorization()
         let activePipeline = AudioTranscriptionPipeline(
@@ -621,19 +867,21 @@ final class AudioTranscriptionCoordinator {
                 guard let self,
                     self.generation == requestedGeneration
                 else { return }
-                audioLog.error("audio stream stopped: \(error.localizedDescription, privacy: .public)")
-                await self.stop(
-                    finalStatus: AudioTranscriptionStatus(
-                        phase: .failed,
-                        detail: "Audio capture stopped: \(error.localizedDescription)"
-                    )
-                )
+                await self.handleStartFailure(error)
             }
         }
         let stream = SCStream(
             filter: filter,
             configuration: configuration,
             delegate: delegate
+        )
+        try stream.addStreamOutput(
+            output,
+            type: .screen,
+            sampleHandlerQueue: DispatchQueue(
+                label: "dev.screenlog.audio.screen-sink",
+                qos: .background
+            )
         )
         if sources.contains(.computer) {
             try stream.addStreamOutput(
@@ -655,7 +903,13 @@ final class AudioTranscriptionCoordinator {
                 )
             )
         }
-        try await stream.startCapture()
+        do {
+            try await stream.startCapture()
+        } catch {
+            output.setAcceptsSamples(false)
+            await activePipeline.finish()
+            throw error
+        }
         guard !Task.isCancelled, generation == requestedGeneration else {
             output.setAcceptsSamples(false)
             try? await stream.stopCapture()

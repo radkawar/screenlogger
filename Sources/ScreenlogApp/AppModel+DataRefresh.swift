@@ -7,6 +7,7 @@ extension AppModel {
         #if DEBUG
             if let fixturePermissions = AppUITestFixture.permissionsSnapshot {
                 permissions = fixturePermissions
+                microphoneAuthorization = AppUITestFixture.microphoneAuthorization
                 synchronizePermissionJourney(with: fixturePermissions)
                 updateStatusMessage()
                 return
@@ -19,6 +20,7 @@ extension AppModel {
             // Prefer non-blocking preflight for UI path.
             permissions = PermissionsSnapshot.currentFast()
         }
+        microphoneAuthorization = MicrophoneAuthorization.current
         synchronizePermissionJourney(with: permissions)
         updateStatusMessage()
     }

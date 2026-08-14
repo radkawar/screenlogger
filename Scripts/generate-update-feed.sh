@@ -6,8 +6,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ARCHIVE=""
 OUTPUT=""
 RELEASE_TAG=""
-SPARKLE_VERSION="2.9.2"
-SPARKLE_ARCHIVE_SHA256="b83e37436774556ed055e0244b297ef2c790e0737393bf65bf495fcbba6eed65"
+SPARKLE_VERSION="2.9.5"
+SPARKLE_ARCHIVE_SHA256="34b9b2071f3de0012eca3faa3a9290bb94e62131e9a74f6dc91514a000097a6c"
 SPARKLE_ARCHIVE_URL="https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VERSION/Sparkle-for-Swift-Package-Manager.zip"
 
 usage() {

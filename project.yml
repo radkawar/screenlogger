@@ -35,7 +35,7 @@ settings:
 packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
-    exactVersion: 2.9.2
+    exactVersion: 2.9.5
 # Public Apple system frameworks required by Screenlogger's local capture,
 # recognition, storage, and interface stack.
 #
@@ -264,6 +264,7 @@ targets:
       # presentation sources can be tested without launching Screenlogger or
       # running any application lifecycle/bootstrap behavior.
       - path: Sources/ScreenlogApp/CaptureStatusPresentation.swift
+      - path: Sources/ScreenlogApp/AudioTranscriptionPermissionPresentation.swift
       - path: Sources/ScreenlogApp/AppInstallLocation.swift
       - path: Sources/ScreenlogApp/CaptureOperationModels.swift
       - path: Sources/ScreenlogApp/AssistantOperationalReadinessPresentation.swift

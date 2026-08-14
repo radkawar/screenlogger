@@ -482,6 +482,12 @@ final class CrossWindowNavigationUITests: XCTestCase {
         let app = try launch(route: "", firstRunFrameDelayMilliseconds: 1_500)
         assertWindow("Permissions & Privacy", in: app)
 
+        assertElement("setup.audio", in: app)
+        XCTAssertEqual(
+            assertElement("setup.audio.enabled", in: app).value as? String,
+            "Off",
+            "Optional audio must remain opt-in after required permissions are complete."
+        )
         assertElement("setup.start-capture", in: app).click()
         assertElement("setup.first-value.progress", in: app)
         XCTAssertFalse(

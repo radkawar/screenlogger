@@ -248,6 +248,18 @@ final class VisualAuditUITests: XCTestCase {
         capture(setup, named: "ui-audit-setup-screen-recording-required-minimum-dark")
     }
 
+    func testVisualAuditSetupReadyWithOptionalAudio() throws {
+        let app = try launch(
+            route: "",
+            snapshotSurface: .setup
+        )
+        let setup = assertWindow("Permissions & Privacy", in: app)
+        assertElement("setup.audio", in: app)
+        assertElement("setup.audio.enabled", in: app)
+        assertElement("setup.start-capture", in: app)
+        capture(setup, named: "ui-audit-setup-ready-optional-audio-default-light")
+    }
+
     // MARK: - Status menu
 
     func testVisualAuditStatusMenuDefaultLight() throws {
@@ -377,7 +389,7 @@ final class VisualAuditUITests: XCTestCase {
             route: "--open-library",
             snapshotSurface: .settings,
             settingsDestination: "capture",
-            audioTranscription: true
+            audioTranscription: "active"
         )
         let settings = assertWindow("Settings", in: app)
         let search = app.searchFields["Search Settings"]
@@ -397,6 +409,25 @@ final class VisualAuditUITests: XCTestCase {
         let timeline = assertWindow("Timeline", in: app)
         assertElement("timeline.transcript", in: app)
         capture(timeline, named: "ui-audit-timeline-audio-captions-light")
+    }
+
+    func testVisualAuditAudioTranscriptionNeedsAttention() throws {
+        let app = try launch(
+            route: "--open-library",
+            snapshotSurface: .settings,
+            settingsDestination: "capture",
+            audioTranscription: "failed"
+        )
+        let settings = assertWindow("Settings", in: app)
+        let search = app.searchFields["Search Settings"]
+        XCTAssertTrue(search.waitForExistence(timeout: Self.readinessTimeout))
+        search.click()
+        search.typeText("audio transcription")
+        assertElement("settings.search-result.capture-audio", in: app).click()
+        assertElement("capture.audio-transcription", in: app)
+        assertElement("capture.audio.status", in: app)
+        assertElement("capture.audio.status.action", in: app)
+        capture(settings, named: "ui-audit-settings-audio-needs-attention-light")
     }
 
     /// A deliberately short, deterministic product tour intended for screen
@@ -590,7 +621,7 @@ final class VisualAuditUITests: XCTestCase {
         assistantDetected: [String] = [],
         assistantReady: [String] = [],
         multipleDisplays: Bool = false,
-        audioTranscription: Bool = false
+        audioTranscription: String? = nil
     ) throws -> XCUIApplication {
         let directory = try XCTUnwrap(dataDirectory)
         let token = try XCTUnwrap(UUID(uuidString: directory.lastPathComponent)).uuidString
@@ -629,8 +660,9 @@ final class VisualAuditUITests: XCTestCase {
         if multipleDisplays {
             application.launchEnvironment["SCREENLOG_UI_TEST_MULTIPLE_DISPLAYS"] = "1"
         }
-        if audioTranscription {
-            application.launchEnvironment["SCREENLOG_UI_TEST_AUDIO_TRANSCRIPTION"] = "active"
+        if let audioTranscription {
+            application.launchEnvironment["SCREENLOG_UI_TEST_AUDIO_TRANSCRIPTION"] =
+                audioTranscription
         }
 
         if captureIssue {

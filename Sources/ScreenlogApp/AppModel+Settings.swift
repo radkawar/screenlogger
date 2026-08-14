@@ -70,6 +70,7 @@ extension AppModel {
         audioTranscriptionEnabled = audio.isEnabled
         computerAudioTranscriptionEnabled = audio.computerAudioEnabled
         microphoneTranscriptionEnabled = audio.microphoneEnabled
+        microphoneAuthorization = MicrophoneAuthorization.current
         if let raw = d.string(forKey: ProductPreferenceKey.accentColor),
             let accent = AccentColorPreference(rawValue: raw)
         {
@@ -189,30 +190,40 @@ extension AppModel {
     /// never invokes the microphone prompt.
     func setAudioTranscriptionEnabledFromUserAction(_ enabled: Bool) {
         guard enabled, microphoneTranscriptionEnabled,
-            MicrophoneAuthorization.current == .notDetermined
+            microphoneAuthorization == .notDetermined
         else {
             audioTranscriptionEnabled = enabled
             return
         }
         Task { @MainActor [weak self] in
             guard let self else { return }
-            _ = await MicrophoneAuthorization.request()
+            self.microphoneAuthorization = await MicrophoneAuthorization.request()
             self.audioTranscriptionEnabled = true
         }
+    }
+
+    /// First-run setup introduces audio without surprising people with a
+    /// microphone prompt behind the master switch. Computer Audio starts
+    /// immediately; selecting Microphone is the separate consent action.
+    func setFirstRunAudioTranscriptionEnabledFromUserAction(_ enabled: Bool) {
+        if enabled, microphoneAuthorization != .authorized {
+            microphoneTranscriptionEnabled = false
+        }
+        audioTranscriptionEnabled = enabled
     }
 
     /// A microphone permission prompt is also appropriate when the user adds
     /// the microphone after starting in computer-audio-only mode.
     func setMicrophoneTranscriptionEnabledFromUserAction(_ enabled: Bool) {
         guard enabled, audioTranscriptionEnabled,
-            MicrophoneAuthorization.current == .notDetermined
+            microphoneAuthorization == .notDetermined
         else {
             microphoneTranscriptionEnabled = enabled
             return
         }
         Task { @MainActor [weak self] in
             guard let self else { return }
-            _ = await MicrophoneAuthorization.request()
+            self.microphoneAuthorization = await MicrophoneAuthorization.request()
             self.microphoneTranscriptionEnabled = true
         }
     }
@@ -220,9 +231,9 @@ extension AppModel {
     func retryMicrophoneAuthorizationFromUserAction() {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            if MicrophoneAuthorization.current == .notDetermined {
-                _ = await MicrophoneAuthorization.request()
-            } else if MicrophoneAuthorization.current != .authorized {
+            if self.microphoneAuthorization == .notDetermined {
+                self.microphoneAuthorization = await MicrophoneAuthorization.request()
+            } else if self.microphoneAuthorization != .authorized {
                 if let url = URL(
                     string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Microphone"
                 ) {
@@ -231,6 +242,30 @@ extension AppModel {
             }
             self.applyAudioTranscriptionSettingsToEngine()
         }
+    }
+
+    /// Reconcile authorization granted outside Screenlogger, such as after the
+    /// app opens System Settings. Updating the label alone would leave a
+    /// microphone-only session stuck in its old permission-required state.
+    func reconcileMicrophoneAuthorization(_ authorization: MicrophoneAuthorization) {
+        let shouldReconcile = AudioTranscriptionPermissionPresentation.shouldReconcile(
+            previous: microphoneAuthorization,
+            current: authorization,
+            audioEnabled: audioTranscriptionEnabled,
+            microphoneEnabled: microphoneTranscriptionEnabled
+        )
+        guard microphoneAuthorization != authorization else { return }
+        microphoneAuthorization = authorization
+        guard shouldReconcile else { return }
+        applyAudioTranscriptionSettingsToEngine()
+    }
+
+    func retryAudioTranscriptionFromUserAction() {
+        if audioTranscriptionStatus.phase == .permissionRequired {
+            retryMicrophoneAuthorizationFromUserAction()
+            return
+        }
+        engine.retryAudioTranscription()
     }
 
     /// Pure map of current UI storage mode to engine maintenance plan (unit-tested).

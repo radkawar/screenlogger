@@ -46,7 +46,7 @@ SOFTWARE.
 
 ## Sparkle
 
-Screenlogger uses Sparkle 2.9.2 for software updates.
+Screenlogger uses Sparkle 2.9.5 for software updates.
 
 Source: https://github.com/sparkle-project/Sparkle
 

@@ -315,6 +315,11 @@ check_plist_value \
   "CFBundleIdentifier" \
   "org.sparkle-project.Sparkle" \
   "Sparkle bundle identity"
+check_plist_value \
+  "$SPARKLE_INFO" \
+  "CFBundleShortVersionString" \
+  "2.9.5" \
+  "Sparkle version with macOS 26 update-cache fix"
 
 APP_VERSION="$(plist_value "$APP_INFO" "CFBundleShortVersionString" || true)"
 APP_BUILD="$(plist_value "$APP_INFO" "CFBundleVersion" || true)"

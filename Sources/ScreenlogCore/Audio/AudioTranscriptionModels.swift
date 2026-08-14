@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+@preconcurrency import ScreenCaptureKit
 
 /// Fixed-capacity FIFO that drops the oldest element when a real-time
 /// producer outruns its consumer. Storage is reused and dequeue is O(1).
@@ -127,11 +128,72 @@ struct AudioTranscriptionPreparationGate<Element> {
     }
 }
 
+/// Classifies ScreenCaptureKit failures without matching localized text.
+/// Display and WindowServer interruptions are safe to retry; consent and
+/// configuration failures require an explicit person-driven action instead.
+enum AudioStreamFailureDisposition: Equatable {
+    case recoverable
+    case requiresAttention
+
+    static func classify(_ error: Error) -> AudioStreamFailureDisposition {
+        if let captureError = error as? CaptureError {
+            switch captureError {
+            case .noDisplay:
+                return .recoverable
+            case .encodeFailed, .notAuthorized, .diskFull, .excluded:
+                return .requiresAttention
+            }
+        }
+        let error = error as NSError
+        guard error.domain == SCStreamError.errorDomain,
+            let code = SCStreamError.Code(rawValue: error.code)
+        else { return .requiresAttention }
+
+        switch code {
+        case .systemStoppedStream,
+            .noCaptureSource,
+            .noDisplayList,
+            .noWindowList,
+            .failedApplicationConnectionInvalid,
+            .failedApplicationConnectionInterrupted,
+            .failedNoMatchingApplicationContext,
+            .failedToStart,
+            .failedToStartAudioCapture,
+            .failedToStopAudioCapture,
+            .failedToStartMicrophoneCapture,
+            .internalError:
+            return .recoverable
+        default:
+            return .requiresAttention
+        }
+    }
+}
+
+/// A finite retry window prevents a permanent framework failure from turning
+/// into an expensive model/stream restart loop. A wake event or explicit Retry
+/// resets the schedule and starts a fresh recovery window.
+struct AudioStreamRecoverySchedule: Equatable {
+    static let delays: [TimeInterval] = [0.75, 1.5, 3, 6, 12]
+
+    private(set) var attempt = 0
+
+    mutating func nextDelay() -> TimeInterval? {
+        guard attempt < Self.delays.count else { return nil }
+        defer { attempt += 1 }
+        return Self.delays[attempt]
+    }
+
+    mutating func reset() {
+        attempt = 0
+    }
+}
+
 public enum AudioTranscriptionPhase: String, Sendable, Equatable, Codable {
     case unavailable
     case off
     case permissionRequired
     case preparing
+    case recovering
     case active
     case privacyPaused
     case capturePaused

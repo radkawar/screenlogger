@@ -71,6 +71,27 @@ struct PermissionsHelperView: View {
                             captureStartFailed: model.captureIssue == .startFailed
                         )
                     }
+                    if showsOptionalAudioSetup {
+                        FirstRunAudioSetupCard(
+                            isEnabled: Binding(
+                                get: { model.audioTranscriptionEnabled },
+                                set: {
+                                    model.setFirstRunAudioTranscriptionEnabledFromUserAction($0)
+                                }
+                            ),
+                            computerAudioEnabled: $model.computerAudioTranscriptionEnabled,
+                            microphoneEnabled: Binding(
+                                get: { model.microphoneTranscriptionEnabled },
+                                set: {
+                                    model.setMicrophoneTranscriptionEnabledFromUserAction($0)
+                                }
+                            ),
+                            microphoneAuthorization: model.microphoneAuthorization,
+                            onMicrophonePermission: {
+                                model.retryMicrophoneAuthorizationFromUserAction()
+                            }
+                        )
+                    }
                     if let openedPermission,
                         !model.permissions.screenRecording || !model.permissions.accessibility
                     {
@@ -87,7 +108,12 @@ struct PermissionsHelperView: View {
                         screenRecordingAllowed: model.permissions.screenRecording,
                         accessibilityAllowed: model.permissions.accessibility
                     )
-                    PermissionsPrivacySummary()
+                    PermissionsPrivacySummary(
+                        audioTranscriptionEnabled: model.audioTranscriptionEnabled,
+                        microphoneEnabled: model.audioTranscriptionEnabled
+                            && model.microphoneTranscriptionEnabled
+                            && model.microphoneAuthorization == .authorized
+                    )
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(24)
@@ -182,6 +208,13 @@ struct PermissionsHelperView: View {
         !model.permissions.isCaptureReady || model.captureIssue == .startFailed
     }
 
+    private var showsOptionalAudioSetup: Bool {
+        origin == .directFirstRun
+            && model.permissions.isCaptureReady
+            && !model.isRecording
+            && AudioTranscriptionSupport.isAvailable
+    }
+
     private var nextRequiredPermission: ScreenlogPermission? {
         if let preferredPermission,
             !model.permissions.isGranted(preferredPermission)
@@ -197,6 +230,9 @@ struct PermissionsHelperView: View {
         }
         if let nextRequiredPermission {
             return "Allow \(nextRequiredPermission.title), then choose whether capture starts."
+        }
+        if showsOptionalAudioSetup {
+            return "Capture permissions are ready. Audio transcription is optional before you start."
         }
         if isFirstRunWaiting {
             return "Capture is on. Screenlogger is saving your first searchable moment."

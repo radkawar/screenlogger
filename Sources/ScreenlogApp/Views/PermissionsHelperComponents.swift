@@ -147,6 +147,127 @@ struct PermissionsSetupProgress: View {
     }
 }
 
+struct FirstRunAudioSetupCard: View {
+    @Binding var isEnabled: Bool
+    @Binding var computerAudioEnabled: Bool
+    @Binding var microphoneEnabled: Bool
+    let microphoneAuthorization: MicrophoneAuthorization
+    let onMicrophonePermission: () -> Void
+
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center, spacing: 12) {
+                    Image(systemName: "waveform.badge.mic")
+                        .font(.title3)
+                        .foregroundStyle(.tint)
+                        .frame(width: 24)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Search What You Hear")
+                            .font(.callout.weight(.semibold))
+                        Text("Optional on-device transcripts for calls, meetings, and presentations.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                    Toggle("Audio Transcription", isOn: $isEnabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .accessibilityValue(SettingsAccessibilityValue.onOff(isEnabled))
+                        .accessibilityIdentifier("setup.audio.enabled")
+                }
+
+                if isEnabled {
+                    Divider()
+                    audioSourceRow(
+                        title: "Computer Audio",
+                        detail: "Transcribe words played by apps.",
+                        symbol: "speaker.wave.2",
+                        isOn: $computerAudioEnabled,
+                        identifier: "setup.audio.computer"
+                    )
+                    audioSourceRow(
+                        title: "Microphone",
+                        detail: microphoneDetail,
+                        symbol: "mic",
+                        isOn: $microphoneEnabled,
+                        identifier: "setup.audio.microphone"
+                    )
+
+                    if microphoneEnabled, microphoneAuthorization != .authorized {
+                        Button(microphoneActionTitle, action: onMicrophonePermission)
+                            .controlSize(.small)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            .accessibilityIdentifier("setup.audio.microphone.permission")
+                    }
+                }
+
+                Label(
+                    "Apple's speech model runs on this Mac. Only finalized text is saved; raw audio is discarded.",
+                    systemImage: "lock.shield"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.vertical, 2)
+        } label: {
+            Text("Audio Transcription (Optional)")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("setup.audio")
+    }
+
+    private var microphoneDetail: String {
+        switch microphoneAuthorization {
+        case .authorized:
+            return "Transcribe your voice and label it You."
+        case .notDetermined:
+            return "Transcribe your voice. macOS asks only if you select this option."
+        case .denied, .restricted:
+            return "Microphone access is unavailable; Computer Audio still works."
+        }
+    }
+
+    private var microphoneActionTitle: String {
+        microphoneAuthorization == .notDetermined
+            ? "Allow Microphone" : "Open Microphone Settings"
+    }
+
+    private func audioSourceRow(
+        title: String,
+        detail: String,
+        symbol: String,
+        isOn: Binding<Bool>,
+        identifier: String
+    ) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: symbol)
+                .foregroundStyle(.secondary)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.callout)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Toggle(title, isOn: isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .accessibilityValue(SettingsAccessibilityValue.onOff(isOn.wrappedValue))
+                .accessibilityIdentifier(identifier)
+        }
+    }
+}
+
 struct PermissionsPrivacySummary: View {
     private struct Fact {
         let title: String
@@ -154,20 +275,35 @@ struct PermissionsPrivacySummary: View {
         let identifier: String
     }
 
-    private let facts = [
-        Fact(title: "Saved on this Mac", symbol: "internaldrive", identifier: "setup.privacy.local"),
-        Fact(
-            title: "No camera or microphone",
-            symbol: "mic.slash",
-            identifier: "setup.privacy.no-sensors"
-        ),
-        Fact(
-            title: "Pause or turn off anytime",
-            symbol: "pause.circle",
-            identifier: "setup.privacy.control"
-        ),
-    ]
+    let audioTranscriptionEnabled: Bool
+    let microphoneEnabled: Bool
     @State private var showingDetails = false
+
+    private var facts: [Fact] {
+        [
+            Fact(
+                title: "Saved on this Mac",
+                symbol: "internaldrive",
+                identifier: "setup.privacy.local"
+            ),
+            audioTranscriptionEnabled
+                ? Fact(
+                    title: "Raw audio is never saved",
+                    symbol: "waveform.slash",
+                    identifier: "setup.privacy.audio"
+                )
+                : Fact(
+                    title: "No camera or microphone",
+                    symbol: "mic.slash",
+                    identifier: "setup.privacy.no-sensors"
+                ),
+            Fact(
+                title: "Pause or turn off anytime",
+                symbol: "pause.circle",
+                identifier: "setup.privacy.control"
+            ),
+        ]
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -177,7 +313,7 @@ struct PermissionsPrivacySummary: View {
             DisclosureGroup(isExpanded: $showingDetails) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(
-                        "Screen Recording saves occasional still images. Accessibility applies exclusions and captures useful app context while capture is on."
+                        privacyDetail
                     )
                     .font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
@@ -201,7 +337,7 @@ struct PermissionsPrivacySummary: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("How Screenlogger uses these permissions")
                         .font(.callout.weight(.medium))
-                    Text("Saved on this Mac, no camera or microphone, and controls you can change anytime.")
+                    Text(privacySummary)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -211,6 +347,21 @@ struct PermissionsPrivacySummary: View {
             .accessibilityIdentifier("setup.privacy-summary")
         }
         .padding(.horizontal, 4)
+    }
+
+    private var privacyDetail: String {
+        let capture =
+            "Screen Recording saves occasional still images. Accessibility applies exclusions and captures useful app context while capture is on."
+        guard audioTranscriptionEnabled else { return capture }
+        let source = microphoneEnabled ? "computer and microphone audio" : "computer audio"
+        return
+            "\(capture) Optional on-device transcription processes \(source), saves finalized text only, and immediately discards audio samples."
+    }
+
+    private var privacySummary: String {
+        audioTranscriptionEnabled
+            ? "Saved on this Mac, raw audio is never saved, and controls can change anytime."
+            : "Saved on this Mac, no camera or microphone, and controls can change anytime."
     }
 }
 

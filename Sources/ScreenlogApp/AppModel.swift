@@ -13,6 +13,9 @@ final class AppModel: ObservableObject {
     /// Feature-scoped feedback for the manual Capture Now operation in Settings.
     @Published var captureOnceState: CaptureOnceState = .idle
     @Published var permissions = PermissionsSnapshot(screenRecording: false, accessibility: false)
+    /// Optional microphone consent is intentionally separate from the two
+    /// permissions required for screen capture readiness.
+    @Published var microphoneAuthorization = MicrophoneAuthorization.current
     @Published var permissionJourney = PermissionJourney(
         snapshot: PermissionsSnapshot(screenRecording: false, accessibility: false)
     )
@@ -605,11 +608,18 @@ final class AppModel: ObservableObject {
                     try? await Task.sleep(nanoseconds: 5_000_000_000)
                     tick += 1
                     #if DEBUG
-                        permissions =
-                            AppUITestFixture.permissionsSnapshot
-                            ?? PermissionsSnapshot.currentFast()
+                        if let fixturePermissions = AppUITestFixture.permissionsSnapshot {
+                            permissions = fixturePermissions
+                            reconcileMicrophoneAuthorization(
+                                AppUITestFixture.microphoneAuthorization
+                            )
+                        } else {
+                            permissions = PermissionsSnapshot.currentFast()
+                            reconcileMicrophoneAuthorization(MicrophoneAuthorization.current)
+                        }
                     #else
                         permissions = PermissionsSnapshot.currentFast()
+                        reconcileMicrophoneAuthorization(MicrophoneAuthorization.current)
                     #endif
                     synchronizePermissionJourney(with: permissions)
                     // Slow reconciliation covers maintenance or out-of-process

@@ -553,6 +553,12 @@ public final class RecordingEngine: ObservableObject {
         scheduleAudioReconciliation()
     }
 
+    /// Explicit recovery action used by Settings after a terminal framework
+    /// failure or an exhausted automatic retry window.
+    public func retryAudioTranscription() {
+        scheduleAudioReconciliation(markCaptureAvailable: isRecording)
+    }
+
     private func scheduleAudioReconciliation(markCaptureAvailable: Bool = false) {
         audioControlRevision &+= 1
         let requestedRevision = audioControlRevision

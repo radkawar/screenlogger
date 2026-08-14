@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import SQLite3
+import ScreenCaptureKit
 import XCTest
 
 @testable import ScreenlogCore
@@ -40,6 +41,73 @@ final class AudioTranscriptionTests: XCTestCase {
         AudioTranscriptionPreferenceStore.save(enabled, to: defaults)
         XCTAssertEqual(AudioTranscriptionPreferenceStore.load(from: defaults), enabled)
         XCTAssertEqual(enabled.enabledSources, [.computer])
+    }
+
+    @available(macOS 15.0, *)
+    func testDisplayAndWindowServerFailuresRecoverWithoutLocalizedTextMatching() {
+        XCTAssertEqual(
+            AudioStreamFailureDisposition.classify(CaptureError.noDisplay),
+            .recoverable,
+            "A display disappearing between discovery and stream creation must retry."
+        )
+        let recoverableCodes: [SCStreamError.Code] = [
+            .systemStoppedStream,
+            .noCaptureSource,
+            .noDisplayList,
+            .failedApplicationConnectionInterrupted,
+        ]
+        for code in recoverableCodes {
+            let error = NSError(
+                domain: SCStreamError.errorDomain,
+                code: code.rawValue,
+                userInfo: [NSLocalizedDescriptionKey: UUID().uuidString]
+            )
+            XCTAssertEqual(AudioStreamFailureDisposition.classify(error), .recoverable)
+        }
+
+        let declined = NSError(
+            domain: SCStreamError.errorDomain,
+            code: SCStreamError.Code.userDeclined.rawValue
+        )
+        XCTAssertEqual(AudioStreamFailureDisposition.classify(declined), .requiresAttention)
+        XCTAssertEqual(
+            AudioStreamFailureDisposition.classify(
+                NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet)
+            ),
+            .requiresAttention
+        )
+    }
+
+    func testRecoveryScheduleIsFiniteAndResettable() {
+        var schedule = AudioStreamRecoverySchedule()
+        XCTAssertEqual(
+            AudioStreamRecoverySchedule.delays.compactMap { _ in schedule.nextDelay() },
+            AudioStreamRecoverySchedule.delays
+        )
+        XCTAssertNil(schedule.nextDelay())
+        schedule.reset()
+        XCTAssertEqual(schedule.attempt, 0)
+        XCTAssertEqual(schedule.nextDelay(), AudioStreamRecoverySchedule.delays.first)
+    }
+
+    @available(macOS 15.0, *)
+    func testAudioStreamConfigurationKeepsVisualSinkSparseWithoutThrottlingAudio() throws {
+        let configuration = makeAudioTranscriptionStreamConfiguration(
+            sources: [.computer, .microphone]
+        )
+        XCTAssertTrue(configuration.capturesAudio)
+        XCTAssertTrue(configuration.captureMicrophone)
+        XCTAssertTrue(configuration.excludesCurrentProcessAudio)
+        XCTAssertEqual(configuration.sampleRate, 16_000)
+        XCTAssertEqual(configuration.channelCount, 1)
+        XCTAssertEqual(configuration.width, 2)
+        XCTAssertEqual(configuration.height, 2)
+        XCTAssertEqual(configuration.queueDepth, 1)
+        XCTAssertEqual(
+            CMTimeGetSeconds(configuration.minimumFrameInterval),
+            60,
+            accuracy: 0.000_001
+        )
     }
 
     func testPreparationGateStartsOnceAndBoundsBuffersAcrossReentrancy() throws {

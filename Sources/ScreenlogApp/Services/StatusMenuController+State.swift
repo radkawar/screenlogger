@@ -290,6 +290,7 @@ extension StatusMenuController {
         switch status.phase {
         case .active: return "Audio Transcription Active"
         case .preparing: return "Preparing Audio Transcription..."
+        case .recovering: return "Reconnecting Audio Transcription..."
         case .privacyPaused: return "Audio Transcription Paused for Privacy"
         case .permissionRequired: return "Audio Transcription Needs Microphone Access"
         case .failed: return "Audio Transcription Needs Attention"
@@ -304,6 +305,7 @@ extension StatusMenuController {
         case .active: return "waveform.circle.fill"
         case .privacyPaused: return "lock.circle"
         case .preparing: return "arrow.down.circle"
+        case .recovering: return "arrow.triangle.2.circlepath"
         case .permissionRequired, .failed: return "exclamationmark.circle"
         case .capturePaused, .unavailable, .off: return "waveform.circle"
         }
