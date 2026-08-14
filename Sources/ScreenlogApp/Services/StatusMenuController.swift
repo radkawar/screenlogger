@@ -36,6 +36,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         case checkForUpdates = 18
         case excludeCurrentWebsite = 19
         case audioTranscriptionStatus = 20
+        case hideMenuBarIcon = 21
 
         var accessibilityIdentifier: String {
             switch self {
@@ -58,6 +59,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             case .checkForUpdates: return "status-menu.check-for-updates"
             case .excludeCurrentWebsite: return "status-menu.exclude-website"
             case .audioTranscriptionStatus: return "status-menu.audio-transcription"
+            case .hideMenuBarIcon: return "status-menu.hide-icon"
             }
         }
     }
@@ -68,10 +70,24 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     }
 
     func install() {
-        guard statusItem == nil else { return }
-        setupStatusItem()
+        restoreStatusItem()
         bindStatusIcon()
         bindKeyboardShortcuts()
+    }
+
+    /// Removes the status item for this running session without stopping
+    /// capture. Launching Screenlogger again calls `restoreStatusItem()`.
+    func hideStatusItemUntilReopen() {
+        guard let statusItem else { return }
+        NSStatusBar.system.removeStatusItem(statusItem)
+        self.statusItem = nil
+        statusMenu = nil
+    }
+
+    func restoreStatusItem() {
+        guard statusItem == nil else { return }
+        setupStatusItem()
+        updateStatusItemAppearance()
     }
 
     func invalidate() {
@@ -83,11 +99,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         captureOnceFeedbackTask = nil
         isShowingCaptureOnceSuccess = false
 
-        if let statusItem {
-            NSStatusBar.system.removeStatusItem(statusItem)
-        }
-        statusItem = nil
-        statusMenu = nil
+        hideStatusItemUntilReopen()
     }
 
     func refreshAppearance() {

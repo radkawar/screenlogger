@@ -4,6 +4,81 @@ import XCTest
 
 /// Pure FG/BG OCR attribution - no Vision / ScreenCaptureKit.
 final class OCRAttributionTests: XCTestCase {
+    func testNativeOCRBoxesScaleIntoStoredImageCoordinates() {
+        let boxes = [
+            OCRBox(
+                x: 1_000,
+                y: 500,
+                width: 400,
+                height: 200,
+                textOffset: 7,
+                textLength: 11
+            )
+        ]
+
+        let scaled = OCRService.rescaleBoxes(
+            boxes,
+            sourceWidth: 4_000,
+            sourceHeight: 2_000,
+            destinationWidth: 2_000,
+            destinationHeight: 1_000
+        )
+
+        XCTAssertEqual(
+            scaled,
+            [
+                OCRBox(
+                    x: 500,
+                    y: 250,
+                    width: 200,
+                    height: 100,
+                    textOffset: 7,
+                    textLength: 11
+                )
+            ]
+        )
+    }
+
+    func testOCRBoxScalingClipsGeometryAndPreservesTextOffsets() {
+        let box = OCRBox(
+            x: 3_900,
+            y: 1_900,
+            width: 400,
+            height: 300,
+            textOffset: 3,
+            textLength: 5
+        )
+
+        let scaled = OCRService.rescaleBoxes(
+            [box],
+            sourceWidth: 4_000,
+            sourceHeight: 2_000,
+            destinationWidth: 1_000,
+            destinationHeight: 500
+        )
+
+        XCTAssertEqual(scaled[0].x, 975)
+        XCTAssertEqual(scaled[0].y, 475)
+        XCTAssertEqual(scaled[0].width, 25)
+        XCTAssertEqual(scaled[0].height, 25)
+        XCTAssertEqual(scaled[0].textOffset, 3)
+        XCTAssertEqual(scaled[0].textLength, 5)
+    }
+
+    func testOCRBoxScalingNeverPersistsZeroAreaAtImageBoundary() {
+        let scaled = OCRService.rescaleBoxes(
+            [OCRBox(x: 4_000, y: 2_000, width: 1, height: 1, textOffset: 0, textLength: 1)],
+            sourceWidth: 4_000,
+            sourceHeight: 2_000,
+            destinationWidth: 1_000,
+            destinationHeight: 500
+        )
+
+        XCTAssertEqual(scaled[0].x, 999)
+        XCTAssertEqual(scaled[0].y, 499)
+        XCTAssertEqual(scaled[0].width, 1)
+        XCTAssertEqual(scaled[0].height, 1)
+    }
 
     private let display = CaptureDisplayRect(x: 0, y: 0, width: 1000, height: 800)
     private let imageW = 1000

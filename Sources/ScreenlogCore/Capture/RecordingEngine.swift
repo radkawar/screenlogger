@@ -173,17 +173,20 @@ private actor CapturePipeline {
         }
 
         let excludedBundleIDs = excludedApplicationBundleIDs()
-        let bitmaps = try await capture.captureDisplays(
+        var bitmaps = try await capture.captureDisplays(
             excludingApplicationsWithBundleIDs: excludedBundleIDs
         )
-        guard let representative = bitmaps.first else { throw CaptureError.noDisplay }
+        guard !bitmaps.isEmpty else { throw CaptureError.noDisplay }
+        let representativeTitle = bitmaps[0].focusedTitle
+        let representativeBundleID = bitmaps[0].focusedBundleID
+        let displayCount = bitmaps.count
 
         var url: String?
         var domain: String?
         var privacyURL: String?
         var privacyDomain: String?
-        var title = representative.focusedTitle ?? ""
-        let bundleID = representative.focusedBundleID ?? earlyBundle
+        var title = representativeTitle ?? ""
+        let bundleID = representativeBundleID ?? earlyBundle
 
         var browserAttribution: BrowserURLAttribution?
         if captureBrowserURL || excludePrivateTabs || pauseWhenBrowserAddressUnavailable
@@ -260,7 +263,10 @@ private actor CapturePipeline {
         var attachedAXTree = false
         var firstFailure: Error?
 
-        for bitmap in bitmaps {
+        // Remove each processed bitmap so native multi-display buffers are
+        // released as soon as their OCR and stored copy are complete.
+        while !bitmaps.isEmpty {
+            let bitmap = bitmaps.removeFirst()
             let visibleWindows = ScreenCaptureService.windows(
                 bitmap.windowBounds,
                 visibleOn: bitmap.captureDisplay
@@ -295,7 +301,7 @@ private actor CapturePipeline {
                     captureDisplay: bitmap.captureDisplay,
                     windowBounds: visibleWindows,
                     foregroundBundleID: bundleID,
-                    allowVisibleWindowFallback: bitmaps.count == 1 || containsFocusedWindow
+                    allowVisibleWindowFallback: displayCount == 1 || containsFocusedWindow
                 )
 
                 // Attach the active browser address only to its visible window.
@@ -310,13 +316,21 @@ private actor CapturePipeline {
                 }
 
                 // Encode exactly once, after privacy checks and OCR have
-                // consumed the original ScreenCaptureKit image.
+                // consumed the native ScreenCaptureKit image. Standard and
+                // High resize only this stored copy; Ultra keeps native pixels.
                 let encoded = try await capture.encodeStill(bitmap.image)
+                let storedOCRBoxes = OCRService.rescaleBoxes(
+                    attributed.boxes,
+                    sourceWidth: bitmap.width,
+                    sourceHeight: bitmap.height,
+                    destinationWidth: encoded.pixelWidth,
+                    destinationHeight: encoded.pixelHeight
+                )
                 let payload = CapturePayload(
                     imageData: encoded.data,
                     timestampMs: bitmap.timestampMs,
-                    width: bitmap.width,
-                    height: bitmap.height,
+                    width: encoded.pixelWidth,
+                    height: encoded.pixelHeight,
                     foreground: attributed.foreground,
                     background: attributed.background,
                     title: title,
@@ -325,7 +339,7 @@ private actor CapturePipeline {
                     displayName: bitmap.displayName,
                     url: url,
                     domain: domain,
-                    ocrBoxes: attributed.boxes,
+                    ocrBoxes: storedOCRBoxes,
                     windowBounds: windowBounds,
                     isInactive: false,
                     imageFileExtension: encoded.fileExtension,
@@ -337,7 +351,7 @@ private actor CapturePipeline {
                 if reused { reusedCount += 1 }
 
                 if !attachedAXTree,
-                    containsFocusedWindow || bitmaps.count == 1,
+                    containsFocusedWindow || displayCount == 1,
                     captureAXTree,
                     AccessibilityPermission.isTrusted(prompt: false),
                     let snapshot = axExtractor.captureFocusedTree(

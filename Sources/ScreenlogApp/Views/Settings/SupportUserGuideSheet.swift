@@ -268,6 +268,7 @@ private enum SupportGuideTopic: String, CaseIterable, Identifiable {
                     title: "Find Screenlogger",
                     points: [
                         "Use the menu bar icon for Library, Timeline, capture controls, and Settings.",
+                        "Choose Hide Menu Bar Icon to remove it for the current session. Open Screenlogger again from Spotlight, Finder, or the Dock to restore it.",
                         "Open at Login and Dock visibility are optional in General settings.",
                     ]
                 ),

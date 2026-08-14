@@ -111,12 +111,15 @@ extension StatusMenuController {
                 item.setAccessibilityLabel(item.title)
                 item.setAccessibilityHelp(statusAccessibilityHelp(status))
             case .audioTranscriptionStatus:
-                let audio = appModel.audioTranscriptionStatus
-                item.isHidden = !appModel.audioTranscriptionEnabled
-                item.isEnabled = appModel.audioTranscriptionEnabled
-                item.title = audioMenuTitle(audio)
-                item.image = menuSymbolImage(audioMenuSymbol(audio))
-                item.toolTip = audio.detail
+                let presentation = audioTranscriptionMenuPresentation
+                item.isHidden = false
+                item.isEnabled = presentation.isEnabled
+                item.title = presentation.title
+                item.image = menuSymbolImage(presentation.symbolName)
+                item.toolTip = presentation.toolTip
+                item.state = presentation.isChecked ? .on : .off
+                item.setAccessibilityLabel(presentation.title)
+                item.setAccessibilityHelp(presentation.toolTip)
             case .revealLibrary:
                 item.isHidden = libraryIssue == nil || !appModel.canRevealLibrary
                 item.isEnabled = libraryIssue != nil && appModel.canRevealLibrary
@@ -286,29 +289,14 @@ extension StatusMenuController {
             : "Pause capture whenever \(name) is active"
     }
 
-    private func audioMenuTitle(_ status: AudioTranscriptionStatus) -> String {
-        switch status.phase {
-        case .active: return "Audio Transcription Active"
-        case .preparing: return "Preparing Audio Transcription..."
-        case .recovering: return "Reconnecting Audio Transcription..."
-        case .privacyPaused: return "Audio Transcription Paused for Privacy"
-        case .permissionRequired: return "Audio Transcription Needs Microphone Access"
-        case .failed: return "Audio Transcription Needs Attention"
-        case .capturePaused: return "Audio Transcription Waiting for Capture"
-        case .unavailable: return "Audio Transcription Unavailable"
-        case .off: return "Audio Transcription Off"
-        }
-    }
-
-    private func audioMenuSymbol(_ status: AudioTranscriptionStatus) -> String {
-        switch status.phase {
-        case .active: return "waveform.circle.fill"
-        case .privacyPaused: return "lock.circle"
-        case .preparing: return "arrow.down.circle"
-        case .recovering: return "arrow.triangle.2.circlepath"
-        case .permissionRequired, .failed: return "exclamationmark.circle"
-        case .capturePaused, .unavailable, .off: return "waveform.circle"
-        }
+    var audioTranscriptionMenuPresentation: AudioTranscriptionMenuPresentation {
+        AudioTranscriptionMenuPresentation.resolve(
+            isSupported: AudioTranscriptionSupport.isAvailable,
+            isEnabled: appModel.audioTranscriptionEnabled,
+            hasSelectedSources: appModel.computerAudioTranscriptionEnabled
+                || appModel.microphoneTranscriptionEnabled,
+            status: appModel.audioTranscriptionStatus
+        )
     }
 
     private func statusAccessibilityHelp(_ status: CaptureStatusPresentation) -> String {

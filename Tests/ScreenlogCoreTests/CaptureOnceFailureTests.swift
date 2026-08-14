@@ -45,16 +45,43 @@ final class CaptureOnceFailureTests: XCTestCase {
         XCTAssertFalse(encoded.data.isEmpty)
         XCTAssertTrue(["heic", "jpg", "png"].contains(encoded.fileExtension))
         XCTAssertNotNil(CGImageSourceCreateWithData(encoded.data as CFData, nil))
+        XCTAssertEqual(encoded.pixelWidth, 2)
+        XCTAssertEqual(encoded.pixelHeight, 2)
     }
 
-    func testCaptureResolutionPolicyPreservesNativePixelsForUltra() {
-        let size = ScreenCaptureService.outputSize(
+    func testCaptureResolutionPolicyAlwaysPreservesNativePixelsForOCR() {
+        let size = ScreenCaptureService.captureOutputSize(
             nativeWidth: 6_016,
-            nativeHeight: 3_384,
-            maxDimension: 0
+            nativeHeight: 3_384
         )
         XCTAssertEqual(size.width, 6_016)
         XCTAssertEqual(size.height, 3_384)
+    }
+
+    func testEveryDisplayKeepsNativeOCRPixelsAndIndependentStoredSizing() {
+        let displays = [
+            (width: 6_016, height: 3_384),
+            (width: 3_840, height: 2_160),
+        ]
+
+        let ocrSizes = displays.map {
+            ScreenCaptureService.captureOutputSize(
+                nativeWidth: $0.width,
+                nativeHeight: $0.height
+            )
+        }
+        XCTAssertEqual(ocrSizes.map(\.width), [6_016, 3_840])
+        XCTAssertEqual(ocrSizes.map(\.height), [3_384, 2_160])
+
+        let storedSizes = displays.map {
+            ScreenCaptureService.outputSize(
+                nativeWidth: $0.width,
+                nativeHeight: $0.height,
+                maxDimension: 1_920
+            )
+        }
+        XCTAssertEqual(storedSizes.map(\.width), [1_920, 1_920])
+        XCTAssertEqual(storedSizes.map(\.height), [1_080, 1_080])
     }
 
     func testCaptureResolutionPolicyDownscalesWithoutUpscaling() {
@@ -73,6 +100,84 @@ final class CaptureOnceFailureTests: XCTestCase {
         )
         XCTAssertEqual(unchanged.width, 1_280)
         XCTAssertEqual(unchanged.height, 800)
+    }
+
+    func testStoredStillIsDownscaledAfterNativeImageProcessing() async throws {
+        let width = 8
+        let height = 4
+        let bytes = [UInt8](repeating: 127, count: width * height * 4)
+        let provider = try XCTUnwrap(CGDataProvider(data: Data(bytes) as CFData))
+        let image = try XCTUnwrap(
+            CGImage(
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bitsPerPixel: 32,
+                bytesPerRow: width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
+                provider: provider,
+                decode: nil,
+                shouldInterpolate: false,
+                intent: .defaultIntent
+            )
+        )
+        let service = ScreenCaptureService()
+        service.maxDimension = 4
+
+        let encoded = try await service.encodeStill(image)
+
+        XCTAssertEqual(encoded.pixelWidth, 4)
+        XCTAssertEqual(encoded.pixelHeight, 2)
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(encoded.data as CFData, nil))
+        let storedImage = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        XCTAssertEqual(storedImage.width, 4)
+        XCTAssertEqual(storedImage.height, 2)
+    }
+
+    func testStoredImageResizePreservesOrientationAndDropsOpaqueAlphaChannel() throws {
+        let width = 4
+        let height = 4
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(width * height * 4)
+        for row in 0..<height {
+            let pixel: [UInt8] = row < 2 ? [255, 0, 0, 255] : [0, 0, 255, 255]
+            for _ in 0..<width {
+                bytes.append(contentsOf: pixel)
+            }
+        }
+        let provider = try XCTUnwrap(CGDataProvider(data: Data(bytes) as CFData))
+        let image = try XCTUnwrap(
+            CGImage(
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bitsPerPixel: 32,
+                bytesPerRow: width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
+                provider: provider,
+                decode: nil,
+                shouldInterpolate: false,
+                intent: .defaultIntent
+            )
+        )
+
+        let resized = try ScreenCaptureService.imageForStorage(image, maxDimension: 2)
+        let resizedData = try XCTUnwrap(resized.dataProvider?.data)
+        let resizedBytes = try XCTUnwrap(CFDataGetBytePtr(resizedData))
+
+        XCTAssertEqual(resized.width, 2)
+        XCTAssertEqual(resized.height, 2)
+        XCTAssertEqual(resized.alphaInfo, .noneSkipFirst)
+        // The little-endian XRGB context is stored as BGRX bytes.
+        XCTAssertGreaterThan(resizedBytes[2], resizedBytes[0], "The top row should remain red.")
+        let bottomRow = resized.bytesPerRow
+        XCTAssertGreaterThan(
+            resizedBytes[bottomRow],
+            resizedBytes[bottomRow + 2],
+            "The bottom row should remain blue."
+        )
     }
 
     func testDisplayWindowFilteringKeepsOnlyIntersectingAndSpanningWindows() {

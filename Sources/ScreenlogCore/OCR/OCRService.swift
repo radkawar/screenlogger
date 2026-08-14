@@ -101,6 +101,50 @@ public final class OCRService: @unchecked Sendable {
         }
     }
 
+    /// Projects native-resolution Vision boxes into the stored still's pixel
+    /// space. Text offsets are unchanged because only geometry is resized.
+    public static func rescaleBoxes(
+        _ boxes: [OCRBox],
+        sourceWidth: Int,
+        sourceHeight: Int,
+        destinationWidth: Int,
+        destinationHeight: Int
+    ) -> [OCRBox] {
+        guard sourceWidth > 0, sourceHeight > 0,
+            destinationWidth > 0, destinationHeight > 0,
+            sourceWidth != destinationWidth || sourceHeight != destinationHeight
+        else { return boxes }
+
+        let scaleX = Double(destinationWidth) / Double(sourceWidth)
+        let scaleY = Double(destinationHeight) / Double(sourceHeight)
+        return boxes.map { box in
+            let x = min(
+                destinationWidth - 1,
+                max(0, Int((Double(box.x) * scaleX).rounded()))
+            )
+            let y = min(
+                destinationHeight - 1,
+                max(0, Int((Double(box.y) * scaleY).rounded()))
+            )
+            let maxX = min(
+                destinationWidth,
+                max(x + 1, Int((Double(box.x + box.width) * scaleX).rounded()))
+            )
+            let maxY = min(
+                destinationHeight,
+                max(y + 1, Int((Double(box.y + box.height) * scaleY).rounded()))
+            )
+            return OCRBox(
+                x: x,
+                y: y,
+                width: maxX - x,
+                height: maxY - y,
+                textOffset: box.textOffset,
+                textLength: box.textLength
+            )
+        }
+    }
+
     // MARK: - Foreground / background attribution
 
     /// Attribute full-screen OCR boxes to the focused/frontmost window (foreground) vs other windows (background).

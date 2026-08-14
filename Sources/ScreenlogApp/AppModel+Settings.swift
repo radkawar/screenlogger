@@ -186,8 +186,8 @@ extension AppModel {
         )
     }
 
-    /// Called only from the explicit Settings switch. Loading persisted state
-    /// never invokes the microphone prompt.
+    /// Called only from an explicit Settings or menu-bar action. Loading
+    /// persisted state never invokes the microphone prompt.
     func setAudioTranscriptionEnabledFromUserAction(_ enabled: Bool) {
         guard enabled, microphoneTranscriptionEnabled,
             microphoneAuthorization == .notDetermined

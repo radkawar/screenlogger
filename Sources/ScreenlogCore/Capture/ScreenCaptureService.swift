@@ -35,6 +35,9 @@ public struct EncodedStill: Sendable {
     public var data: Data
     /// File extension matching `data` (`heic` / `jpg` / rare `png`).
     public var fileExtension: String
+    /// Pixel dimensions of the stored image after the quality preset is applied.
+    public var pixelWidth: Int
+    public var pixelHeight: Int
 }
 
 /// ScreenCaptureKit snapshot capture enriched with CGWindowList metadata.
@@ -101,10 +104,7 @@ public final class ScreenCaptureService: NSObject, @unchecked Sendable {
                     excludingApplications: excludedApplications,
                     exceptingWindows: []
                 )
-                let config = Self.streamConfiguration(
-                    for: display,
-                    maxDimension: maxDimension
-                )
+                let config = Self.streamConfiguration(for: display)
                 let image = try await SCScreenshotManager.captureImage(
                     contentFilter: filter,
                     configuration: config
@@ -169,16 +169,12 @@ public final class ScreenCaptureService: NSObject, @unchecked Sendable {
         return bitmaps
     }
 
-    private static func streamConfiguration(
-        for display: SCDisplay,
-        maxDimension: Int
-    ) -> SCStreamConfiguration {
+    private static func streamConfiguration(for display: SCDisplay) -> SCStreamConfiguration {
         let config = SCStreamConfiguration()
         let scale = backingScale(for: display)
-        let size = outputSize(
+        let size = captureOutputSize(
             nativeWidth: display.width * scale,
-            nativeHeight: display.height * scale,
-            maxDimension: maxDimension
+            nativeHeight: display.height * scale
         )
         config.width = size.width
         config.height = size.height
@@ -188,8 +184,21 @@ public final class ScreenCaptureService: NSObject, @unchecked Sendable {
         return config
     }
 
-    /// Applies a bounded longest-edge policy without ever upscaling. A zero
-    /// limit is intentionally native, which is how the Ultra preset is stored.
+    /// OCR always receives native backing pixels. Image quality controls only
+    /// the still written after OCR has completed.
+    static func captureOutputSize(
+        nativeWidth: Int,
+        nativeHeight: Int
+    ) -> (width: Int, height: Int) {
+        outputSize(
+            nativeWidth: nativeWidth,
+            nativeHeight: nativeHeight,
+            maxDimension: 0
+        )
+    }
+
+    /// Applies the stored-image longest-edge policy without ever upscaling. A
+    /// zero limit is intentionally native, which is how Ultra is stored.
     static func outputSize(
         nativeWidth: Int,
         nativeHeight: Int,
@@ -362,18 +371,25 @@ public final class ScreenCaptureService: NSObject, @unchecked Sendable {
     public func encodeStill(_ image: CGImage) async throws -> EncodedStill {
         let quality = stillQuality
         let preferJPEG = preferJPEG
+        let maxDimension = maxDimension
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
                 do {
-                    let encoded = try Self.encodeStillData(
+                    let storedImage = try Self.imageForStorage(
                         image,
+                        maxDimension: maxDimension
+                    )
+                    let encoded = try Self.encodeStillData(
+                        storedImage,
                         quality: quality,
                         preferJPEG: preferJPEG
                     )
                     continuation.resume(
                         returning: EncodedStill(
                             data: encoded.data,
-                            fileExtension: encoded.ext
+                            fileExtension: encoded.ext,
+                            pixelWidth: storedImage.width,
+                            pixelHeight: storedImage.height
                         )
                     )
                 } catch {
@@ -381,6 +397,50 @@ public final class ScreenCaptureService: NSObject, @unchecked Sendable {
                 }
             }
         }
+    }
+
+    static func imageForStorage(
+        _ image: CGImage,
+        maxDimension: Int
+    ) throws -> CGImage {
+        let size = outputSize(
+            nativeWidth: image.width,
+            nativeHeight: image.height,
+            maxDimension: maxDimension
+        )
+        guard size.width != image.width || size.height != image.height else {
+            return image
+        }
+
+        let colorSpace =
+            image.colorSpace
+            ?? CGColorSpace(name: CGColorSpace.sRGB)
+            ?? CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo =
+            CGBitmapInfo.byteOrder32Little.rawValue
+            | CGImageAlphaInfo.noneSkipFirst.rawValue
+        guard
+            let context = CGContext(
+                data: nil,
+                width: size.width,
+                height: size.height,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: colorSpace,
+                bitmapInfo: bitmapInfo
+            )
+        else {
+            throw CaptureError.encodeFailed
+        }
+        context.interpolationQuality = .high
+        context.draw(
+            image,
+            in: CGRect(x: 0, y: 0, width: size.width, height: size.height)
+        )
+        guard let resized = context.makeImage() else {
+            throw CaptureError.encodeFailed
+        }
+        return resized
     }
 
     private static func encodeStillData(

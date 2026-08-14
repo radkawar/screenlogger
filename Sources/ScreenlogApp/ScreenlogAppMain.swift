@@ -300,6 +300,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ sender: NSApplication,
         hasVisibleWindows flag: Bool
     ) -> Bool {
+        statusMenuController?.restoreStatusItem()
         reopenPrimaryWorkspaceIfNeeded(hasVisibleProductWindow: flag)
         return true
     }
@@ -408,6 +409,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let intent = LaunchIntent(rawValue: rawRoute)
         else { return }
 
+        statusMenuController?.restoreStatusItem()
         perform(intent)
     }
 

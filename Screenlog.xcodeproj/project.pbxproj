@@ -182,6 +182,7 @@
 		73B5861E7B9B996125E09765 /* ProductPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 037FF061998CB36D9D0189B9 /* ProductPreferences.swift */; };
 		74720E36A3EFF6AB0182BBB4 /* SQLiteDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1ED167D5FC630AAC107E80C /* SQLiteDatabase.swift */; };
 		74B4F1210D733C0AE804C4DB /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4E1616AA0E77ABBE6D679673 /* IOKit.framework */; };
+		75115733E10CBCB8C947B3C2 /* StatusMenuPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E363AEB224BCE9B1E0362878 /* StatusMenuPresentation.swift */; };
 		75190EF21AAD543117B1E736 /* TimelineActivityPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A48F82CFD313BF85625C862 /* TimelineActivityPresentationTests.swift */; };
 		7642BF8A2CFD16B4B6BB0863 /* StoreFTSTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F5C745D8D22D2B24539378A /* StoreFTSTests.swift */; };
 		76D69AF2F72C83FD93D7F197 /* ExclusionCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF1E11ADA04BAEE1619E916E /* ExclusionCatalogTests.swift */; };
@@ -192,6 +193,7 @@
 		7A94ADE71A6C42E6DFBC49FB /* TimelineStagePanGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D518DF88A841CAAEDB8C4EE4 /* TimelineStagePanGeometryTests.swift */; };
 		7B550EBA1A096C6EA7277A73 /* LibraryRestoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C061AD457544E2ECBED00710 /* LibraryRestoreModels.swift */; };
 		7B656E9953A40CFFF6303DF9 /* MetricKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0461A95DD85D08E9343B41F9 /* MetricKit.framework */; };
+		7D418F1589AE5CB4AF60416C /* StatusMenuPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF4062DA81F6F647C768C11C /* StatusMenuPresentationTests.swift */; };
 		7E10D2A439AEC31F1FF161D0 /* TimelineTranscriptPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D459EF23BB29485AD3EC28C /* TimelineTranscriptPresentation.swift */; };
 		7E14A64FA6C240D0CF9E5CE3 /* PreviewImagePipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FAA8F369FD81A1B2952B1C1 /* PreviewImagePipeline.swift */; };
 		7F482AE2BFE5C095D245DFD0 /* TimelineActivityPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92ACD9CE0385BDA298804F71 /* TimelineActivityPresentation.swift */; };
@@ -237,6 +239,7 @@
 		95EE3197CA1A4DA737107DA2 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9085FADDB1962859EF3C3B24 /* CoreFoundation.framework */; };
 		960C22B8BD907D953DDF7B05 /* PermissionFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FD22256C93B793D54FC1F8B /* PermissionFlow.swift */; };
 		962020D3832C719858533A49 /* Schema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4327B2D5D76744BF52B875F9 /* Schema.swift */; };
+		967F36431EC6E3847B22F303 /* StatusMenuPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E363AEB224BCE9B1E0362878 /* StatusMenuPresentation.swift */; };
 		96E03AA393B4027F858B5F27 /* CaptureOnceFailureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2263103C69CDDFDE76B02844 /* CaptureOnceFailureTests.swift */; };
 		973EE4EC6618C6B1FC89DE89 /* ScreenlogCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 059E20E1808605004DE6A22E /* ScreenlogCore.framework */; };
 		99497298EF716A48214D21E0 /* LaunchAtLoginState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16AE74E1A0490C481D2D5523 /* LaunchAtLoginState.swift */; };
@@ -713,6 +716,7 @@
 		BD5FDE102FFF5048B8D8470D /* SessionPinStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPinStoreTests.swift; sourceTree = "<group>"; };
 		BEC2E9AE0E136E919BA96DBE /* VideoCompactionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoCompactionService.swift; sourceTree = "<group>"; };
 		BF309E1E8860C99F646ACA88 /* LibraryDeletionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryDeletionService.swift; sourceTree = "<group>"; };
+		BF4062DA81F6F647C768C11C /* StatusMenuPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusMenuPresentationTests.swift; sourceTree = "<group>"; };
 		BF477EAAB39AC7A6652D4221 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		C061AD457544E2ECBED00710 /* LibraryRestoreModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryRestoreModels.swift; sourceTree = "<group>"; };
 		C08D64CA78750249F3201AD7 /* AssistantOperationalReadinessPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantOperationalReadinessPresentationTests.swift; sourceTree = "<group>"; };
@@ -759,6 +763,7 @@
 		E0E7B00E83B940AC409F8FDA /* TimelineContentStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineContentStateTests.swift; sourceTree = "<group>"; };
 		E2A25452EAF79E6C89BF783F /* PerformanceSignposts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceSignposts.swift; sourceTree = "<group>"; };
 		E2FF78A4B27B8BB0356EEAB3 /* MainShellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainShellView.swift; sourceTree = "<group>"; };
+		E363AEB224BCE9B1E0362878 /* StatusMenuPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusMenuPresentation.swift; sourceTree = "<group>"; };
 		E40493399E5B1ECEA97F335B /* Store+Timeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Store+Timeline.swift"; sourceTree = "<group>"; };
 		E7ADBF1184BDB48B6D21C498 /* StoreQueryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreQueryTests.swift; sourceTree = "<group>"; };
 		E9042EC5BCAB41752FE9CC60 /* SLTimeFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SLTimeFormat.swift; sourceTree = "<group>"; };
@@ -951,6 +956,7 @@
 				AE85E8B921E1F8F57D64E1B3 /* SettingsDestinationTests.swift */,
 				D3928F2442DDB85F0BC83469 /* SettingsRecoveryPresentationTests.swift */,
 				6CD0A9FA86BF94DC3F92B0C5 /* SettingsWindowLayoutTests.swift */,
+				BF4062DA81F6F647C768C11C /* StatusMenuPresentationTests.swift */,
 				4ABE8A5B78B03CA437B2745F /* StorageConfidencePresentationTests.swift */,
 				7CF972149919D3522598D738 /* TimelineNoticeTests.swift */,
 				6962C28C457C80E663E73FD4 /* TimelineTranscriptPresentationTests.swift */,
@@ -1288,6 +1294,7 @@
 				F21685E9ACEEDC5E86744A66 /* ScreenlogAppMain.swift */,
 				A388CEA721CB4033A5E890A7 /* SettingsRecoveryPresentation.swift */,
 				E9042EC5BCAB41752FE9CC60 /* SLTimeFormat.swift */,
+				E363AEB224BCE9B1E0362878 /* StatusMenuPresentation.swift */,
 				5B001217EFB1C9E5F768B663 /* StorageConfidencePresentation.swift */,
 				AD0250C517F55D993063D0AD /* TimelineDisplayPresentation.swift */,
 				D6CCB940C3BF2C7130A940AE /* TimelineNotice.swift */,
@@ -1896,6 +1903,7 @@
 				B74F8F34CAE4DC3768B99BE8 /* StatusMenuController+Construction.swift in Sources */,
 				4C2C01265176D2DF26946195 /* StatusMenuController+State.swift in Sources */,
 				538E7A4F8C23CBA1FA8DCA38 /* StatusMenuController.swift in Sources */,
+				75115733E10CBCB8C947B3C2 /* StatusMenuPresentation.swift in Sources */,
 				25DADD105812F0E71DB54A81 /* StorageConfidencePresentation.swift in Sources */,
 				898CB0B6B9AC10BF05EE1ECD /* StorageLibraryToolsCard.swift in Sources */,
 				8FC468940C6D602E370CAE4A /* StorageManagementCard.swift in Sources */,
@@ -2035,6 +2043,8 @@
 				E9FB9908E276E3DDBB5C3543 /* SettingsRecoveryPresentationTests.swift in Sources */,
 				400216104529F90B69D6C93D /* SettingsWindowLayout.swift in Sources */,
 				32B7D56567E443349315146A /* SettingsWindowLayoutTests.swift in Sources */,
+				967F36431EC6E3847B22F303 /* StatusMenuPresentation.swift in Sources */,
+				7D418F1589AE5CB4AF60416C /* StatusMenuPresentationTests.swift in Sources */,
 				1453D14FA329F6F0EB85AD9A /* StorageConfidencePresentation.swift in Sources */,
 				65E4F773BF330184B5ACF6A6 /* StorageConfidencePresentationTests.swift in Sources */,
 				C79E88728739884012E2232A /* TimelineDisplayPresentation.swift in Sources */,

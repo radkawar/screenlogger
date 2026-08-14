@@ -48,6 +48,33 @@ extension StatusMenuController {
         appModel.openProductSettings(.captureAudio)
     }
 
+    @objc func toggleAudioTranscription(_ sender: Any?) {
+        let presentation = audioTranscriptionMenuPresentation
+        switch presentation.action {
+        case .toggle:
+            appModel.setAudioTranscriptionEnabledFromUserAction(
+                !appModel.audioTranscriptionEnabled
+            )
+        case .openSettings:
+            openAudioTranscriptionSettings(sender)
+        case .none:
+            break
+        }
+        updateStatusItemAppearance()
+    }
+
+    @objc func hideMenuBarIcon(_ sender: Any?) {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Hide the Menu Bar Icon?"
+        alert.informativeText =
+            "Screenlogger will keep running in the background. Open Screenlogger again from Spotlight, Finder, or the Dock to restore the icon."
+        alert.addButton(withTitle: "Hide Icon")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        hideStatusItemUntilReopen()
+    }
+
     @objc func openHelp(_ sender: Any?) {
         appModel.openProductGuide()
     }

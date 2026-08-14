@@ -280,6 +280,7 @@ targets:
       - path: Sources/ScreenlogApp/Models/SettingsDestination.swift
       - path: Sources/ScreenlogApp/Models/SettingsWindowLayout.swift
       - path: Sources/ScreenlogApp/ExclusionPolicyPresentation.swift
+      - path: Sources/ScreenlogApp/StatusMenuPresentation.swift
       - path: Sources/ScreenlogApp/StorageConfidencePresentation.swift
       - path: Sources/ScreenlogApp/FirstRunValueProgress.swift
       - path: Sources/ScreenlogApp/SettingsRecoveryPresentation.swift

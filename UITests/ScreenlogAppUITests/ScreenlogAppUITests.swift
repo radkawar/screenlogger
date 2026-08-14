@@ -374,10 +374,12 @@ final class ScreenlogAppUITests: XCTestCase {
         XCTAssertEqual(assertElement(identifier: "status-menu.library", in: app).label, "Show Library")
         XCTAssertEqual(assertElement(identifier: "status-menu.timeline", in: app).label, "Show Timeline")
         XCTAssertEqual(assertElement(identifier: "status-menu.capture-once", in: app).label, "Capture Now")
+        assertElement(identifier: "status-menu.audio-transcription", in: app)
         assertElement(identifier: "status-menu.permissions", in: app)
         assertElement(identifier: "status-menu.settings", in: app)
         assertElement(identifier: "status-menu.help", in: app)
         assertElement(identifier: "status-menu.about", in: app)
+        assertElement(identifier: "status-menu.hide-icon", in: app)
         assertElement(identifier: "status-menu.quit", in: app)
 
         assertElement(identifier: "status-menu.timeline", in: app).click()
@@ -415,6 +417,36 @@ final class ScreenlogAppUITests: XCTestCase {
         XCTAssertTrue(
             library.waitForExistence(timeout: Self.routeTimeout) && library.isHittable,
             "Closing menu-bar Setup should return to the workspace that was already open."
+        )
+    }
+
+    func testStatusMenuIconHidesForSessionAndReturnsWhenAppIsOpenedAgain() throws {
+        let app = try launch(route: "--open-library", fixture: true)
+        assertWindow("Library", in: app)
+
+        let statusItem = app.statusItems["status-menu.button"]
+        XCTAssertTrue(statusItem.waitForExistence(timeout: Self.routeTimeout))
+        statusItem.click()
+        assertElement(identifier: "status-menu.hide-icon", in: app).click()
+
+        assertElement(label: "Hide the Menu Bar Icon?", in: app)
+        assertButton("Hide Icon", in: app).click()
+        assertElementDoesNotExist(
+            statusItem,
+            description: "the hidden menu-bar icon"
+        )
+
+        // This is the same Launch Services path used by Spotlight, Finder, or
+        // a Dock click while Screenlogger is already running.
+        let reopen = Process()
+        reopen.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        reopen.arguments = ["-b", Self.bundleIdentifier]
+        try reopen.run()
+        reopen.waitUntilExit()
+        XCTAssertEqual(reopen.terminationStatus, 0)
+        XCTAssertTrue(
+            app.statusItems["status-menu.button"].waitForExistence(timeout: Self.routeTimeout),
+            "Opening Screenlogger again should restore its menu-bar icon."
         )
     }
 

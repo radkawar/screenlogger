@@ -577,7 +577,7 @@ public struct TimelineFrame: Sendable, Equatable, Codable, Identifiable {
     public var id: Int64
     public var timestampMs: Int64
     public var imagePath: String?
-    /// Original captured-image pixel dimensions. Preview images may be downsampled.
+    /// Stored media pixel dimensions. Preview images may be downsampled further.
     public var width: Int?
     public var height: Int?
     public var title: String?

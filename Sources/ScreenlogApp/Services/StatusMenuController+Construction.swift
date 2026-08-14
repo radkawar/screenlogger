@@ -43,11 +43,10 @@ extension StatusMenuController {
 
         let audioStatus = makeItem(
             title: "Audio Transcription",
-            action: #selector(openAudioTranscriptionSettings(_:)),
+            action: #selector(toggleAudioTranscription(_:)),
             tag: .audioTranscriptionStatus,
             symbol: "waveform"
         )
-        audioStatus.isHidden = true
         menu.addItem(audioStatus)
 
         menu.addItem(.separator())
@@ -181,6 +180,13 @@ extension StatusMenuController {
                 action: #selector(checkForUpdates(_:)),
                 tag: .checkForUpdates,
                 symbol: "arrow.triangle.2.circlepath"
+            ))
+        menu.addItem(
+            makeItem(
+                title: "Hide Menu Bar Icon...",
+                action: #selector(hideMenuBarIcon(_:)),
+                tag: .hideMenuBarIcon,
+                symbol: "menubar.rectangle"
             ))
         menu.addItem(
             makeItem(

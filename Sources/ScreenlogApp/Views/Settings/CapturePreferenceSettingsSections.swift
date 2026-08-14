@@ -158,7 +158,7 @@ struct CaptureImageSettingsSection: View {
 
                 DisclosureGroup("Advanced image options", isExpanded: $showsAdvancedOptions) {
                     VStack(alignment: .leading, spacing: 10) {
-                        LabeledContent("Maximum image edge") {
+                        LabeledContent("Maximum stored edge") {
                             Text(maximumImageEdgeLabel)
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
@@ -192,8 +192,10 @@ struct CaptureImageSettingsSection: View {
 
     private var qualityHelp: String {
         switch model.quality {
-        case .standard: return "Standard keeps clear text while using less storage."
-        case .high: return "High preserves Retina detail with moderate storage use."
+        case .standard:
+            return "Standard saves compact images. Text recognition still uses native display pixels."
+        case .high:
+            return "High saves sharper images. Text recognition still uses native display pixels."
         case .ultra: return "Ultra saves the display at native resolution with minimal compression."
         }
     }
@@ -216,7 +218,7 @@ struct CaptureTextRecognitionSettingsSection: View {
                 SettingsCardRow(
                     icon: "text.viewfinder",
                     title: "Text Recognition",
-                    subtitle: "Makes captures searchable. Recognition runs on this Mac."
+                    subtitle: "Uses native display pixels to make captures searchable on this Mac."
                 ) {
                     Label("On", systemImage: "checkmark")
                         .font(.caption.weight(.semibold))
