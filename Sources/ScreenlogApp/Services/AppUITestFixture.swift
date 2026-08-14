@@ -243,6 +243,24 @@ import ScreenlogCore
             configuration?.microphoneAuthorization ?? .notDetermined
         }
 
+        static func presentedRecordingState(or liveValue: Bool) -> Bool {
+            configuration?.presentsAudioTranscription == true ? true : liveValue
+        }
+
+        static func presentedAudioTranscriptionStatus(
+            or liveValue: AudioTranscriptionStatus
+        ) -> AudioTranscriptionStatus {
+            guard let configuration, configuration.presentsAudioTranscription else {
+                return liveValue
+            }
+            let phase = configuration.audioTranscriptionPhase ?? .active
+            return AudioTranscriptionStatus(
+                phase: phase,
+                activeSources: phase == .active ? Set(TranscriptSource.allCases) : [],
+                detail: audioTranscriptionDetail(phase: phase)
+            )
+        }
+
         static var shouldFailLibrarySearch: Bool {
             configuration?.failsLibrarySearch == true
         }
@@ -511,13 +529,8 @@ import ScreenlogCore
                 model.computerAudioTranscriptionEnabled = true
                 model.microphoneTranscriptionEnabled = true
                 model.isLoadingSettings = false
-                model.audioTranscriptionStatus = AudioTranscriptionStatus(
-                    phase: configuration.audioTranscriptionPhase ?? .active,
-                    activeSources: configuration.audioTranscriptionPhase == .active
-                        ? Set(TranscriptSource.allCases) : [],
-                    detail: audioTranscriptionDetail(
-                        phase: configuration.audioTranscriptionPhase ?? .active
-                    )
+                model.audioTranscriptionStatus = presentedAudioTranscriptionStatus(
+                    or: model.audioTranscriptionStatus
                 )
             }
             model.applyAppearancePreference()

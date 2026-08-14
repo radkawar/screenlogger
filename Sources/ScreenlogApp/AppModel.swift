@@ -879,7 +879,13 @@ final class AppModel: ObservableObject {
             .removeDuplicates()
             .sink { [weak self] value in
                 Task { @MainActor [weak self] in
-                    self?.isRecording = value
+                    #if DEBUG
+                        self?.isRecording = AppUITestFixture.presentedRecordingState(
+                            or: value
+                        )
+                    #else
+                        self?.isRecording = value
+                    #endif
                     self?.updateStatusMessage()
                 }
             }
@@ -899,7 +905,12 @@ final class AppModel: ObservableObject {
             .removeDuplicates()
             .sink { [weak self] value in
                 Task { @MainActor [weak self] in
-                    self?.audioTranscriptionStatus = value
+                    #if DEBUG
+                        self?.audioTranscriptionStatus =
+                            AppUITestFixture.presentedAudioTranscriptionStatus(or: value)
+                    #else
+                        self?.audioTranscriptionStatus = value
+                    #endif
                 }
             }
             .store(in: &engineCancellables)

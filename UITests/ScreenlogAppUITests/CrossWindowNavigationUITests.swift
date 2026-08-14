@@ -483,11 +483,17 @@ final class CrossWindowNavigationUITests: XCTestCase {
         assertWindow("Permissions & Privacy", in: app)
 
         assertElement("setup.audio", in: app)
-        XCTAssertEqual(
-            assertElement("setup.audio.enabled", in: app).value as? String,
-            "Off",
-            "Optional audio must remain opt-in after required permissions are complete."
+        let audioToggle = app.checkBoxes["setup.audio.enabled"]
+        XCTAssertTrue(audioToggle.waitForExistence(timeout: Self.timeout))
+        XCTAssertFalse(
+            app.descendants(matching: .any)["setup.audio.computer"].exists,
+            "Audio sources must stay collapsed until the optional master switch is enabled."
         )
+        audioToggle.click()
+        assertElement("setup.audio.computer", in: app)
+        assertElement("setup.audio.microphone", in: app)
+        audioToggle.click()
+        XCTAssertFalse(app.descendants(matching: .any)["setup.audio.computer"].exists)
         assertElement("setup.start-capture", in: app).click()
         assertElement("setup.first-value.progress", in: app)
         XCTAssertFalse(
