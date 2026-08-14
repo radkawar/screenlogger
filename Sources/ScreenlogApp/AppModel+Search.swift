@@ -34,7 +34,7 @@ extension AppModel {
 extension AppModel {
     // MARK: - Search
 
-    /// Hits after text/operator/session/time constraints (drives chip counts).
+    /// Visible hits after every committed constraint (drives chip counts).
     var scopedSearchResults: [FTSResult] {
         searchFacetResults
     }
@@ -167,7 +167,7 @@ extension AppModel {
 
         let parsed = SearchOperatorParser.parse(raw)
         lastParsedSearch = parsed
-        guard let queries = makeLibrarySearchQueries(parsed: parsed) else {
+        guard let query = makeLibrarySearchQuery(parsed: parsed) else {
             searchResults = []
             searchFacetResults = []
             librarySearchResultsAreTruncated = false
@@ -194,12 +194,9 @@ extension AppModel {
                 }
             }
             do {
-                // Publish the first bounded page before doing the broader facet
-                // scan. Result cards acknowledge a large Library query as soon
-                // as possible; application/site refinements can fill in after.
                 let page = try await store.readAsync { store in
                     try store.searchLibraryPage(
-                        query: queries.results,
+                        query: query,
                         visibleLimit: LibrarySearchInteractionPolicy.pageSize
                     )
                 }
@@ -225,31 +222,6 @@ extension AppModel {
                 FaviconCache.shared.remoteFetchingEnabled = self.remoteFaviconsEnabled
                 let domains = page.results.compactMap(\.domain)
                 Task { await FaviconCache.shared.prefetch(domains: domains) }
-
-                guard let facetQuery = queries.facets else { return }
-                do {
-                    let facets = try await store.readAsync { store in
-                        try store.searchLibrary(
-                            query: facetQuery,
-                            limit: LibrarySearchInteractionPolicy.facetLimit
-                        )
-                    }
-                    guard
-                        LibrarySearchPublicationPolicy.allowsPublication(
-                            requestGeneration: generation,
-                            currentGeneration: self.librarySearchGeneration,
-                            isCancelled: Task.isCancelled
-                        )
-                    else {
-                        return
-                    }
-                    self.searchFacetResults = facets
-                } catch is CancellationError {
-                    return
-                } catch {
-                    // Result cards are already usable. A facet refresh failure
-                    // must not replace a successful query with an error state.
-                }
             } catch is CancellationError {
                 // ignore
             } catch {
@@ -281,7 +253,7 @@ extension AppModel {
         let parsed = SearchOperatorParser.parse(
             searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         )
-        guard let query = makeLibrarySearchQueries(parsed: parsed)?.results else { return }
+        guard let query = makeLibrarySearchQuery(parsed: parsed) else { return }
         let remaining = LibrarySearchPagePresentation.maximumVisibleResults - searchResults.count
         guard remaining > 0 else { return }
         let requestSize = min(LibrarySearchInteractionPolicy.pageSize, remaining)
@@ -315,9 +287,9 @@ extension AppModel {
                     return
                 }
                 let existingIDs = Set(self.searchResults.map(\.frameID))
-                self.searchResults.append(
-                    contentsOf: page.results.filter { !existingIDs.contains($0.frameID) }
-                )
+                let newResults = page.results.filter { !existingIDs.contains($0.frameID) }
+                self.searchResults.append(contentsOf: newResults)
+                self.searchFacetResults = self.searchResults
                 self.librarySearchNextCursor = page.nextCursor
                 self.librarySearchResultsAreTruncated = page.isTruncated
                 self.librarySearchState = .complete
@@ -474,11 +446,11 @@ extension AppModel {
         return parsed.ftsText.count >= 2 || hasStructure
     }
 
-    private func makeLibrarySearchQueries(
+    private func makeLibrarySearchQuery(
         parsed: ParsedSearchQuery,
         now: Date = Date(),
         calendar: Calendar = .current
-    ) -> (facets: LibrarySearchQuery?, results: LibrarySearchQuery)? {
+    ) -> LibrarySearchQuery? {
         var bounds = SearchOperatorParser.sqlTimeBounds(from: parsed)
 
         func intersect(from: Int64?, to: Int64?) {
@@ -496,14 +468,6 @@ extension AppModel {
             intersect(from: session.startMs, to: session.endMs)
         }
 
-        let base = LibrarySearchQuery(
-            text: parsed.ftsText,
-            appFilter: parsed.appFilter,
-            siteFilter: parsed.siteFilter,
-            fromTimestampMs: bounds.fromTimestampMs,
-            toTimestampMs: bounds.toTimestampMs,
-            content: searchContent
-        )
         let results = LibrarySearchQuery(
             text: parsed.ftsText,
             appFilter: parsed.appFilter,
@@ -515,7 +479,7 @@ extension AppModel {
             content: searchContent
         )
         guard Self.hasConstraint(results) else { return nil }
-        return (facets: Self.hasConstraint(base) ? base : nil, results: results)
+        return results
     }
 
     private func relativeSearchTimeBounds(

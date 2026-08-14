@@ -56,6 +56,7 @@ import ScreenlogCore
             let assistantScenario: AssistantScenario
             let firstRunFrameDelayMilliseconds: UInt64?
             let seedsMultipleDisplays: Bool
+            let compactsSeedHistory: Bool
             let presentsAudioTranscription: Bool
             let audioTranscriptionPhase: AudioTranscriptionPhase?
         }
@@ -217,6 +218,9 @@ import ScreenlogCore
                 ].flatMap(UInt64.init),
                 seedsMultipleDisplays: environment[
                     "SCREENLOG_UI_TEST_MULTIPLE_DISPLAYS"
+                ] == "1",
+                compactsSeedHistory: environment[
+                    "SCREENLOG_UI_TEST_COMPACT_HISTORY"
                 ] == "1",
                 presentsAudioTranscription: environment[
                     "SCREENLOG_UI_TEST_AUDIO_TRANSCRIPTION"
@@ -467,6 +471,18 @@ import ScreenlogCore
                             usesUnreadablePreview: configuration.usesUnreadablePreview,
                             includesMultipleDisplays: configuration.seedsMultipleDisplays
                         )
+                        if configuration.compactsSeedHistory {
+                            let compactor = VideoCompactionService()
+                            compactor.minBatchSize = 2
+                            compactor.minRunSize = 2
+                            // The visual fixture intentionally spans more than
+                            // a day. Treat it as one synthetic run without
+                            // weakening production's 60-second compaction gap.
+                            compactor.maxGapMs = .max
+                            guard try compactor.compactIfNeeded(store: store) > 0 else {
+                                throw FixtureError.compactionFailed
+                            }
+                        }
                         if configuration.presentsAudioTranscription {
                             try seedAudioTranscript(in: store)
                         }
@@ -1035,6 +1051,7 @@ import ScreenlogCore
             case storeUnavailable
             case snapshotUnavailable
             case imageEncodingFailed
+            case compactionFailed
             case snapshotContentUnavailable
             case windowSizeMismatch(expected: NSSize, actual: NSSize)
         }

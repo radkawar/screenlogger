@@ -304,7 +304,7 @@ extension Store {
                     m.snippet_title,
                     m.snippet_transcript,
                     f.image_path,
-                    f.video,
+                    CASE WHEN v.status = 0 THEN f.video ELSE NULL END,
                     m.transcript_id,
                     m.transcript_source,
                     m.transcript_start,
@@ -314,6 +314,7 @@ extension Store {
                 LEFT JOIN segment s ON s.id = f.segment
                 LEFT JOIN application a ON a.id = s.application
                 LEFT JOIN domain d ON d.id = s.domain
+                LEFT JOIN video v ON v.id = f.video
                 ORDER BY f.timestamp DESC, f.id DESC
                 """
         } else if query.content == .transcripts {
@@ -330,7 +331,7 @@ extension Store {
                     NULL,
                     substr(ts.text, 1, 161),
                     f.image_path,
-                    f.video,
+                    CASE WHEN v.status = 0 THEN f.video ELSE NULL END,
                     ts.id,
                     ts.source,
                     ts.start_timestamp,
@@ -346,6 +347,7 @@ extension Store {
                 LEFT JOIN segment s ON s.id = f.segment
                 LEFT JOIN application a ON a.id = s.application
                 LEFT JOIN domain d ON d.id = s.domain
+                LEFT JOIN video v ON v.id = f.video
                 WHERE \(filterWhereSQL)
                 ORDER BY f.timestamp DESC, f.id DESC
                 LIMIT ?
@@ -375,7 +377,7 @@ extension Store {
                     substr(f.title, 1, 161),
                     NULL,
                     f.image_path,
-                    f.video,
+                    CASE WHEN v.status = 0 THEN f.video ELSE NULL END,
                     NULL,
                     NULL,
                     NULL,
@@ -385,6 +387,7 @@ extension Store {
                 LEFT JOIN segment s ON s.id = f.segment
                 LEFT JOIN application a ON a.id = s.application
                 LEFT JOIN domain d ON d.id = s.domain
+                LEFT JOIN video v ON v.id = f.video
                 ORDER BY f.timestamp DESC, f.id DESC
                 """
         }

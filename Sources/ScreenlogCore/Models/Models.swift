@@ -318,6 +318,29 @@ public struct FTSResult: Sendable, Equatable, Codable {
     }
 }
 
+/// Current media backing for a captured moment.
+///
+/// Search results can remain visible while background compaction replaces a
+/// still with a video frame. Preview loaders therefore resolve this descriptor
+/// from the Store at decode time instead of trusting an old `imagePath` snapshot.
+public enum FramePreviewSource: Sendable, Equatable {
+    case still(path: String)
+    case video(path: String, index: Int)
+    case unavailable
+}
+
+public struct FramePreviewDescriptor: Sendable, Equatable {
+    public var frameID: Int64
+    public var timestampMs: Int64
+    public var source: FramePreviewSource
+
+    public init(frameID: Int64, timestampMs: Int64, source: FramePreviewSource) {
+        self.frameID = frameID
+        self.timestampMs = timestampMs
+        self.source = source
+    }
+}
+
 /// The local audio stream that produced a transcript segment.
 public enum TranscriptSource: String, Sendable, Equatable, Codable, CaseIterable {
     case microphone

@@ -4,6 +4,14 @@ import SQLite3
 
 private let log = Logger(subsystem: "dev.screenlog", category: "retention")
 
+extension Notification.Name {
+    /// Posted in-process after a retention run has made captured pixels
+    /// unavailable. Metadata remains searchable.
+    public static let screenlogRetentionDidPurgeMedia = Notification.Name(
+        "dev.screenlog.retention-did-purge-media"
+    )
+}
+
 public struct RetentionPolicy: Sendable, Codable, Equatable {
     /// Remove capture media older than this many days while retaining searchable metadata.
     public var retentionDays: Int
@@ -238,8 +246,17 @@ public final class RetentionService: @unchecked Sendable {
 
     @discardableResult
     public func runDetailed(store: Store) throws -> RetentionRunReport {
-        try store.withExclusiveMaintenance {
-            try runExclusively(store: store)
+        var didPurgeMedia = false
+        defer {
+            if didPurgeMedia {
+                NotificationCenter.default.post(name: .screenlogRetentionDidPurgeMedia, object: store)
+            }
+        }
+
+        return try store.withExclusiveMaintenance {
+            try runExclusively(store: store) {
+                didPurgeMedia = true
+            }
         }
     }
 
@@ -315,7 +332,10 @@ public final class RetentionService: @unchecked Sendable {
         )
     }
 
-    private func runExclusively(store: Store) throws -> RetentionRunReport {
+    private func runExclusively(
+        store: Store,
+        didPurgeMedia: () -> Void
+    ) throws -> RetentionRunReport {
         var purgedVideos = 0
         var purgedStills = 0
         var failedVideos = 0
@@ -332,7 +352,7 @@ public final class RetentionService: @unchecked Sendable {
         func attempt(_ video: VideoRow) -> Bool {
             guard attemptedVideoIDs.insert(video.id).inserted else { return false }
             do {
-                let result = try purge(video: video, store: store)
+                let result = try purge(video: video, store: store, didCommitUnavailable: didPurgeMedia)
                 purgedVideos += 1
                 freedBytes += result.freedBytes
                 if result.wasMissing { missingFiles += 1 }
@@ -349,7 +369,7 @@ public final class RetentionService: @unchecked Sendable {
         func attempt(_ still: RetentionCandidate) -> Bool {
             guard attemptedStillIDs.insert(still.id).inserted else { return false }
             do {
-                let result = try purge(still: still, store: store)
+                let result = try purge(still: still, store: store, didCommitUnavailable: didPurgeMedia)
                 purgedStills += 1
                 freedBytes += result.freedBytes
                 if result.wasMissing { missingFiles += 1 }
@@ -429,7 +449,11 @@ public final class RetentionService: @unchecked Sendable {
         return report
     }
 
-    private func purge(still: RetentionCandidate, store: Store) throws -> PurgeResult {
+    private func purge(
+        still: RetentionCandidate,
+        store: Store,
+        didCommitUnavailable: () -> Void
+    ) throws -> PurgeResult {
         guard let path = still.path, !path.isEmpty else {
             throw RetentionPurgeError.invalidFramePath(frameID: still.id)
         }
@@ -466,6 +490,7 @@ public final class RetentionService: @unchecked Sendable {
         guard fileSystem.fileExists(at: originalURL) else {
             do {
                 try store.markFrameImagePurged(id: still.id, expectedPath: path)
+                didCommitUnavailable()
             } catch {
                 throw RetentionPurgeError.frameOperation(
                     frameID: still.id,
@@ -521,6 +546,7 @@ public final class RetentionService: @unchecked Sendable {
                 try store.markFrameImagePurged(id: still.id, expectedPath: path)
                 try fileSystem.removeItem(at: originalURL)
             }
+            didCommitUnavailable()
         } catch {
             do {
                 try restoreAfterFailedTransaction(originalURL: originalURL, recoveryURL: recoveryURL)
@@ -559,7 +585,11 @@ public final class RetentionService: @unchecked Sendable {
         return PurgeResult(freedBytes: actualBytes, wasMissing: false)
     }
 
-    private func purge(video: VideoRow, store: Store) throws -> PurgeResult {
+    private func purge(
+        video: VideoRow,
+        store: Store,
+        didCommitUnavailable: () -> Void
+    ) throws -> PurgeResult {
         guard let path = video.path, !path.isEmpty else {
             throw RetentionPurgeError.invalidPath(videoID: video.id)
         }
@@ -599,6 +629,7 @@ public final class RetentionService: @unchecked Sendable {
         guard fileSystem.fileExists(at: originalURL) else {
             do {
                 try store.markVideoPurged(id: video.id)
+                didCommitUnavailable()
             } catch {
                 throw RetentionPurgeError.operation(
                     videoID: video.id,
@@ -656,6 +687,7 @@ public final class RetentionService: @unchecked Sendable {
                 try store.markVideoPurged(id: video.id)
                 try fileSystem.removeItem(at: originalURL)
             }
+            didCommitUnavailable()
         } catch {
             do {
                 try restoreAfterFailedTransaction(originalURL: originalURL, recoveryURL: recoveryURL)

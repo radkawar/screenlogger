@@ -28,6 +28,7 @@ struct LibraryFilterPanel: View {
                 .padding(.horizontal, 12)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .background(Color(nsColor: .controlBackgroundColor).opacity(0.28))
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("library.filters")
         case .popover:
             filterContent
@@ -37,6 +38,7 @@ struct LibraryFilterPanel: View {
                     height: dynamicTypeSize.isAccessibilitySize ? 520 : 430,
                     alignment: .top
                 )
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("library.filters")
         }
     }

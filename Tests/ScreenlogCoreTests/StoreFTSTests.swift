@@ -62,6 +62,43 @@ final class StoreFTSTests: XCTestCase {
         XCTAssertTrue(frame!.foreground?.contains(phrase) == true)
     }
 
+    func testLibrarySearchAdvertisesOnlyActiveCompactedMedia() throws {
+        let activeToken = "activecompact\(UUID().uuidString.prefix(8))"
+        let purgedToken = "purgedcompact\(UUID().uuidString.prefix(8))"
+        let activeFrame = try store.insertSeedFrame(
+            timestampMs: 1_700_000_000_100,
+            foreground: activeToken
+        )
+        let purgedFrame = try store.insertSeedFrame(
+            timestampMs: 1_700_000_000_200,
+            foreground: purgedToken
+        )
+        let activeVideo = try store.insertVideo(path: "/tmp/active-preview.mp4", status: 0)
+        let purgedVideo = try store.insertVideo(path: "/tmp/purged-preview.mp4", status: 2)
+        try store.attachFrame(id: activeFrame, videoID: activeVideo, videoIndex: 0)
+        try store.attachFrame(id: purgedFrame, videoID: purgedVideo, videoIndex: 0)
+        try store.withSerializedMutation {
+            try store.db.exec(
+                "UPDATE frame SET image_path = NULL WHERE id IN (\(activeFrame), \(purgedFrame))"
+            )
+        }
+
+        let activeHit = try XCTUnwrap(
+            try store.searchLibrary(query: LibrarySearchQuery(text: activeToken), limit: 1).first
+        )
+        XCTAssertTrue(activeHit.isCompacted)
+        XCTAssertNil(activeHit.imagePath)
+
+        let purgedHit = try XCTUnwrap(
+            try store.searchLibrary(query: LibrarySearchQuery(text: purgedToken), limit: 1).first
+        )
+        XCTAssertFalse(
+            purgedHit.isCompacted,
+            "Purged video must not be presented as a preview that can still be loaded."
+        )
+        XCTAssertNil(purgedHit.imagePath)
+    }
+
     func testStructuredSearchMatchesAppLibraryAndAssistantContract() throws {
         let token = "structured" + String(UUID().uuidString.prefix(8)).replacingOccurrences(of: "-", with: "")
         let targetID = try store.insertSeedFrame(

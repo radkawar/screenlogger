@@ -1,24 +1,27 @@
 import AppKit
-import ImageIO
 import ScreenlogCore
 import SwiftUI
 
 /// A display-sized still for Library cards and the inspector.
 ///
-/// `NSImage(contentsOfFile:)` leaves full-resolution captures available for decoding, which
-/// can briefly multiply memory use while a grid is scrolling. ImageIO instead creates a
-/// thumbnail close to the view's backing-pixel size. SwiftUI cancels the task when a lazy-grid
-/// cell leaves the viewport; the cancellation handler also cancels the detached decode worker.
+/// The shared preview pipeline resolves current still/video backing and decodes
+/// close to the view's backing-pixel size. SwiftUI cancels the request when a
+/// lazy-grid cell leaves the viewport, before queued decode work can begin.
 struct LibraryThumbnail: View {
+    let frameID: Int64
     let path: String?
     var isCompacted = false
     var contentMode: ContentMode = .fill
     var showsStatusDetail = false
     var statusAccessibilityIdentifier = ""
+    var priority: PreviewImagePriority = .card
 
+    @EnvironmentObject private var model: AppModel
     @Environment(\.displayScale) private var displayScale
     @State private var loadedImage: NSImage?
+    @State private var loadedGeneration: UInt64?
     @State private var loadFailed = false
+    @State private var mediaUnavailable = false
 
     @ViewBuilder
     var body: some View {
@@ -31,15 +34,13 @@ struct LibraryThumbnail: View {
                     statusDetail(previewStatus)
                 }
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityHidden(previewStatus == nil)
-            .accessibilityLabel(previewStatus?.accessibilityLabel ?? "")
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(previewAccessibilityLabel)
             .accessibilityIdentifier(statusAccessibilityIdentifier)
         } else {
             thumbnailViewport
-                .accessibilityElement(children: .combine)
-                .accessibilityHidden(previewStatus == nil)
-                .accessibilityLabel(previewStatus?.accessibilityLabel ?? "")
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(previewAccessibilityLabel)
                 .accessibilityIdentifier(statusAccessibilityIdentifier)
         }
     }
@@ -50,18 +51,23 @@ struct LibraryThumbnail: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
                 .task(id: requestKey(for: geometry.size)) {
-                    await loadImage(for: geometry.size)
+                    await loadImage(
+                        for: geometry.size,
+                        generation: model.previewMediaGeneration
+                    )
                 }
         }
     }
 
     @ViewBuilder
     private var thumbnailContent: some View {
-        if let loadedImage {
-            Image(nsImage: loadedImage)
+        if let currentImage {
+            Image(nsImage: currentImage)
                 .resizable()
                 .interpolation(.high)
                 .aspectRatio(contentMode: contentMode)
+                .accessibilityLabel("Captured screenshot")
+                .accessibilityIdentifier("library.preview.image.\(frameID)")
         } else if let previewStatus {
             placeholder(previewStatus)
         } else {
@@ -90,6 +96,8 @@ struct LibraryThumbnail: View {
             .foregroundStyle(.secondary)
             .padding(12)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(status.accessibilityLabel)
     }
 
     private func statusDetail(_ status: PreviewStatus) -> some View {
@@ -110,76 +118,105 @@ struct LibraryThumbnail: View {
     }
 
     private var previewStatus: PreviewStatus? {
-        if isCompacted {
-            return .availableInTimeline
-        }
-        if path == nil || path?.isEmpty == true {
+        if mediaUnavailable || (!hasMediaHint && currentImage == nil) {
             return .noLongerStored
         }
         return loadFailed ? .unavailable : nil
     }
 
+    private var previewAccessibilityLabel: String {
+        if currentImage != nil { return "Captured screenshot" }
+        if let previewStatus { return previewStatus.accessibilityLabel }
+        return "Loading captured screenshot"
+    }
+
+    private var currentImage: NSImage? {
+        guard loadedGeneration == model.previewMediaGeneration else { return nil }
+        return loadedImage
+    }
+
     private func requestKey(for size: CGSize) -> String {
-        "\(path ?? "")|\(targetMaxPixelSize(for: size))|\(isCompacted)"
+        "\(frameID)|\(path ?? "")|\(targetMaxPixelSize(for: size))|\(isCompacted)|\(model.previewMediaGeneration)"
+    }
+
+    private var hasMediaHint: Bool {
+        isCompacted || !(path?.isEmpty ?? true)
     }
 
     private func targetMaxPixelSize(for size: CGSize) -> Int {
         let exactPixels = max(size.width, size.height) * max(displayScale, 1)
         guard exactPixels.isFinite, exactPixels > 0 else { return 0 }
-        // Small resize changes should reuse the same decoded thumbnail.
-        return Int(ceil(exactPixels / 32)) * 32
+        // Stable buckets avoid duplicate card and inspector extraction while
+        // still matching Retina presentation size closely.
+        let buckets = [384, 768, 1_280, 2_048, 3_072, 4_096, 6_144]
+        return buckets.first(where: { $0 >= Int(ceil(exactPixels)) }) ?? 6_144
     }
 
     @MainActor
-    private func loadImage(for size: CGSize) async {
-        loadedImage = nil
+    private func loadImage(for size: CGSize, generation: UInt64) async {
+        if loadedGeneration != generation {
+            loadedImage = nil
+            loadedGeneration = nil
+        }
         loadFailed = false
+        mediaUnavailable = false
 
-        guard !isCompacted,
-            let path,
-            !path.isEmpty
-        else { return }
+        guard hasMediaHint else {
+            loadedImage = nil
+            loadedGeneration = nil
+            mediaUnavailable = true
+            return
+        }
 
         let maxPixelSize = targetMaxPixelSize(for: size)
         guard maxPixelSize > 0 else { return }
+        guard let store = model.store else {
+            loadFailed = true
+            return
+        }
 
         let scale = max(displayScale, 1)
-        let worker = Task.detached(priority: .utility) {
-            try LibraryThumbnailRenderer.image(
-                at: path,
-                maxPixelSize: maxPixelSize,
-                displayScale: scale
-            )
-        }
-
-        var image: NSImage?
         do {
-            image = try await withTaskCancellationHandler {
-                try await worker.value
-            } onCancel: {
-                worker.cancel()
-            }
+            let cgImage = try await model.previewImagePipeline.image(
+                frameID: frameID,
+                store: store,
+                maxPixelSize: maxPixelSize,
+                priority: priority
+            )
             try Task.checkCancellation()
+            guard model.previewMediaGeneration == generation else { return }
+            loadedImage = NSImage(
+                cgImage: cgImage,
+                size: NSSize(
+                    width: CGFloat(cgImage.width) / scale,
+                    height: CGFloat(cgImage.height) / scale
+                )
+            )
+            loadedGeneration = generation
         } catch is CancellationError {
             return
+        } catch let error as PreviewImagePipelineError
+            where error == .mediaUnavailable || error == .momentMissing
+        {
+            guard model.previewMediaGeneration == generation else { return }
+            loadedImage = nil
+            loadedGeneration = nil
+            mediaUnavailable = true
         } catch {
-            image = nil
+            guard model.previewMediaGeneration == generation else { return }
+            loadedImage = nil
+            loadedGeneration = nil
+            loadFailed = true
         }
-
-        guard !Task.isCancelled else { return }
-        loadedImage = image
-        loadFailed = image == nil
     }
 }
 
 private enum PreviewStatus {
-    case availableInTimeline
     case noLongerStored
     case unavailable
 
     var systemImage: String {
         switch self {
-        case .availableInTimeline: "film.stack"
         case .noLongerStored: "clock.arrow.trianglehead.counterclockwise.rotate.90"
         case .unavailable: "photo.badge.exclamationmark"
         }
@@ -187,7 +224,6 @@ private enum PreviewStatus {
 
     var title: String {
         switch self {
-        case .availableInTimeline: "Preview available in Timeline"
         case .noLongerStored: "Preview no longer stored"
         case .unavailable: "Preview unavailable"
         }
@@ -195,7 +231,6 @@ private enum PreviewStatus {
 
     var detail: String {
         switch self {
-        case .availableInTimeline: "Opening this moment requests its preview."
         case .noLongerStored: "Searchable text and details are still available."
         case .unavailable: "The captured image could not be loaded."
         }
@@ -203,58 +238,5 @@ private enum PreviewStatus {
 
     var accessibilityLabel: String {
         "\(title). \(detail)"
-    }
-}
-
-private enum LibraryThumbnailRenderer {
-    private static let cache: NSCache<NSString, NSImage> = {
-        let cache = NSCache<NSString, NSImage>()
-        cache.countLimit = 160
-        cache.totalCostLimit = 64 * 1024 * 1024
-        return cache
-    }()
-
-    static func image(
-        at path: String,
-        maxPixelSize: Int,
-        displayScale: CGFloat
-    ) throws -> NSImage? {
-        try Task.checkCancellation()
-
-        let cacheKey = "\(path)|\(maxPixelSize)" as NSString
-        if let image = cache.object(forKey: cacheKey) {
-            return image
-        }
-
-        let cgImage = try ScreenlogPerformanceSignposts.measure(.firstThumbnailDecode) {
-            let url = URL(fileURLWithPath: path)
-            let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-            guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions) else {
-                return nil as CGImage?
-            }
-
-            try Task.checkCancellation()
-            let thumbnailOptions =
-                [
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceShouldCacheImmediately: true,
-                    kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
-                ] as CFDictionary
-            return CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions)
-        }
-        guard let cgImage else { return nil }
-
-        try Task.checkCancellation()
-        let image = NSImage(
-            cgImage: cgImage,
-            size: NSSize(
-                width: CGFloat(cgImage.width) / displayScale,
-                height: CGFloat(cgImage.height) / displayScale
-            )
-        )
-        let byteCost = min(Int.max, cgImage.bytesPerRow * cgImage.height)
-        cache.setObject(image, forKey: cacheKey, cost: byteCost)
-        return image
     }
 }

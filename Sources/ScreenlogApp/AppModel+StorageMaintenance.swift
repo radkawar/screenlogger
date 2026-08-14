@@ -3,6 +3,26 @@ import ScreenlogCore
 
 @MainActor
 extension AppModel {
+    func invalidateRetainedPreviewMedia() {
+        previewMediaInvalidationTask?.cancel()
+        extractTask?.cancel()
+        prefetchTask?.cancel()
+        previewCache.removeAllObjects()
+        selectedFrameImage = nil
+        selectedFrameExtracting = false
+        selectedFramePreviewIssue = nil
+        previewMediaGeneration &+= 1
+        let pipeline = previewImagePipeline
+        previewMediaInvalidationTask = Task { @MainActor [weak self] in
+            await pipeline.removeAll()
+            guard let self, !Task.isCancelled else { return }
+            if self.selectedTimelineID != nil {
+                self.scheduleSelectedFrameExtract()
+            }
+            self.previewMediaInvalidationTask = nil
+        }
+    }
+
     func compactNow() {
         guard let store, !storageMaintenanceState.isRunning,
             !libraryRestoreState.isBusy, libraryRestoreReview == nil

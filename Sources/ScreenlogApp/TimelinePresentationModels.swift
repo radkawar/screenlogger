@@ -51,12 +51,42 @@ enum TimelineIssue: Equatable, Sendable {
     }
 }
 
-/// A failure loading media for the currently selected Timeline moment.
-/// This is separate from intentionally unavailable media, which is derived
-/// from a frame having neither an image nor a compacted-video reference.
+/// Why the selected Timeline moment cannot currently show captured pixels.
+/// Retention is presented separately from a missing row or unreadable file so
+/// the recovery action never promises to restore intentionally removed media.
 enum TimelinePreviewIssue: Equatable, Sendable {
     case momentMissing
+    case mediaUnavailable
     case mediaUnreadable
+
+    var systemImage: String {
+        switch self {
+        case .momentMissing: "arrow.clockwise.circle"
+        case .mediaUnavailable: "clock.arrow.trianglehead.counterclockwise.rotate.90"
+        case .mediaUnreadable: "photo.badge.exclamationmark"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .momentMissing: "Moment Couldn't Be Found"
+        case .mediaUnavailable: "Preview No Longer Stored"
+        case .mediaUnreadable: "Couldn't Load Preview"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .momentMissing:
+            "The Timeline may have changed. Refresh it to find the nearest available moment."
+        case .mediaUnavailable:
+            "The saved text, app, and time are still available, but this captured image was removed by your storage limits."
+        case .mediaUnreadable:
+            "The saved text, app, and time are still available. Try loading the image again."
+        }
+    }
+
+    var canRetry: Bool { self != .mediaUnavailable }
 }
 
 extension AppModel {

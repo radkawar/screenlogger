@@ -276,6 +276,7 @@ targets:
       - path: Sources/ScreenlogApp/Services/AgentPresence.swift
       - path: Sources/ScreenlogApp/Services/AssistantHandoffLaunchService.swift
       - path: Sources/ScreenlogApp/Services/CLICommandAvailability.swift
+      - path: Sources/ScreenlogApp/Services/PreviewImagePipeline.swift
       - path: Sources/ScreenlogApp/Models/SettingsDestination.swift
       - path: Sources/ScreenlogApp/Models/SettingsWindowLayout.swift
       - path: Sources/ScreenlogApp/ExclusionPolicyPresentation.swift

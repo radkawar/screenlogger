@@ -188,6 +188,35 @@ public enum FrameExtractor {
         }
     }
 
+    /// Decode an authoritative Store descriptor at a bounded preview size.
+    public static func previewCGImage(
+        for descriptor: FramePreviewDescriptor,
+        maxPixelSize: Int
+    ) async throws -> CGImage {
+        guard maxPixelSize > 0 else {
+            throw ExtractError.imageGenerationFailed("maxPixelSize must be greater than zero")
+        }
+        switch descriptor.source {
+        case .still(let path):
+            guard let image = previewCGImage(atPath: path, maxPixelSize: maxPixelSize) else {
+                throw ExtractError.imageGenerationFailed("still preview is unavailable")
+            }
+            return image
+        case .video(let path, let index):
+            guard FileManager.default.fileExists(atPath: path) else {
+                throw ExtractError.imageGenerationFailed("video preview is unavailable")
+            }
+            let edge = CGFloat(maxPixelSize)
+            return try await cgImage(
+                videoURL: URL(fileURLWithPath: path),
+                videoIndex: index,
+                maximumSize: CGSize(width: edge, height: edge)
+            )
+        case .unavailable:
+            throw ExtractError.imageGenerationFailed("frame has no retained preview media")
+        }
+    }
+
     /// Still bytes for a frame: prefer existing `image_path`, else extract from compacted video.
     public static func stillData(
         forFrame frame: FrameRow,
@@ -243,11 +272,16 @@ public enum FrameExtractor {
     }
 
     private static func videoPath(videoID: Int64, store: Store) throws -> String {
-        let stmt = try store.db.prepare("SELECT path FROM video WHERE id = ? LIMIT 1")
+        let stmt = try store.db.prepare(
+            "SELECT path FROM video WHERE id = ? AND status = 0 LIMIT 1"
+        )
         defer { sqlite3_finalize(stmt) }
         SQLiteBind.int64(stmt, 1, videoID)
         guard sqlite3_step(stmt) == SQLITE_ROW, let path = SQLiteColumn.text(stmt, 0) else {
-            throw ExtractError.imageGenerationFailed("video row \(videoID) not found")
+            throw ExtractError.imageGenerationFailed("active video row \(videoID) not found")
+        }
+        guard FileManager.default.fileExists(atPath: path) else {
+            throw ExtractError.imageGenerationFailed("active video file \(videoID) not found")
         }
         return path
     }

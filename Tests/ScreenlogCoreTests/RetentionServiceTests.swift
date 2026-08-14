@@ -19,6 +19,61 @@ final class RetentionServiceTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempRoot)
     }
 
+    func testRunNotifiesVisiblePreviewConsumersAfterPurgingMedia() throws {
+        _ = try insertStill(timestampMs: 1_600_000_000_000, foreground: "old", byteCount: 64)
+        let notified = expectation(description: "retained preview media changed")
+        let token = NotificationCenter.default.addObserver(
+            forName: .screenlogRetentionDidPurgeMedia,
+            object: store,
+            queue: nil
+        ) { _ in
+            notified.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        let report = try RetentionService(
+            policy: RetentionPolicy(retentionDays: 30, storageCapMB: 0)
+        ).runDetailed(store: store)
+
+        XCTAssertEqual(report.purgedStillCount, 1)
+        wait(for: [notified], timeout: 0.2)
+    }
+
+    func testRunStillNotifiesWhenBookkeepingFailsAfterCommittedPurge() throws {
+        let frameID = try insertStill(
+            timestampMs: 1_600_000_000_000,
+            foreground: "old",
+            byteCount: 64
+        )
+        let notified = expectation(description: "committed purge remains visible")
+        let token = NotificationCenter.default.addObserver(
+            forName: .screenlogRetentionDidPurgeMedia,
+            object: store,
+            queue: nil
+        ) { _ in
+            notified.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        try store.db.exec(
+            """
+            CREATE TRIGGER fail_retention_report
+            BEFORE INSERT ON metadata
+            WHEN NEW.key = 'last_retention_report'
+            BEGIN
+                SELECT RAISE(ABORT, 'forced bookkeeping failure');
+            END;
+            """
+        )
+
+        XCTAssertThrowsError(
+            try RetentionService(
+                policy: RetentionPolicy(retentionDays: 30, storageCapMB: 0)
+            ).runDetailed(store: store)
+        )
+        wait(for: [notified], timeout: 0.2)
+        XCTAssertNil(try imagePathOptional(frameID: frameID))
+    }
+
     /// Retention must delete on-disk video files (not only mark DB status).
     func testRunDeletesAgedVideoFilesFromDisk() throws {
         let videosDir = tempRoot.appendingPathComponent("videos", isDirectory: true)
@@ -438,6 +493,58 @@ final class RetentionServiceTests: XCTestCase {
         XCTAssertTrue(retryReport.contains("failed_videos=0"), retryReport)
         XCTAssertFalse(FileManager.default.fileExists(atPath: recoveryPath.path))
         XCTAssertEqual(try videoState(id: videoID).status, 2)
+    }
+
+    func testCommittedPurgeNotifiesWhenRecoveryCleanupAndReactivationBothFail() throws {
+        let videosDirectory = ScreenlogPaths.videosDirectory(root: tempRoot)
+        let path = videosDirectory.appendingPathComponent("double-failure.mp4")
+        let bytes = Data(repeating: 0x71, count: 2_048)
+        try bytes.write(to: path)
+        let videoID = try insertAgedVideo(path: path, sizeBytes: Int64(bytes.count))
+        let recoveryPath =
+            videosDirectory
+            .appendingPathComponent(".retention-recovery/video-\(videoID).mp4")
+        let fileSystem = FailingRetentionFileSystem(failRemovalAt: recoveryPath, times: 1)
+        try store.db.exec(
+            """
+            CREATE TRIGGER reject_retention_reactivation
+            BEFORE UPDATE OF status ON video
+            WHEN OLD.id = \(videoID) AND OLD.status = 2 AND NEW.status = 0
+            BEGIN
+                SELECT RAISE(ABORT, 'forced retention reactivation failure');
+            END;
+            """
+        )
+        let notified = expectation(description: "durably unavailable media changed")
+        let token = NotificationCenter.default.addObserver(
+            forName: .screenlogRetentionDidPurgeMedia,
+            object: store,
+            queue: nil
+        ) { _ in
+            notified.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        let report = try RetentionService(
+            policy: ageOnlyPolicy,
+            fileSystem: fileSystem
+        ).runDetailed(store: store)
+
+        XCTAssertEqual(report.failedVideoCount, 1)
+        XCTAssertEqual(report.purgedVideoCount, 0)
+        wait(for: [notified], timeout: 0.2)
+        XCTAssertEqual(try videoState(id: videoID).status, 2)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: recoveryPath.path))
+        let frameStatement = try store.db.prepare("SELECT id FROM frame WHERE video = ? LIMIT 1")
+        defer { sqlite3_finalize(frameStatement) }
+        SQLiteBind.int64(frameStatement, 1, videoID)
+        guard sqlite3_step(frameStatement) == SQLITE_ROW else {
+            return XCTFail("Expected a frame attached to the failed video purge")
+        }
+        let descriptor = try XCTUnwrap(
+            store.framePreviewDescriptor(id: SQLiteColumn.int64(frameStatement, 0))
+        )
+        XCTAssertEqual(descriptor.source, .unavailable)
     }
 
     private var ageOnlyPolicy: RetentionPolicy {

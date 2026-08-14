@@ -1,4 +1,4 @@
 // Authoritative Screenlogger product version. Xcode build metadata and
 // ScreenlogCore's SwiftPM runtime version both consume this exact file.
-MARKETING_VERSION = 0.1.8
-CURRENT_PROJECT_VERSION = 9
+MARKETING_VERSION = 0.1.9
+CURRENT_PROJECT_VERSION = 10

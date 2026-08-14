@@ -61,6 +61,9 @@ final class AppModel: ObservableObject {
     @Published var selectedFrameImage: NSImage?
     @Published var selectedFrameExtracting = false
     @Published var selectedFramePreviewIssue: TimelinePreviewIssue?
+    /// Changes whenever retained media is deleted or the live Library is
+    /// replaced. Visible Library thumbnails use it to discard stale pixels.
+    @Published var previewMediaGeneration: UInt64 = 0
     /// Auto-step through the loaded timeline.
     @Published var isReplaying = false
     @Published var searchQuery = ""
@@ -516,6 +519,7 @@ final class AppModel: ObservableObject {
     var storageMeasurementRequestID: UUID?
     var storagePreflightTask: Task<Void, Never>?
     var storagePreflightRequestID: UUID?
+    var previewMediaInvalidationTask: Task<Void, Never>?
     var diagnosticsLog: StructuredDiagnosticsLog?
     var isLoadingSettings = false
     var settingsApplyTask: Task<Void, Never>?
@@ -530,6 +534,9 @@ final class AppModel: ObservableObject {
         c.totalCostLimit = 256 * 1024 * 1024
         return c
     }()
+    /// Shared bounded decoder for Library cards, the Library inspector, and
+    /// Timeline. It re-resolves media so visible results survive compaction.
+    let previewImagePipeline = PreviewImagePipeline()
 
     // MARK: - Lifecycle
 
@@ -747,6 +754,7 @@ final class AppModel: ObservableObject {
             try Task.checkCancellation()
             try await Task.sleep(nanoseconds: 20_000_000)
         }
+        await previewImagePipeline.suspendAndDrain()
         let tasks =
             [
                 refreshTask,
@@ -762,6 +770,7 @@ final class AppModel: ObservableObject {
                 pauseResumeTask,
                 storageMeasurementTask,
                 storagePreflightTask,
+                previewMediaInvalidationTask,
             ].compactMap { $0 } + Array(librarySearchWorkers.values)
         tasks.forEach { $0.cancel() }
         for task in tasks { _ = await task.result }
@@ -783,21 +792,29 @@ final class AppModel: ObservableObject {
         storageMeasurementRequestID = nil
         storagePreflightTask = nil
         storagePreflightRequestID = nil
+        previewMediaInvalidationTask = nil
 
         await ScreenlogSocketHost.shared.stopAndDrain()
         await ScreenlogXPCHost.shared.stopAndDrain()
         await engine.quiesceForLibraryReplacement()
         guard let currentStore = store else {
+            await previewImagePipeline.resume()
             throw LibraryRestoreError.liveLibraryUnavailable
         }
-        try currentStore.withSerializedMutation {
-            try currentStore.db.exec("PRAGMA wal_checkpoint(TRUNCATE);")
-            try currentStore.db.close()
+        do {
+            try currentStore.withSerializedMutation {
+                try currentStore.db.exec("PRAGMA wal_checkpoint(TRUNCATE);")
+                try currentStore.db.close()
+            }
+        } catch {
+            await previewImagePipeline.resume()
+            throw error
         }
         store = nil
         previewCache.removeAllObjects()
         selectedFrameImage = nil
         selectedFrameOCRBoxes = []
+        previewMediaGeneration &+= 1
     }
 
     func shutdown() {
@@ -858,6 +875,8 @@ final class AppModel: ObservableObject {
         storagePreflightTask?.cancel()
         storagePreflightTask = nil
         storagePreflightRequestID = nil
+        previewMediaInvalidationTask?.cancel()
+        previewMediaInvalidationTask = nil
         pauseResumeTask?.cancel()
         pauseResumeTask = nil
         recordingPausedUntil = nil
@@ -874,6 +893,19 @@ final class AppModel: ObservableObject {
     /// schedules a database-backed Library refresh.
     private func bindEngineState() {
         engineCancellables.removeAll()
+
+        NotificationCenter.default.publisher(for: .screenlogRetentionDidPurgeMedia)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] notification in
+                Task { @MainActor [weak self] in
+                    guard let self,
+                        let changedStore = notification.object as? Store,
+                        changedStore === self.store
+                    else { return }
+                    self.invalidateRetainedPreviewMedia()
+                }
+            }
+            .store(in: &engineCancellables)
 
         engine.$isRecording
             .removeDuplicates()

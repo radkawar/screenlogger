@@ -97,7 +97,6 @@ enum LibrarySearchInteractionPolicy {
     static let inputAcknowledgementBudgetMilliseconds = 100
     static let debounceNanoseconds: UInt64 = 240_000_000
     static let pageSize = 80
-    static let facetLimit = 200
 
     static func resultsRemainInteractive(
         visibleCount: Int,

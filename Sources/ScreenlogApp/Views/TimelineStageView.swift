@@ -167,23 +167,19 @@ extension HistoryPane {
 
     func previewIssueView(_ issue: TimelinePreviewIssue) -> some View {
         VStack(spacing: 14) {
-            Image(systemName: issue == .momentMissing ? "arrow.clockwise.circle" : "photo.badge.exclamationmark")
+            Image(systemName: issue.systemImage)
                 .font(.system(size: 34, weight: .light))
                 .foregroundStyle(.white.opacity(0.72))
                 .accessibilityHidden(true)
 
             VStack(spacing: 6) {
-                Text(issue == .momentMissing ? "Moment Couldn't Be Found" : "Couldn't Load Preview")
+                Text(issue.title)
                     .font(.headline)
-                Text(
-                    issue == .momentMissing
-                        ? "The Timeline may have changed. Refresh it to find the nearest available moment."
-                        : "The saved text, app, and time are still available. Try loading the image again."
-                )
-                .font(.caption)
-                .foregroundStyle(.white.opacity(secondaryTextOpacity))
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 360)
+                Text(issue.message)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(secondaryTextOpacity))
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 360)
             }
 
             HStack(spacing: 10) {
@@ -194,23 +190,25 @@ extension HistoryPane {
                     .buttonStyle(.bordered)
                 }
 
-                Button {
-                    if issue == .momentMissing {
-                        Task { await model.refreshTimeline(announceResult: true) }
-                    } else {
-                        model.retrySelectedFramePreview()
+                if issue.canRetry {
+                    Button {
+                        if issue == .momentMissing {
+                            Task { await model.refreshTimeline(announceResult: true) }
+                        } else {
+                            model.retrySelectedFramePreview()
+                        }
+                    } label: {
+                        Label(
+                            issue == .momentMissing ? "Refresh Timeline" : "Try Again",
+                            systemImage: "arrow.clockwise"
+                        )
                     }
-                } label: {
-                    Label(
-                        issue == .momentMissing ? "Refresh Timeline" : "Try Again",
-                        systemImage: "arrow.clockwise"
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier(
+                        issue == .momentMissing ? "timeline.preview.refresh" : "timeline.preview.retry"
                     )
                 }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .accessibilityIdentifier(
-                    issue == .momentMissing ? "timeline.preview.refresh" : "timeline.preview.retry"
-                )
             }
         }
         .padding(22)

@@ -72,7 +72,7 @@ extension AppModel {
                 )
             }
 
-            clearDeletedLibraryPresentationState()
+            await clearDeletedLibraryPresentationState()
             libraryDeletionReview = nil
             await refreshData(light: false)
             await loadSessions()
@@ -208,7 +208,7 @@ extension AppModel {
         }
     }
 
-    private func clearDeletedLibraryPresentationState() {
+    private func clearDeletedLibraryPresentationState() async {
         searchDebounceTask?.cancel()
         searchDebounceTask = nil
         invalidateCurrentLibrarySearch()
@@ -219,9 +219,11 @@ extension AppModel {
         selectedFrameImage = nil
         selectedFrameOCRBoxes = []
         previewCache.removeAllObjects()
+        previewMediaGeneration &+= 1
         recent = []
         searchResults = []
         searchFacetResults = []
         librarySearchState = .idle
+        await previewImagePipeline.removeAll()
     }
 }

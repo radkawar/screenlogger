@@ -7,7 +7,6 @@ final class LibrarySearchPagePresentationTests: XCTestCase {
             100
         )
         XCTAssertEqual(LibrarySearchInteractionPolicy.pageSize, 80)
-        XCTAssertEqual(LibrarySearchInteractionPolicy.facetLimit, 200)
     }
 
     func testRetainedResultsRemainInteractiveDuringRefresh() {

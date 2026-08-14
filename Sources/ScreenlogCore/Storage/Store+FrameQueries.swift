@@ -18,6 +18,43 @@ extension Store {
         return Self.frameRow(from: stmt)
     }
 
+    /// Resolve the media that can currently produce a preview for one frame.
+    /// Inactive/purged video rows are intentionally treated as unavailable.
+    public func framePreviewDescriptor(id: Int64) throws -> FramePreviewDescriptor? {
+        let sql = """
+            SELECT
+                f.id,
+                f.timestamp,
+                f.image_path,
+                CASE WHEN v.status = 0 THEN v.path ELSE NULL END,
+                CASE WHEN v.status = 0 THEN f.video_index ELSE NULL END
+            FROM frame f
+            LEFT JOIN video v ON v.id = f.video
+            WHERE f.id = ?
+            LIMIT 1
+            """
+        let stmt = try db.prepare(sql)
+        defer { sqlite3_finalize(stmt) }
+        SQLiteBind.int64(stmt, 1, id)
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+
+        let source: FramePreviewSource
+        if let stillPath = SQLiteColumn.text(stmt, 2), !stillPath.isEmpty {
+            source = .still(path: stillPath)
+        } else if let videoPath = SQLiteColumn.text(stmt, 3),
+            let videoIndex = SQLiteColumn.intOptional(stmt, 4)
+        {
+            source = .video(path: videoPath, index: videoIndex)
+        } else {
+            source = .unavailable
+        }
+        return FramePreviewDescriptor(
+            frameID: SQLiteColumn.int64(stmt, 0),
+            timestampMs: SQLiteColumn.int64(stmt, 1),
+            source: source
+        )
+    }
+
     /// Frame whose `timestamp` is closest to `timestampMs` (ties to lower id).
     public func frameNearest(timestampMs: Int64) throws -> FrameRow? {
         func candidate(comparison: String, ordering: String) throws -> FrameRow? {

@@ -129,8 +129,10 @@ struct SearchResultCard: View {
     private var cardContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             LibraryThumbnail(
+                frameID: result.frameID,
                 path: result.imagePath,
-                isCompacted: result.isCompacted
+                isCompacted: result.isCompacted,
+                priority: selected ? .inspector : .card
             )
             .aspectRatio(16 / 10, contentMode: .fill)
             .frame(maxWidth: .infinity)
@@ -254,10 +256,9 @@ struct SearchResultCard: View {
     }
 
     private var knownPreviewAccessibilityStatus: String? {
-        if result.isCompacted {
-            return "Preview available in Timeline. Opening this moment requests its preview."
-        }
-        if result.imagePath == nil || result.imagePath?.isEmpty == true {
+        if !result.isCompacted,
+            result.imagePath == nil || result.imagePath?.isEmpty == true
+        {
             return "Preview no longer stored. Searchable text and details are still available."
         }
         return nil
@@ -330,11 +331,13 @@ struct SearchResultInspector: View {
             }
 
             LibraryThumbnail(
+                frameID: result.frameID,
                 path: result.imagePath,
                 isCompacted: result.isCompacted,
                 contentMode: .fit,
                 showsStatusDetail: true,
-                statusAccessibilityIdentifier: "library.result.inspector.preview-status"
+                statusAccessibilityIdentifier: "library.result.inspector.preview-status",
+                priority: .inspector
             )
             .frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: SLDesign.thumbRadius, style: .continuous))

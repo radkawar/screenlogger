@@ -141,7 +141,8 @@ extension AppModel {
                 _ = try await Task.detached(priority: .userInitiated) {
                     try LibraryRestoreService().restore(from: review.archive, replacing: liveRoot)
                 }.value
-                self.clearLibraryPresentationAfterRestore()
+                await self.clearLibraryPresentationAfterRestore()
+                await self.previewImagePipeline.resume()
                 self.libraryRestoreReview = nil
                 self.bootstrap()
                 self.libraryRestoreState = .completed
@@ -149,11 +150,13 @@ extension AppModel {
             } catch is CancellationError {
                 // App termination can cancel the UI owner while the durable
                 // restore journal remains authoritative for next-launch recovery.
+                await self.previewImagePipeline.resume()
                 return
             } catch {
                 let restoreError = error as? LibraryRestoreError ?? .activationFailed
                 // A failed activation has either left the live Library untouched
                 // or rolled it back. Reopen it before returning control to the UI.
+                await self.previewImagePipeline.resume()
                 self.bootstrap()
                 self.libraryRestoreReview = nil
                 self.libraryRestoreState = .failed(restoreError)
@@ -163,7 +166,7 @@ extension AppModel {
         }
     }
 
-    private func clearLibraryPresentationAfterRestore() {
+    private func clearLibraryPresentationAfterRestore() async {
         clearSearch()
         timeline = []
         selectedTimelineID = nil
@@ -174,6 +177,8 @@ extension AppModel {
         selectedSessionIndex = nil
         searchSessionScoped = false
         previewCache.removeAllObjects()
+        await previewImagePipeline.removeAll()
+        previewMediaGeneration &+= 1
     }
 
     private static let libraryExportDateFormatter: DateFormatter = {

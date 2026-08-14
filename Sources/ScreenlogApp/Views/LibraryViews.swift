@@ -26,6 +26,7 @@ struct SearchPane: View {
                     compactFilters: compactFilters,
                     persistentInspector: persistentInspector
                 )
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier(
                     compactFilters ? "library.workspace.compact" : "library.workspace.expanded"
                 )
@@ -74,6 +75,7 @@ struct SearchPane: View {
                         idealWidth: filterPanelIdealWidth,
                         maxWidth: filterPanelMaximumWidth
                     )
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("library.filters.pane")
                 }
 
@@ -102,6 +104,7 @@ struct SearchPane: View {
                         idealWidth: inspectorIdealWidth,
                         maxWidth: inspectorMaximumWidth
                     )
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("library.inspector.pane")
                 }
             }
@@ -157,6 +160,7 @@ struct SearchPane: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("library.results.workspace")
     }
 
@@ -210,6 +214,9 @@ struct SearchPane: View {
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
                     .background(.quaternary.opacity(0.45), in: Capsule(style: .continuous))
+                    .accessibilityLabel("Result count")
+                    .accessibilityValue(resultCountLabel)
+                    .accessibilityIdentifier("library.results.count")
             }
             Spacer()
             if model.isSearching, !model.filteredSearchResults.isEmpty {

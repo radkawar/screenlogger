@@ -344,11 +344,12 @@ extension AppModel {
         selectedTimelineID = target.id
     }
 
-    /// Decode nearby stills at a small bounded size without blocking timeline interaction.
+    /// Decode nearby still/video moments without blocking timeline interaction.
     private func scheduleNeighborPrefetch(around id: Int64) {
         prefetchTask?.cancel()
         guard let momentIndex = timelineNavigationIndex.momentPosition(of: id),
-            let selected = selectedTimelineFrame
+            let selected = selectedTimelineFrame,
+            let store
         else { return }
         let radius = TimelinePreviewPolicy.neighborRadius
         let neighbors = [momentIndex - radius, momentIndex + radius]
@@ -361,18 +362,19 @@ extension AppModel {
                 return frames.first(where: { $0.captureDisplay == selected.captureDisplay })
                     ?? frames.last
             }
-            .compactMap { frame -> (id: Int64, path: String)? in
+            .compactMap { frame -> Int64? in
                 let key = previewCacheKey(
                     frameID: frame.id,
                     maxPixelSize: TimelinePreviewPolicy.selectedMaxPixelSize
                 )
                 guard previewCache.object(forKey: key as NSString) == nil,
-                    let path = frame.imagePath,
-                    !path.isEmpty
+                    frame.imagePath != nil || frame.videoID != nil
                 else { return nil }
-                return (frame.id, path)
+                return frame.id
             }
         guard !neighbors.isEmpty else { return }
+        let pipeline = previewImagePipeline
+        let mediaGeneration = previewMediaGeneration
 
         prefetchTask = Task.detached(priority: .utility) { [weak self] in
             do {
@@ -385,20 +387,24 @@ extension AppModel {
             // Promote the weak capture once. Capturing this immutable actor reference
             // in MainActor.run avoids sharing the mutable weak-capture storage.
             guard let model = self else { return }
-            for neighbor in neighbors {
+            for neighborID in neighbors {
                 guard !Task.isCancelled else { return }
                 guard
-                    let cgImage = FrameExtractor.previewCGImage(
-                        atPath: neighbor.path,
-                        maxPixelSize: TimelinePreviewPolicy.selectedMaxPixelSize
+                    let cgImage = try? await pipeline.image(
+                        frameID: neighborID,
+                        store: store,
+                        maxPixelSize: TimelinePreviewPolicy.selectedMaxPixelSize,
+                        priority: .prefetch
                     )
                 else { continue }
                 guard !Task.isCancelled else { return }
 
                 await MainActor.run {
-                    guard model.selectedTimelineID == id else { return }
+                    guard model.selectedTimelineID == id,
+                        model.previewMediaGeneration == mediaGeneration
+                    else { return }
                     let key = model.previewCacheKey(
-                        frameID: neighbor.id,
+                        frameID: neighborID,
                         maxPixelSize: TimelinePreviewPolicy.selectedMaxPixelSize
                     )
                     guard model.previewCache.object(forKey: key as NSString) == nil else { return }
@@ -556,6 +562,8 @@ extension AppModel {
     /// Open a search hit in the timeline viewer.
     func openSearchResult(_ result: FTSResult) {
         stopReplay()
+        searchTask?.cancel()
+        searchDebounceTask?.cancel()
         SearchWindowController.shared.hide()
         shellSearchMode = false
         // Highlight matching OCR on stage (Live Text style).
@@ -611,6 +619,7 @@ extension AppModel {
             return
         }
         do {
+            let previousSelection = selectedTimelineID
             let built = try await store.readAsync { s -> [TimelineFrame] in
                 var window = try s.timelineAround(frameID: id, before: 40, after: 40)
                 if let ts = timestampMs ?? window.first(where: { $0.id == id })?.timestampMs {
@@ -650,6 +659,12 @@ extension AppModel {
             } else {
                 selectedTimelineID = nil
                 resolution = .unavailable
+            }
+            if selectedTimelineID != nil, selectedTimelineID == previousSelection {
+                // Assigning an already-selected id does not trigger didSet. A
+                // Library handoff still owns an immediate preview refresh.
+                scheduleSelectedFrameExtract()
+                loadOCRBoxesForSelection()
             }
             rememberTimelineDisplayPreference(frameID: selectedTimelineID)
             publishTimelineNotice(resolution.noticeEvent)
@@ -693,6 +708,8 @@ extension AppModel {
         }
 
         selectedFrameExtracting = true
+        let pipeline = previewImagePipeline
+        let mediaGeneration = previewMediaGeneration
         extractTask = Task.detached(priority: .userInitiated) { [weak self] in
             // See neighbor prefetch above: nested sending closures capture an immutable
             // actor reference, never the mutable weak-capture slot itself.
@@ -701,25 +718,18 @@ extension AppModel {
                 try await Task.sleep(
                     for: .milliseconds(TimelinePreviewPolicy.selectionDebounceMilliseconds)
                 )
-                let row = try await store.readAsync { try $0.frame(id: id) }
-                guard let row else {
-                    await MainActor.run {
-                        guard model.selectedTimelineID == id else { return }
-                        model.selectedFrameExtracting = false
-                        model.selectedFramePreviewIssue = .momentMissing
-                    }
-                    return
-                }
-                guard !Task.isCancelled else { return }
-                let cgImage = try await FrameExtractor.previewCGImage(
-                    forFrame: row,
+                let cgImage = try await pipeline.image(
+                    frameID: id,
                     store: store,
-                    maxPixelSize: TimelinePreviewPolicy.selectedMaxPixelSize
+                    maxPixelSize: TimelinePreviewPolicy.selectedMaxPixelSize,
+                    priority: .timeline
                 )
                 guard !Task.isCancelled else { return }
 
                 await MainActor.run {
-                    guard model.selectedTimelineID == id else { return }
+                    guard model.selectedTimelineID == id,
+                        model.previewMediaGeneration == mediaGeneration
+                    else { return }
                     let size = NSSize(width: cgImage.width, height: cgImage.height)
                     let image = NSImage(cgImage: cgImage, size: size)
                     model.previewCache.setObject(
@@ -733,9 +743,26 @@ extension AppModel {
                 }
             } catch is CancellationError {
                 // A newer selection owns the presentation state.
+            } catch let error as PreviewImagePipelineError {
+                await MainActor.run {
+                    guard model.selectedTimelineID == id,
+                        model.previewMediaGeneration == mediaGeneration
+                    else { return }
+                    model.selectedFrameExtracting = false
+                    switch error {
+                    case .momentMissing:
+                        model.selectedFramePreviewIssue = .momentMissing
+                    case .mediaUnavailable:
+                        model.selectedFramePreviewIssue = .mediaUnavailable
+                    case .mediaUnreadable:
+                        model.selectedFramePreviewIssue = .mediaUnreadable
+                    }
+                }
             } catch {
                 await MainActor.run {
-                    guard model.selectedTimelineID == id else { return }
+                    guard model.selectedTimelineID == id,
+                        model.previewMediaGeneration == mediaGeneration
+                    else { return }
                     model.selectedFrameExtracting = false
                     model.selectedFramePreviewIssue = .mediaUnreadable
                 }

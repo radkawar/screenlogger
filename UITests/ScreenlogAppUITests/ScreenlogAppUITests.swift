@@ -114,7 +114,7 @@ final class ScreenlogAppUITests: XCTestCase {
         searchField.click()
         searchField.typeText("navigation")
 
-        let resultsHeader = assertElement(identifier: "library.results.header", in: app)
+        let resultsHeader = assertElement(identifier: "library.results.count", in: app)
         let twoResults = NSPredicate(format: "value == %@", "2 results")
         expectation(for: twoResults, evaluatedWith: resultsHeader)
         waitForExpectations(timeout: Self.routeTimeout)
@@ -451,7 +451,7 @@ final class ScreenlogAppUITests: XCTestCase {
         assertWindow("Library", in: app)
         let libraryEmptyState = assertElement(identifier: "library.state.idle", in: app)
         assertElementDoesNotExist(
-            identifier: "library.results.header",
+            identifier: "library.results.title",
             in: app,
             description: "a redundant Search heading above the empty Library guidance"
         )
@@ -1534,15 +1534,14 @@ final class ScreenlogAppUITests: XCTestCase {
         searchField.typeText("quarterly planning")
         searchField.typeKey(.return, modifierFlags: [])
 
-        let result = assertElement(identifier: "library.result.1", in: app)
-        let resultsHeader = assertElement(identifier: "library.results.header", in: app)
+        let result = assertElement(identifier: "library.result.8", in: app)
+        let resultsHeader = assertElement(identifier: "library.results.count", in: app)
         XCTAssertEqual(resultsHeader.value as? String, "1 result")
         assertElement(identifier: "library.workspace.expanded", in: app)
-        assertElement(identifier: "library.filters", in: app)
         let filtersPane = assertElement(identifier: "library.filters.pane", in: app)
         let resultsPane = assertElement(identifier: "library.results.workspace", in: app)
         assertElement(identifier: "library.inspector.pane", in: app)
-        assertElement(identifier: "library.result.inspector.selection.1", in: app)
+        assertElement(identifier: "library.result.inspector.selection.8", in: app)
         let inspectorPane = assertElement(identifier: "library.inspector.pane", in: app)
         XCTAssertLessThanOrEqual(
             filtersPane.frame.maxX,
@@ -1614,11 +1613,11 @@ final class ScreenlogAppUITests: XCTestCase {
         let searchAfterEscape = assertElement(identifier: "library.search.field", in: app)
         XCTAssertEqual(searchAfterEscape.value as? String, "quarterly planning")
 
-        // The persistent Library destination is the same return path as Back
-        // and Escape when Timeline was opened from a result.
+        // The Library toolbar destination becomes Back to Search while a
+        // result handoff is active and preserves the same query.
         result.doubleClick()
         assertWindow("Timeline", in: app)
-        assertElement(identifier: "navigation.timeline.library", in: app).click()
+        assertElement(identifier: "navigation.timeline.back-to-search", in: app).click()
         assertWindow("Library", in: app)
         let searchAfterLibraryNavigation = assertElement(
             identifier: "library.search.field",
@@ -1655,7 +1654,7 @@ final class ScreenlogAppUITests: XCTestCase {
         search.typeText("quarterly planning")
         search.typeKey(.return, modifierFlags: [])
 
-        assertElement(identifier: "library.result.1", in: app)
+        assertElement(identifier: "library.result.8", in: app)
         let status = assertElement(
             identifier: "library.result.inspector.preview-status",
             in: app
@@ -1665,6 +1664,31 @@ final class ScreenlogAppUITests: XCTestCase {
             "Preview unavailable. The captured image could not be loaded."
         )
         assertElement(identifier: "library.result.inspector.open", in: app)
+    }
+
+    func testLibraryInspectorRendersACompactedSearchScreenshot() throws {
+        let app = try launch(
+            route: "--open-library",
+            fixture: true,
+            compactHistory: true
+        )
+        let search = assertElement(identifier: "library.search.field", in: app)
+
+        search.click()
+        search.typeText("navigation")
+        search.typeKey(.return, modifierFlags: [])
+
+        assertElement(identifier: "library.result.6", in: app)
+        let preview = assertElement(
+            identifier: "library.result.inspector.preview-status",
+            in: app
+        )
+        expectation(
+            for: NSPredicate(format: "label == %@", "Captured screenshot"),
+            evaluatedWith: preview
+        )
+        waitForExpectations(timeout: Self.routeTimeout)
+        XCTAssertEqual(preview.label, "Captured screenshot")
     }
 
     func testLibraryResultSingleClickSelectsAndDoubleClickOpens() throws {
@@ -1773,6 +1797,7 @@ final class ScreenlogAppUITests: XCTestCase {
         simulatedUnreadablePreview: Bool = false,
         selectSessionAfterLoad: Bool = false,
         multipleDisplays: Bool = false,
+        compactHistory: Bool = false,
         assistantDetected: [AssistantFixtureTarget] = [],
         assistantReady: [AssistantFixtureTarget] = [],
         assistantRouting: AssistantFixtureRouting = .automatic
@@ -1832,6 +1857,9 @@ final class ScreenlogAppUITests: XCTestCase {
             if multipleDisplays {
                 application.launchEnvironment["SCREENLOG_UI_TEST_MULTIPLE_DISPLAYS"] = "1"
             }
+            if compactHistory {
+                application.launchEnvironment["SCREENLOG_UI_TEST_COMPACT_HISTORY"] = "1"
+            }
             application.launchEnvironment["SCREENLOG_UI_TEST_DETECTED_ASSISTANTS"] =
                 assistantDetected.map(\.rawValue).joined(separator: ",")
             application.launchEnvironment["SCREENLOG_UI_TEST_READY_ASSISTANTS"] =
@@ -1840,6 +1868,7 @@ final class ScreenlogAppUITests: XCTestCase {
                 assistantRouting.persistedValue
         }
         application.launch()
+        application.activate()
 
         app = application
         ownsApplicationProcess = true
