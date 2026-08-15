@@ -10,10 +10,13 @@ private let log = Logger(subsystem: "dev.screenlog", category: "diff-ocr")
 ///
 /// Intended for single-consumer use (e.g. `CapturePipeline` actor). Not MainActor-bound.
 public final class DifferentialOCRService: @unchecked Sendable {
-    private let ocr = OCRService()
+    private let ocr: OCRService
+    private let recognizeFullImage: @Sendable (CGImage) async throws -> OCRResult
     private var lastImageHash: UInt64?
     private var lastResult: OCRResult?
     private var lastPixelSample: [UInt8]?
+    private var lastImageWidth: Int?
+    private var lastImageHeight: Int?
 
     /// Similarity threshold 0...1 (1 = identical). Above this, reuse previous OCR.
     public var reuseThreshold: Double = 0.988
@@ -29,7 +32,20 @@ public final class DifferentialOCRService: @unchecked Sendable {
         set { ocr.recognitionLanguages = newValue }
     }
 
-    public init() {}
+    public init() {
+        let service = OCRService()
+        ocr = service
+        recognizeFullImage = { image in
+            try await service.recognize(image: image)
+        }
+    }
+
+    init(
+        recognizeFullImage: @escaping @Sendable (CGImage) async throws -> OCRResult
+    ) {
+        ocr = OCRService()
+        self.recognizeFullImage = recognizeFullImage
+    }
 
     public func recognize(image: CGImage) async throws -> (result: OCRResult, reused: Bool) {
         // Downscale + sample off the main thread (never full-res RGBA for diff).
@@ -43,7 +59,9 @@ public final class DifferentialOCRService: @unchecked Sendable {
         }
         let hash = DifferentialOCRMath.fnv1a(sample)
 
-        if let last = lastResult,
+        if lastImageWidth == image.width,
+            lastImageHeight == image.height,
+            let last = lastResult,
             let lastSample = lastPixelSample
         {
             if lastImageHash == hash {
@@ -59,10 +77,12 @@ public final class DifferentialOCRService: @unchecked Sendable {
             }
         }
 
-        let result = try await ocr.recognize(image: image)
+        let result = try await recognizeFullImage(image)
         lastResult = result
         lastImageHash = hash
         lastPixelSample = sample
+        lastImageWidth = image.width
+        lastImageHeight = image.height
         return (result, false)
     }
 
@@ -70,6 +90,8 @@ public final class DifferentialOCRService: @unchecked Sendable {
         lastImageHash = nil
         lastResult = nil
         lastPixelSample = nil
+        lastImageWidth = nil
+        lastImageHeight = nil
     }
 
     /// Downscale to `maxEdge`, then sample luminance - avoids full-res CGContext for 1080p+.

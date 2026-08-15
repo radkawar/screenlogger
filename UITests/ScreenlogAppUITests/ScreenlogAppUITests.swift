@@ -387,7 +387,7 @@ final class ScreenlogAppUITests: XCTestCase {
 
         statusItem.click()
         assertElement(identifier: "status-menu.help", in: app).click()
-        assertWindow("Settings", in: app)
+        assertWindow("Getting Started", in: app)
         assertElement(identifier: "settings.pane.support", in: app)
         XCTAssertTrue(app.sheets.firstMatch.waitForExistence(timeout: Self.routeTimeout))
         assertElement(identifier: "settings.guide.detail.gettingStarted", in: app)
@@ -429,8 +429,11 @@ final class ScreenlogAppUITests: XCTestCase {
         statusItem.click()
         assertElement(identifier: "status-menu.hide-icon", in: app).click()
 
-        assertElement(label: "Hide the Menu Bar Icon?", in: app)
-        assertButton("Hide Icon", in: app).click()
+        let confirmation = app.sheets.firstMatch
+        XCTAssertTrue(confirmation.waitForExistence(timeout: Self.routeTimeout))
+        let hideButton = confirmation.buttons["Hide Icon"]
+        XCTAssertTrue(hideButton.waitForExistence(timeout: Self.routeTimeout))
+        hideButton.click()
         assertElementDoesNotExist(
             statusItem,
             description: "the hidden menu-bar icon"

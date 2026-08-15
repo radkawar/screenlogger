@@ -64,6 +64,16 @@ extension StatusMenuController {
     }
 
     @objc func hideMenuBarIcon(_ sender: Any?) {
+        // Let the status menu dismiss before presenting its confirmation.
+        // Attaching a sheet while AppKit still owns the menu-tracking window
+        // can leave the alert outside the app's accessible window hierarchy.
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            self?.presentHideMenuBarIconConfirmation()
+        }
+    }
+
+    private func presentHideMenuBarIconConfirmation() {
         let alert = NSAlert()
         alert.alertStyle = .informational
         alert.messageText = "Hide the Menu Bar Icon?"
@@ -71,6 +81,21 @@ extension StatusMenuController {
             "Screenlogger will keep running in the background. Open Screenlogger again from Spotlight, Finder, or the Dock to restore the icon."
         alert.addButton(withTitle: "Hide Icon")
         alert.addButton(withTitle: "Cancel")
+
+        let hostWindow =
+            NSApp.mainWindow
+            ?? NSApp.windows.first {
+                $0.isVisible && $0.level == .normal && $0.styleMask.contains(.titled)
+            }
+        if let hostWindow {
+            alert.beginSheetModal(for: hostWindow) { [weak self] response in
+                guard response == .alertFirstButtonReturn else { return }
+                self?.hideStatusItemUntilReopen()
+            }
+            return
+        }
+
+        NSRunningApplication.current.activate(options: [.activateAllWindows])
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         hideStatusItemUntilReopen()
     }

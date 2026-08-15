@@ -44,7 +44,7 @@ public struct EncodedStill: Sendable {
 /// Safe to call from a background actor or queue. Capturing returns raw images;
 /// callers encode only images that have passed privacy and processing checks.
 public final class ScreenCaptureService: NSObject, @unchecked Sendable {
-    /// Longest output edge in pixels. Zero preserves native display resolution.
+    /// Longest stored-image edge in pixels. Zero preserves native resolution.
     public var maxDimension: Int = 2_880
     public var maxWindows: Int = 60
     /// Lossy quality for HEIC / JPEG (0...1).

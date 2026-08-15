@@ -216,6 +216,7 @@ extension StatusMenuController {
             item.image = menuSymbolImage(symbol)
         }
         item.setAccessibilityIdentifier(tag.accessibilityIdentifier)
+        item.setAccessibilityLabel(title)
         return item
     }
 
