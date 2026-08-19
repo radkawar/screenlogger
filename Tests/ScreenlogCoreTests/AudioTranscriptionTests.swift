@@ -7,6 +7,60 @@ import XCTest
 @testable import ScreenlogCore
 
 final class AudioTranscriptionTests: XCTestCase {
+    func testAllowedAppChangesDoNotFinalizeContinuousSpeech() {
+        XCTAssertFalse(
+            AudioPrivacyTransitionPolicy.closesCurrentSegments(
+                previousWasAllowed: true,
+                currentIsAllowed: true,
+                filterReadinessChanged: false,
+                applicationFilterChanged: false
+            )
+        )
+    }
+
+    func testProtectedContentAndFilterChangesFinalizeSpeech() {
+        XCTAssertTrue(
+            AudioPrivacyTransitionPolicy.closesCurrentSegments(
+                previousWasAllowed: true,
+                currentIsAllowed: false,
+                filterReadinessChanged: false,
+                applicationFilterChanged: false
+            )
+        )
+        XCTAssertTrue(
+            AudioPrivacyTransitionPolicy.closesCurrentSegments(
+                previousWasAllowed: true,
+                currentIsAllowed: true,
+                filterReadinessChanged: false,
+                applicationFilterChanged: true
+            )
+        )
+    }
+
+    func testOrdinaryAppActivationKeepsAudioContinuousButBrowserClosesGate() {
+        XCTAssertFalse(
+            AudioPrivacyTransitionPolicy.closesSampleGateImmediatelyOnActivation(
+                bundleID: "com.apple.TextEdit",
+                isSupportedBrowser: false,
+                isApplicationExcluded: false
+            )
+        )
+        XCTAssertTrue(
+            AudioPrivacyTransitionPolicy.closesSampleGateImmediatelyOnActivation(
+                bundleID: "com.apple.Safari",
+                isSupportedBrowser: true,
+                isApplicationExcluded: false
+            )
+        )
+        XCTAssertTrue(
+            AudioPrivacyTransitionPolicy.closesSampleGateImmediatelyOnActivation(
+                bundleID: "com.example.private",
+                isSupportedBrowser: false,
+                isApplicationExcluded: true
+            )
+        )
+    }
+
     private var tempRoot: URL!
     private var store: Store!
 

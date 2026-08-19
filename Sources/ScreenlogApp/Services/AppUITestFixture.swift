@@ -56,6 +56,7 @@ import ScreenlogCore
             let assistantScenario: AssistantScenario
             let firstRunFrameDelayMilliseconds: UInt64?
             let seedsMultipleDisplays: Bool
+            let seedsLongSession: Bool
             let compactsSeedHistory: Bool
             let presentsAudioTranscription: Bool
             let audioTranscriptionPhase: AudioTranscriptionPhase?
@@ -218,6 +219,9 @@ import ScreenlogCore
                 ].flatMap(UInt64.init),
                 seedsMultipleDisplays: environment[
                     "SCREENLOG_UI_TEST_MULTIPLE_DISPLAYS"
+                ] == "1",
+                seedsLongSession: environment[
+                    "SCREENLOG_UI_TEST_LONG_SESSION"
                 ] == "1",
                 compactsSeedHistory: environment[
                     "SCREENLOG_UI_TEST_COMPACT_HISTORY"
@@ -469,7 +473,8 @@ import ScreenlogCore
                         try seedHistory(
                             in: store,
                             usesUnreadablePreview: configuration.usesUnreadablePreview,
-                            includesMultipleDisplays: configuration.seedsMultipleDisplays
+                            includesMultipleDisplays: configuration.seedsMultipleDisplays,
+                            includesLongSession: configuration.seedsLongSession
                         )
                         if configuration.compactsSeedHistory {
                             let compactor = VideoCompactionService()
@@ -698,7 +703,8 @@ import ScreenlogCore
         private static func seedHistory(
             in store: Store,
             usesUnreadablePreview: Bool,
-            includesMultipleDisplays: Bool
+            includesMultipleDisplays: Bool,
+            includesLongSession: Bool
         ) throws {
             let nowMs = Int64(Date().timeIntervalSince1970 * 1_000)
             let hourMs: Int64 = 60 * 60 * 1_000
@@ -868,6 +874,20 @@ import ScreenlogCore
                                 height: 1_080
                             )
                         )
+                    )
+                }
+            }
+
+            if includesLongSession {
+                let spacingMs: Int64 = 10_000
+                let momentCount = 620
+                let firstTimestamp = nowMs - Int64(momentCount) * spacingMs
+                for index in 0..<momentCount {
+                    _ = try store.insertSeedFrame(
+                        timestampMs: firstTimestamp + Int64(index) * spacingMs,
+                        foreground: "Long session moment \(index + 1)",
+                        bundleID: "com.apple.TextEdit",
+                        displayName: "TextEdit"
                     )
                 }
             }

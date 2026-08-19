@@ -38,6 +38,7 @@ extension AppModel {
                 !selectRecentActivity && libraryResultFrameID == nil
                 ? selectedSession
                 : nil
+            let loadedSessionTarget = selectedTimelineFrame?.timestampMs
             let frames = try await store.readAsync { store in
                 if let libraryResultFrameID {
                     return try store.timelineAround(
@@ -48,7 +49,12 @@ extension AppModel {
                     .sorted(by: TimelineFrame.chronologicalAscending)
                 }
                 if let loadedSession {
-                    return try store.timeline(session: loadedSession, limit: 500)
+                    return try store.timeline(
+                        session: loadedSession,
+                        aroundTimestampMs: loadedSessionTarget ?? loadedSession.endMs,
+                        before: 249,
+                        after: 250
+                    )
                         .sorted(by: TimelineFrame.chronologicalAscending)
                 }
                 return try store.recentTimeline(limit: 100)
@@ -294,12 +300,12 @@ extension AppModel {
 
     var canStepBack: Bool {
         guard let i = selectedTimelineMomentIndex else { return false }
-        return i > 0
+        return i > 0 || canLoadEarlierSessionWindow
     }
 
     var canStepForward: Bool {
         guard let i = selectedTimelineMomentIndex else { return false }
-        return i + 1 < timelineMomentCount
+        return i + 1 < timelineMomentCount || canLoadLaterSessionWindow
     }
 
     /// Select a timeline frame (loads still or video frame for replay stage).
@@ -431,7 +437,13 @@ extension AppModel {
         }
         let targetMoment = momentIndex + delta
         guard targetMoment >= 0, targetMoment < timelineMomentCount else {
-            stopReplay()
+            if delta < 0, canLoadEarlierSessionWindow {
+                Task { await loadEarlierSessionWindow() }
+            } else if delta > 0, canLoadLaterSessionWindow {
+                Task { await loadLaterSessionWindow() }
+            } else {
+                stopReplay()
+            }
             return
         }
         selectTimelineMoment(at: targetMoment)

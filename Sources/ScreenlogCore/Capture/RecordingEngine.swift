@@ -444,6 +444,9 @@ public final class RecordingEngine: ObservableObject {
     /// Why a running capture loop is intentionally not saving frames.
     @Published public private(set) var pauseReason: CapturePauseReason?
     @Published public private(set) var audioTranscriptionStatus: AudioTranscriptionStatus = .off
+    /// True when an automatic compression/retention pass is due but is waiting
+    /// for external power. User-initiated maintenance remains available.
+    @Published public private(set) var automaticMaintenanceDeferredForPower = false
 
     public var intervalSeconds: TimeInterval = 2.0
     public private(set) var maxDimension: Int = 2_880
@@ -455,6 +458,9 @@ public final class RecordingEngine: ObservableObject {
     public var autoCompactEnabled = true
     /// Auto maintenance: run age/size retention in the background loop.
     public var autoRetentionEnabled = true
+    /// Background video encoding and retention wait for external power by
+    /// default. Live capture, OCR, and opted-in transcription remain continuous.
+    public var deferAutomaticMaintenanceOnBattery = true
     /// When true, skip capture cycles while the user is system-idle.
     public var pauseOnInactivity = true
     /// Idle seconds before Pause on Inactivity skips a cycle (default 5 minutes).
@@ -719,6 +725,7 @@ public final class RecordingEngine: ObservableObject {
         task = nil
         maintenanceTask?.cancel()
         maintenanceTask = nil
+        automaticMaintenanceDeferredForPower = false
         audioControlRevision &+= 1
         audioControlTask?.cancel()
         audioTranscription.deactivateImmediately()
@@ -894,15 +901,31 @@ public final class RecordingEngine: ObservableObject {
     }
 
     private func maintenanceLoop() async {
+        var nextMaintenanceAt = Date().addingTimeInterval(300)
         while !Task.isCancelled && isRecording {
-            try? await Task.sleep(nanoseconds: 300_000_000_000)
+            // Polling power at this low cadence lets a queued pass begin soon
+            // after AC returns without installing another long-lived callback.
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
             guard let store, !Task.isCancelled else { continue }
+            guard Date() >= nextMaintenanceAt else { continue }
             let days = retentionDays
             let cap = storageCapMB
             let compact = autoCompactEnabled
             let retain = autoRetentionEnabled
             // Off mode: skip both. Compress: compact only. Limit: both.
-            if !compact && !retain { continue }
+            if !compact && !retain {
+                automaticMaintenanceDeferredForPower = false
+                nextMaintenanceAt = Date().addingTimeInterval(300)
+                continue
+            }
+            if MaintenancePowerPolicy.shouldDeferAutomaticWork(
+                powerSource: SystemPowerSource.current(),
+                deferOnBattery: deferAutomaticMaintenanceOnBattery
+            ) {
+                automaticMaintenanceDeferredForPower = true
+                continue
+            }
+            automaticMaintenanceDeferredForPower = false
             await pipeline.runMaintenance(
                 store: store,
                 retentionDays: days,
@@ -910,6 +933,7 @@ public final class RecordingEngine: ObservableObject {
                 runCompact: compact,
                 runRetention: retain
             )
+            nextMaintenanceAt = Date().addingTimeInterval(300)
         }
     }
 }

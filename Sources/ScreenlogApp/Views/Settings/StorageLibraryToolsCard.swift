@@ -86,6 +86,18 @@ struct StorageLibraryToolsCard: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            Label(
+                model.automaticMaintenanceDeferredForPower
+                    ? "Automatic compression is waiting for power. Compress Now runs immediately."
+                    : "Automatic compression waits while this Mac is running on battery.",
+                systemImage: model.automaticMaintenanceDeferredForPower
+                    ? "battery.25percent" : "bolt.fill"
+            )
+            .font(.caption)
+            .foregroundStyle(model.automaticMaintenanceDeferredForPower ? .orange : .secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("settings.storage.maintenance-power")
+
             StorageMaintenanceStatusView()
         }
         .padding(14)

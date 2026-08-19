@@ -376,6 +376,34 @@ private struct AudioPrivacyContext: Equatable {
     var pauseDetail: String?
 }
 
+/// Decides when a live speech analyzer must be finalized. Moving between two
+/// ordinary, allowed apps is not a privacy boundary and must not chop a spoken
+/// sentence into separate analyzer sessions. Entering or leaving protected
+/// content, changing the ScreenCaptureKit exclusion filter, or losing that
+/// filter is a boundary and remains fail-closed.
+struct AudioPrivacyTransitionPolicy {
+    static func closesCurrentSegments(
+        previousWasAllowed: Bool?,
+        currentIsAllowed: Bool,
+        filterReadinessChanged: Bool,
+        applicationFilterChanged: Bool
+    ) -> Bool {
+        if filterReadinessChanged || applicationFilterChanged { return true }
+        guard let previousWasAllowed else { return false }
+        return previousWasAllowed != currentIsAllowed
+    }
+
+    static func closesSampleGateImmediatelyOnActivation(
+        bundleID: String?,
+        isSupportedBrowser: Bool,
+        isApplicationExcluded: Bool
+    ) -> Bool {
+        ScreenloggerCapturePrivacy.isScreenlogger(bundleID: bundleID)
+            || isSupportedBrowser
+            || isApplicationExcluded
+    }
+}
+
 private struct AudioTranscriptionRequest {
     let sources: Set<TranscriptSource>
     let store: Store
@@ -939,14 +967,29 @@ final class AudioTranscriptionCoordinator {
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self] notification in
             Task { @MainActor [weak self] in
                 guard let self,
                     self.generation == requestedGeneration
                 else { return }
-                // Close the sample gate synchronously with activation, before
-                // Accessibility and exclusion checks perform any async work.
-                self.setStreamAcceptsSamples(false)
+                let activatedApplication =
+                    notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                    as? NSRunningApplication
+                let bundleID = activatedApplication?.bundleIdentifier
+                let closesImmediately =
+                    AudioPrivacyTransitionPolicy.closesSampleGateImmediatelyOnActivation(
+                        bundleID: bundleID,
+                        isSupportedBrowser: BrowserURLService.isSupportedBrowser(bundleID: bundleID),
+                        isApplicationExcluded: exclusions.isExcluded(
+                            bundleID: bundleID,
+                            domain: nil
+                        )
+                    )
+                // Browsers and protected apps require asynchronous inspection,
+                // so remain fail-closed there. An ordinary allowed app switch
+                // can retain continuous audio while the next watermark proves
+                // the new context.
+                if closesImmediately { self.setStreamAcceptsSamples(false) }
                 await self.refreshPrivacyState(
                     sources: sources,
                     exclusions: exclusions,
@@ -1026,19 +1069,21 @@ final class AudioTranscriptionCoordinator {
             generation == requestedGeneration,
             revision == privacyEvaluationRevision
         else { return }
-        let contextChanged =
-            context != lastPrivacyContext
-            || filterReady != applicationFilterIsReady
-            || applicationFilterChanged
+        let closesCurrentSegments = AudioPrivacyTransitionPolicy.closesCurrentSegments(
+            previousWasAllowed: lastPrivacyContext?.isAllowed,
+            currentIsAllowed: context.isAllowed,
+            filterReadinessChanged: filterReady != applicationFilterIsReady,
+            applicationFilterChanged: applicationFilterChanged
+        )
         lastPrivacyContext = context
         applicationFilterIsReady = filterReady
         let acceptsAudio = captureAvailable && context.isAllowed && filterReady
 
-        if !acceptsAudio || contextChanged { setStreamAcceptsSamples(false) }
+        if !acceptsAudio || closesCurrentSegments { setStreamAcceptsSamples(false) }
         if let activePipeline = pipeline as? AudioTranscriptionPipeline {
             await activePipeline.setAcceptsAudio(
                 acceptsAudio,
-                closeCurrentSegments: contextChanged
+                closeCurrentSegments: closesCurrentSegments
             )
         }
         guard !Task.isCancelled,

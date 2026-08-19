@@ -7,10 +7,14 @@ extension HistoryPane {
         let frames = model.timelineMomentFrames
         return GeometryReader { geo in
             let w = max(geo.size.width, 1)
+            let scopeStart = model.selectedSession?.startMs ?? frames.first?.timestampMs
+            let scopeEnd = model.selectedSession?.endMs ?? frames.last?.timestampMs
             let liveWindow = Self.timelineWindow(
                 frames: frames,
                 selectedTimestampMs: model.selectedTimelineFrame?.timestampMs,
-                scaleStep: timelineScaleStep
+                scaleStep: timelineScaleStep,
+                scopeStartMs: scopeStart,
+                scopeEndMs: scopeEnd
             )
             // Retain the viewport that was visible when scrubbing began. The
             // selection changes on every drag update; allowing that selection
@@ -57,7 +61,20 @@ extension HistoryPane {
 
                     Spacer(minLength: 8)
 
-                    timelineRangeMenu(frames: frames, window: window)
+                    HStack(spacing: 3) {
+                        if model.selectedSession != nil {
+                            sessionPageButton(direction: .earlier)
+                        }
+                        timelineRangeMenu(
+                            frames: frames,
+                            window: window,
+                            scopeStartMs: scopeStart,
+                            scopeEndMs: scopeEnd
+                        )
+                        if model.selectedSession != nil {
+                            sessionPageButton(direction: .later)
+                        }
+                    }
                 }
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundStyle(.white.opacity(primaryTimelineTextOpacity))
@@ -67,6 +84,27 @@ extension HistoryPane {
                         .fill(Color.white.opacity(trackBackgroundOpacity))
                         .frame(height: 8)
                         .accessibilityHidden(true)
+
+                    if model.selectedSession != nil,
+                        let firstLoaded = frames.first,
+                        let lastLoaded = frames.last
+                    {
+                        let loadedX = Self.timelineX(
+                            timestampMs: firstLoaded.timestampMs,
+                            in: window,
+                            width: w
+                        )
+                        let loadedEndX = Self.timelineX(
+                            timestampMs: lastLoaded.timestampMs,
+                            in: window,
+                            width: w
+                        )
+                        Capsule(style: .continuous)
+                            .fill(Color.white.opacity(0.11))
+                            .frame(width: max(3, loadedEndX - loadedX), height: 14)
+                            .position(x: loadedX + max(3, loadedEndX - loadedX) / 2, y: 14)
+                            .accessibilityHidden(true)
+                    }
 
                     TimelineSpeechMarkers(
                         passages: model.timelineTranscriptPassages,
@@ -178,29 +216,36 @@ extension HistoryPane {
                             if timelineScrubWindow == nil {
                                 timelineScrubWindow = scrubWindow
                             }
-                            guard
-                                let selection = activity.selection(
-                                    at: Self.timelineTimestamp(
-                                        x: value.location.x,
-                                        in: scrubWindow,
-                                        width: w
-                                    )
-                                )
+                            let target = Self.timelineTimestamp(
+                                x: value.location.x,
+                                in: scrubWindow,
+                                width: w
+                            )
+                            guard Self.loadedRangeContains(target, frames: frames),
+                                let selection = activity.selection(at: target)
                             else { return }
                             model.stopReplay()
                             model.selectTimelineFrame(id: selection.frameID)
                         }
                         .onEnded { value in
                             let scrubWindow = timelineScrubWindow ?? window
-                            if let selection = activity.selection(
-                                at: Self.timelineTimestamp(
-                                    x: value.location.x,
-                                    in: scrubWindow,
-                                    width: w
-                                )
-                            ) {
+                            let target = Self.timelineTimestamp(
+                                x: value.location.x,
+                                in: scrubWindow,
+                                width: w
+                            )
+                            if Self.loadedRangeContains(target, frames: frames),
+                                let selection = activity.selection(at: target)
+                            {
                                 model.stopReplay()
                                 model.selectTimelineFrame(id: selection.frameID)
+                            } else if model.selectedSession != nil {
+                                model.stopReplay()
+                                Task {
+                                    await model.loadSelectedSessionWindow(
+                                        aroundTimestampMs: target
+                                    )
+                                }
                             }
                             timelineScrubWindow = nil
                         }
@@ -241,10 +286,20 @@ extension HistoryPane {
             }
         }
         .frame(height: 76)
+        .background {
+            TimelineHorizontalScrollMonitor { direction in
+                model.stopReplay()
+                // Move in useful groups while preserving ordinary arrow-key
+                // precision. Crossing a loaded edge fetches the adjacent page.
+                model.stepTimeline(by: direction * 10)
+            }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Timeline navigation")
         .accessibilityValue(timelineAccessibilityValue)
-        .accessibilityHint("Drag to scrub, or adjust to move one moment at a time")
+        .accessibilityHint(
+            "Drag to scrub, scroll horizontally to browse, or adjust to move one moment at a time"
+        )
         .accessibilityIdentifier("timeline.navigation")
         .accessibilityAdjustableAction { direction in
             switch direction {
@@ -271,9 +326,15 @@ extension HistoryPane {
 
     private func timelineRangeMenu(
         frames: [TimelineFrame],
-        window: TimelineWindow
+        window: TimelineWindow,
+        scopeStartMs: Int64?,
+        scopeEndMs: Int64?
     ) -> some View {
-        let options = Self.timelineRangeOptions(frames: frames)
+        let options = Self.timelineRangeOptions(
+            frames: frames,
+            scopeStartMs: scopeStartMs,
+            scopeEndMs: scopeEndMs
+        )
         let visibleLabel = Self.timelineSpanLabel(
             window.durationMs,
             isFull: timelineScaleStep == 0
@@ -328,7 +389,11 @@ extension HistoryPane {
         .accessibilityIdentifier("timeline.navigation.range")
     }
 
-    private static func timelineRangeOptions(frames: [TimelineFrame]) -> [TimelineRangeOption] {
+    private static func timelineRangeOptions(
+        frames: [TimelineFrame],
+        scopeStartMs: Int64?,
+        scopeEndMs: Int64?
+    ) -> [TimelineRangeOption] {
         var options: [TimelineRangeOption] = []
         var seenDurations = Set<Int64>()
 
@@ -336,7 +401,9 @@ extension HistoryPane {
             let duration = timelineWindow(
                 frames: frames,
                 selectedTimestampMs: nil,
-                scaleStep: step
+                scaleStep: step,
+                scopeStartMs: scopeStartMs,
+                scopeEndMs: scopeEndMs
             ).durationMs
             guard seenDurations.insert(duration).inserted else { continue }
             options.append(TimelineRangeOption(step: step, durationMs: duration))
@@ -348,17 +415,59 @@ extension HistoryPane {
     private static func timelineWindow(
         frames: [TimelineFrame],
         selectedTimestampMs: Int64?,
-        scaleStep: Int
+        scaleStep: Int,
+        scopeStartMs: Int64? = nil,
+        scopeEndMs: Int64? = nil
     ) -> TimelineWindow {
-        guard let first = frames.first, let last = frames.last else {
+        guard let firstTimestamp = scopeStartMs ?? frames.first?.timestampMs,
+            let lastTimestamp = scopeEndMs ?? frames.last?.timestampMs
+        else {
             return TimelineWindow(startMs: 0, endMs: 1)
         }
         return TimelineRibbonMapping.window(
-            firstTimestampMs: first.timestampMs,
-            lastTimestampMs: last.timestampMs,
+            firstTimestampMs: firstTimestamp,
+            lastTimestampMs: lastTimestamp,
             selectedTimestampMs: selectedTimestampMs,
             scaleStep: scaleStep
         )
+    }
+
+    private enum SessionPageDirection: Equatable {
+        case earlier
+        case later
+    }
+
+    private func sessionPageButton(direction: SessionPageDirection) -> some View {
+        let isEarlier = direction == .earlier
+        let enabled = isEarlier
+            ? model.canLoadEarlierSessionWindow
+            : model.canLoadLaterSessionWindow
+        return Button {
+            Task {
+                if isEarlier {
+                    await model.loadEarlierSessionWindow()
+                } else {
+                    await model.loadLaterSessionWindow()
+                }
+            }
+        } label: {
+            Image(systemName: isEarlier ? "chevron.left" : "chevron.right")
+                .frame(width: 20, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .help(isEarlier ? "Load earlier moments" : "Load later moments")
+        .accessibilityLabel(isEarlier ? "Earlier session moments" : "Later session moments")
+        .accessibilityHint("Loads the next part of this long session")
+        .accessibilityIdentifier(
+            isEarlier ? "timeline.navigation.earlier-page" : "timeline.navigation.later-page"
+        )
+    }
+
+    private static func loadedRangeContains(_ timestampMs: Int64, frames: [TimelineFrame]) -> Bool {
+        guard let first = frames.first, let last = frames.last else { return false }
+        return first.timestampMs <= timestampMs && timestampMs <= last.timestampMs
     }
 
     private static func timelineX(timestampMs: Int64, in window: TimelineWindow, width: CGFloat) -> CGFloat {
@@ -431,7 +540,10 @@ extension HistoryPane {
     }
 
     private var timelinePositionAccessibilityValue: String {
-        model.selectedTimelineMomentIndex.map {
+        if model.selectedSession != nil, let selected = model.selectedTimelineFrame {
+            return "selected time \(SLTimeFormat.shortTime(selected.timestampMs)) within session"
+        }
+        return model.selectedTimelineMomentIndex.map {
             "moment \($0 + 1) of \(model.timelineMomentCount)"
         } ?? "selected moment"
     }
@@ -451,6 +563,77 @@ extension HistoryPane {
         // category. Source identity remains available through the icon and
         // hover/VoiceOver context without assigning every app a random hue.
         model.accentSwiftUIColor
+    }
+}
+
+/// Window-local scroll routing for the ribbon. SwiftUI on macOS 14 does not
+/// expose scroll-wheel events directly, so this transparent view observes only
+/// horizontal gestures whose pointer is inside its own bounds. Vertical page
+/// scrolling and every event elsewhere in the window remain untouched.
+private struct TimelineHorizontalScrollMonitor: NSViewRepresentable {
+    let onScroll: (Int) -> Void
+
+    func makeNSView(context: Context) -> ScrollCatcherView {
+        let view = ScrollCatcherView()
+        view.onScroll = onScroll
+        return view
+    }
+
+    func updateNSView(_ nsView: ScrollCatcherView, context: Context) {
+        nsView.onScroll = onScroll
+    }
+
+    final class ScrollCatcherView: NSView {
+        var onScroll: ((Int) -> Void)?
+        private var monitor: Any?
+        private var accumulatedDelta: CGFloat = 0
+        private var lastDispatchAt = Date.distantPast
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            tearDown()
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                guard let self, let window = self.window,
+                    window.isKeyWindow,
+                    event.windowNumber == window.windowNumber
+                else { return event }
+                let point = self.convert(event.locationInWindow, from: nil)
+                guard self.bounds.contains(point) else { return event }
+
+                let usesShiftWheel = event.modifierFlags.contains(.shift)
+                let horizontal = usesShiftWheel ? event.scrollingDeltaY : event.scrollingDeltaX
+                guard abs(horizontal) > abs(usesShiftWheel ? event.scrollingDeltaX : event.scrollingDeltaY),
+                    abs(horizontal) > 0.1
+                else { return event }
+
+                self.accumulatedDelta += horizontal
+                let now = Date()
+                guard abs(self.accumulatedDelta) >= 18,
+                    now.timeIntervalSince(self.lastDispatchAt) >= 0.08
+                else { return nil }
+                let direction = self.accumulatedDelta > 0 ? -1 : 1
+                self.accumulatedDelta = 0
+                self.lastDispatchAt = now
+                DispatchQueue.main.async { [weak self] in self?.onScroll?(direction) }
+                return nil
+            }
+        }
+
+        override func removeFromSuperview() {
+            tearDown()
+            super.removeFromSuperview()
+        }
+
+        deinit {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+        }
+
+        private func tearDown() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+            accumulatedDelta = 0
+        }
     }
 }
 

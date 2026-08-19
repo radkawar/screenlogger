@@ -1491,6 +1491,32 @@ final class ScreenlogAppUITests: XCTestCase {
         )
     }
 
+    func testLongTimelineSessionPagesAcrossEveryMoment() throws {
+        let app = try launch(
+            route: "--open-timeline",
+            fixture: true,
+            selectSessionAfterLoad: true,
+            longSession: true
+        )
+        assertWindow("Timeline", in: app)
+
+        let earlier = assertElement(identifier: "timeline.navigation.earlier-page", in: app)
+        let later = assertElement(identifier: "timeline.navigation.later-page", in: app)
+        XCTAssertTrue(earlier.isEnabled, "The initial tail window must offer earlier moments.")
+        XCTAssertFalse(later.isEnabled, "The initial tail window is already at the session end.")
+
+        earlier.click()
+        expectation(
+            for: NSPredicate(format: "isEnabled == true"),
+            evaluatedWith: later
+        )
+        waitForExpectations(timeout: Self.routeTimeout)
+        XCTAssertTrue(
+            later.isEnabled,
+            "Loading an earlier window must keep the later part of the session reachable."
+        )
+    }
+
     func testTimelineGroupsMultipleDisplaysIntoOneNavigableMoment() throws {
         let app = try launch(
             route: "--open-timeline",
@@ -1832,6 +1858,7 @@ final class ScreenlogAppUITests: XCTestCase {
         simulatedUnreadablePreview: Bool = false,
         selectSessionAfterLoad: Bool = false,
         multipleDisplays: Bool = false,
+        longSession: Bool = false,
         compactHistory: Bool = false,
         assistantDetected: [AssistantFixtureTarget] = [],
         assistantReady: [AssistantFixtureTarget] = [],
@@ -1891,6 +1918,9 @@ final class ScreenlogAppUITests: XCTestCase {
             }
             if multipleDisplays {
                 application.launchEnvironment["SCREENLOG_UI_TEST_MULTIPLE_DISPLAYS"] = "1"
+            }
+            if longSession {
+                application.launchEnvironment["SCREENLOG_UI_TEST_LONG_SESSION"] = "1"
             }
             if compactHistory {
                 application.launchEnvironment["SCREENLOG_UI_TEST_COMPACT_HISTORY"] = "1"

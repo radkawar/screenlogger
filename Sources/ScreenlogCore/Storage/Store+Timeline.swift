@@ -218,6 +218,53 @@ extension Store {
         try timeline(fromTimestampMs: session.startMs, toTimestampMs: session.endMs, limit: limit)
     }
 
+    /// A bounded window inside a session. This keeps multi-hour sessions
+    /// navigable without hydrating every OCR payload in the session at once.
+    public func timeline(
+        session: SessionRow,
+        aroundTimestampMs centerMs: Int64,
+        before: Int = 249,
+        after: Int = 250
+    ) throws -> [TimelineFrame] {
+        let center = min(session.endMs, max(session.startMs, centerMs))
+        let sql = """
+            WITH earlier_moments AS (
+                SELECT DISTINCT timestamp
+                FROM frame
+                WHERE timestamp >= ? AND timestamp <= ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+            ), later_moments AS (
+                SELECT DISTINCT timestamp
+                FROM frame
+                WHERE timestamp > ? AND timestamp <= ?
+                ORDER BY timestamp ASC
+                LIMIT ?
+            ), selected_moments AS (
+                SELECT timestamp FROM earlier_moments
+                UNION
+                SELECT timestamp FROM later_moments
+            )
+            SELECT \(Self.timelineSelectSQL)
+            \(Self.timelineJoinSQL)
+            WHERE f.timestamp IN (SELECT timestamp FROM selected_moments)
+            ORDER BY f.timestamp ASC, f.id ASC
+            """
+        let stmt = try db.prepare(sql)
+        defer { sqlite3_finalize(stmt) }
+        SQLiteBind.int64(stmt, 1, session.startMs)
+        SQLiteBind.int64(stmt, 2, center)
+        SQLiteBind.int(stmt, 3, max(1, before + 1))
+        SQLiteBind.int64(stmt, 4, center)
+        SQLiteBind.int64(stmt, 5, session.endMs)
+        SQLiteBind.int(stmt, 6, max(0, after))
+        var rows: [TimelineFrame] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            rows.append(Self.timelineFrame(from: stmt))
+        }
+        return try attachingTranscripts(to: rows)
+    }
+
     /// Expand a time window around `centerMs` by `radiusMs` on each side (more context than id-window).
     /// Useful when jumping from Search to Replay and needing surrounding minutes of activity.
     public func timelineExpand(

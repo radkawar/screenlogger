@@ -204,7 +204,12 @@ extension AppModel {
         stopReplay()
         do {
             let frames = try await store.readAsync {
-                try $0.timeline(session: session, limit: 500)
+                try $0.timeline(
+                    session: session,
+                    aroundTimestampMs: session.endMs,
+                    before: 499,
+                    after: 0
+                )
                     .sorted(by: TimelineFrame.chronologicalAscending)
             }
             selectedSessionIndex = sessions.firstIndex(where: { $0.startMs == session.startMs })
@@ -222,6 +227,70 @@ extension AppModel {
             timelineLoadState = .failed
             timelineIssue = issue
         }
+    }
+
+    /// Replaces the loaded detail window while retaining the selected session.
+    /// The activity ribbon uses the session's true bounds, so any point in a
+    /// long session can be requested without an unbounded query.
+    func loadSelectedSessionWindow(
+        aroundTimestampMs timestampMs: Int64,
+        before: Int = 249,
+        after: Int = 250
+    ) async {
+        guard let session = selectedSession, let store else { return }
+        let target = min(session.endMs, max(session.startMs, timestampMs))
+        timelineLoadState = .loading
+        do {
+            let frames = try await store.readAsync {
+                try $0.timeline(
+                    session: session,
+                    aroundTimestampMs: target,
+                    before: before,
+                    after: after
+                )
+                .sorted(by: TimelineFrame.chronologicalAscending)
+            }
+            timeline = frames
+            if let closest = frames.min(by: {
+                abs($0.timestampMs - target) < abs($1.timestampMs - target)
+            }) {
+                selectTimelineFrame(id: closest.id)
+            } else {
+                selectedTimelineID = nil
+            }
+            timelineLoadState = .ready
+        } catch {
+            timelineLoadState = .failed
+            timelineIssue = .reloadSession(startMs: session.startMs)
+        }
+    }
+
+    var canLoadEarlierSessionWindow: Bool {
+        guard let session = selectedSession, let first = timelineMomentFrames.first else { return false }
+        return first.timestampMs > session.startMs
+    }
+
+    var canLoadLaterSessionWindow: Bool {
+        guard let session = selectedSession, let last = timelineMomentFrames.last else { return false }
+        return last.timestampMs < session.endMs
+    }
+
+    func loadEarlierSessionWindow() async {
+        guard let first = timelineMomentFrames.first else { return }
+        await loadSelectedSessionWindow(
+            aroundTimestampMs: first.timestampMs - 1,
+            before: 499,
+            after: 0
+        )
+    }
+
+    func loadLaterSessionWindow() async {
+        guard let last = timelineMomentFrames.last else { return }
+        await loadSelectedSessionWindow(
+            aroundTimestampMs: last.timestampMs + 1,
+            before: 0,
+            after: 499
+        )
     }
 
     func isSessionPinned(_ session: SessionRow) -> Bool {

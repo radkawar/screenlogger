@@ -154,6 +154,7 @@ final class AppModel: ObservableObject {
     /// the engine changes without relying on an unrelated polling redraw.
     @Published var capturePauseReason: CapturePauseReason?
     @Published var audioTranscriptionStatus: AudioTranscriptionStatus = .off
+    @Published var automaticMaintenanceDeferredForPower = false
     /// User-requested pause end time (menu: 'Pause Recording for 1 Hour'). Nil when not paused.
     @Published var recordingPausedUntil: Date? = nil
     var pauseResumeTask: Task<Void, Never>?
@@ -943,6 +944,15 @@ final class AppModel: ObservableObject {
                     #else
                         self?.audioTranscriptionStatus = value
                     #endif
+                }
+            }
+            .store(in: &engineCancellables)
+
+        engine.$automaticMaintenanceDeferredForPower
+            .removeDuplicates()
+            .sink { [weak self] value in
+                Task { @MainActor [weak self] in
+                    self?.automaticMaintenanceDeferredForPower = value
                 }
             }
             .store(in: &engineCancellables)

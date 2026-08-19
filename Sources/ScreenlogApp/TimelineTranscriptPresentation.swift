@@ -18,8 +18,11 @@ enum TimelineTranscriptPresentation {
         }
     }
 
-    static let maximumMergeGapMs: Int64 = 1_500
-    static let maximumPassageDurationMs: Int64 = 30_000
+    // Apple's progressive recognizer may finalize adjacent phrases a couple
+    // of seconds apart. Present those canonical rows as one readable passage
+    // without changing storage or search granularity.
+    static let maximumMergeGapMs: Int64 = 3_000
+    static let maximumPassageDurationMs: Int64 = 60_000
     static let maximumPassageCharacters = 600
 
     static func passages(from frames: [TimelineFrame]) -> [Passage] {

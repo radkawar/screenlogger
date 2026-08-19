@@ -32,6 +32,7 @@ extension AppModel {
         let libraryResultFrameID =
             timelineNavigationOrigin == .libraryResult ? selectedTimelineID : nil
         let loadedSession = libraryResultFrameID == nil ? selectedSession : nil
+        let loadedSessionTarget = selectedTimelineFrame?.timestampMs
         do {
             // All SQLite off MainActor.
             let snapshot = try await store.readAsync { s -> (RecordingStats, [FrameRow]?, [TimelineFrame]?) in
@@ -43,7 +44,12 @@ extension AppModel {
                         try s.timelineAround(frameID: libraryResultFrameID, before: 40, after: 40)
                             .sorted(by: TimelineFrame.chronologicalAscending)
                     } else if let loadedSession {
-                        try s.timeline(session: loadedSession, limit: 500)
+                        try s.timeline(
+                            session: loadedSession,
+                            aroundTimestampMs: loadedSessionTarget ?? loadedSession.endMs,
+                            before: loadedSessionTarget == nil ? 499 : 249,
+                            after: loadedSessionTarget == nil ? 0 : 250
+                        )
                             .sorted(by: TimelineFrame.chronologicalAscending)
                     } else {
                         try s.recentTimeline(limit: 100)
@@ -97,6 +103,7 @@ extension AppModel {
         let preservesLibraryResultWindow = timelineNavigationOrigin == .libraryResult
         let selectedSessionStart = selectedSession?.startMs
         let previousSelection = selectedTimelineID
+        let previousSelectionTimestamp = selectedTimelineFrame?.timestampMs
         let wasFollowingLatest =
             previousSelection == nil
             || selectedTimelineMomentIndex == timelineMomentCount - 1
@@ -125,7 +132,15 @@ extension AppModel {
                 if let selectedSessionStart,
                     let selected = sessions.first(where: { $0.startMs == selectedSessionStart })
                 {
-                    let timeline = try store.timeline(session: selected, limit: 500)
+                    let target = wasFollowingLatest
+                        ? selected.endMs
+                        : (previousSelectionTimestamp ?? selected.endMs)
+                    let timeline = try store.timeline(
+                        session: selected,
+                        aroundTimestampMs: target,
+                        before: wasFollowingLatest ? 499 : 249,
+                        after: wasFollowingLatest ? 0 : 250
+                    )
                         .sorted(by: TimelineFrame.chronologicalAscending)
                     return (stats, recent, sessions, timeline)
                 }

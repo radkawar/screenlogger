@@ -20,8 +20,8 @@ final class TimelineTranscriptPresentationTests: XCTestCase {
         let segments = [
             segment(id: 1, start: 1_000, end: 2_000, source: .microphone, text: "One"),
             segment(id: 2, start: 2_200, end: 3_000, source: .computer, text: "Two"),
-            segment(id: 3, start: 5_000, end: 6_000, source: .computer, text: "Three"),
-            segment(id: 4, start: 6_200, end: 40_000, source: .computer, text: "Four"),
+            segment(id: 3, start: 6_500, end: 7_500, source: .computer, text: "Three"),
+            segment(id: 4, start: 7_700, end: 70_000, source: .computer, text: "Four"),
         ]
 
         let passages = TimelineTranscriptPresentation.passages(from: segments)

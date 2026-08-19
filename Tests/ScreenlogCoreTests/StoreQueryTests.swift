@@ -354,6 +354,43 @@ final class StoreQueryTests: XCTestCase {
         XCTAssertFalse(nearZero.map(\.id).contains(b1))
     }
 
+    func testLongSessionWindowCanReachBeginningMiddleAndEndWithoutTruncation() throws {
+        for moment in 0..<1_200 {
+            _ = try store.insertSeedFrame(
+                timestampMs: Int64(moment) * 1_000,
+                foreground: "moment \(moment)"
+            )
+        }
+        let session = try XCTUnwrap(store.sessions(gapMs: 60_000).first)
+
+        let beginning = try store.timeline(
+            session: session,
+            aroundTimestampMs: session.startMs,
+            before: 0,
+            after: 499
+        )
+        let middle = try store.timeline(
+            session: session,
+            aroundTimestampMs: 600_000,
+            before: 249,
+            after: 250
+        )
+        let end = try store.timeline(
+            session: session,
+            aroundTimestampMs: session.endMs,
+            before: 499,
+            after: 0
+        )
+
+        XCTAssertEqual(beginning.count, 500)
+        XCTAssertEqual(beginning.first?.timestampMs, session.startMs)
+        XCTAssertEqual(middle.count, 500)
+        XCTAssertEqual(middle.first?.timestampMs, 351_000)
+        XCTAssertEqual(middle.last?.timestampMs, 850_000)
+        XCTAssertEqual(end.count, 500)
+        XCTAssertEqual(end.last?.timestampMs, session.endMs)
+    }
+
     func testOCRTextAndBoxSlices() throws {
         let fg = "Hello"
         let bg = "World"
