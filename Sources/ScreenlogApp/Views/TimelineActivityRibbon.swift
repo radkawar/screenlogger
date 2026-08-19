@@ -30,54 +30,14 @@ extension HistoryPane {
             let hoveredFrame = frames.first(where: { $0.id == hoveredTimelineFrameID })
             let contextFrame = hoveredFrame ?? model.selectedTimelineFrame
             VStack(spacing: 4) {
-                HStack(spacing: 8) {
-                    if let contextFrame {
-                        TimelineSourceIcon(frame: contextFrame, size: 16)
-                            .accessibilityHidden(true)
-                        HStack(spacing: 5) {
-                            Text(SLTimeFormat.shortTime(contextFrame.timestampMs))
-                                .fontWeight(.semibold)
-                                .monospacedDigit()
-                            Divider()
-                                .frame(height: 10)
-                                .overlay(.white.opacity(secondaryTextOpacity))
-                                .accessibilityHidden(true)
-                            Text(contextFrame.appLabel)
-                                .lineLimit(1)
-                            if let domain = contextFrame.domain, !domain.isEmpty {
-                                Text(domain)
-                                    .lineLimit(1)
-                                    .foregroundStyle(.white.opacity(secondaryTextOpacity))
-                            }
-                        }
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel(hoveredFrame == nil ? "Selected moment" : "Moment under pointer")
-                        .accessibilityValue(Self.sourceContextValue(contextFrame))
-                        .accessibilityIdentifier("timeline.navigation.context")
-                        .help(hoveredFrame == nil ? "Selected moment" : "Moment under the pointer")
-                    } else {
-                        Label("Time scale", systemImage: "clock")
-                    }
-
-                    Spacer(minLength: 8)
-
-                    HStack(spacing: 3) {
-                        if model.selectedSession != nil {
-                            sessionPageButton(direction: .earlier)
-                        }
-                        timelineRangeMenu(
-                            frames: frames,
-                            window: window,
-                            scopeStartMs: scopeStart,
-                            scopeEndMs: scopeEnd
-                        )
-                        if model.selectedSession != nil {
-                            sessionPageButton(direction: .later)
-                        }
-                    }
-                }
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(.white.opacity(primaryTimelineTextOpacity))
+                timelineRibbonHeader(
+                    frames: frames,
+                    window: window,
+                    scopeStartMs: scopeStart,
+                    scopeEndMs: scopeEnd,
+                    hoveredFrame: hoveredFrame,
+                    contextFrame: contextFrame
+                )
 
                 ZStack(alignment: .leading) {
                     Capsule(style: .continuous)
@@ -322,6 +282,64 @@ extension HistoryPane {
         let durationMs: Int64
 
         var id: Int { step }
+    }
+
+    private func timelineRibbonHeader(
+        frames: [TimelineFrame],
+        window: TimelineWindow,
+        scopeStartMs: Int64?,
+        scopeEndMs: Int64?,
+        hoveredFrame: TimelineFrame?,
+        contextFrame: TimelineFrame?
+    ) -> some View {
+        HStack(spacing: 8) {
+            if let contextFrame {
+                TimelineSourceIcon(frame: contextFrame, size: 16)
+                    .accessibilityHidden(true)
+                HStack(spacing: 5) {
+                    Text(SLTimeFormat.shortTime(contextFrame.timestampMs))
+                        .fontWeight(.semibold)
+                        .monospacedDigit()
+                    Divider()
+                        .frame(height: 10)
+                        .overlay(.white.opacity(secondaryTextOpacity))
+                        .accessibilityHidden(true)
+                    Text(contextFrame.appLabel)
+                        .lineLimit(1)
+                    if let domain = contextFrame.domain, !domain.isEmpty {
+                        Text(domain)
+                            .lineLimit(1)
+                            .foregroundStyle(.white.opacity(secondaryTextOpacity))
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(hoveredFrame == nil ? "Selected moment" : "Moment under pointer")
+                .accessibilityValue(Self.sourceContextValue(contextFrame))
+                .accessibilityIdentifier("timeline.navigation.context")
+                .help(hoveredFrame == nil ? "Selected moment" : "Moment under the pointer")
+            } else {
+                Label("Time scale", systemImage: "clock")
+            }
+
+            Spacer(minLength: 8)
+
+            HStack(spacing: 3) {
+                if model.selectedSession != nil {
+                    sessionPageButton(direction: .earlier)
+                }
+                timelineRangeMenu(
+                    frames: frames,
+                    window: window,
+                    scopeStartMs: scopeStartMs,
+                    scopeEndMs: scopeEndMs
+                )
+                if model.selectedSession != nil {
+                    sessionPageButton(direction: .later)
+                }
+            }
+        }
+        .font(.system(size: 10.5, weight: .medium))
+        .foregroundStyle(.white.opacity(primaryTimelineTextOpacity))
     }
 
     private func timelineRangeMenu(
