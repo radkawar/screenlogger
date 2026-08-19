@@ -439,7 +439,8 @@ extension HistoryPane {
 
     private func sessionPageButton(direction: SessionPageDirection) -> some View {
         let isEarlier = direction == .earlier
-        let enabled = isEarlier
+        let enabled =
+            isEarlier
             ? model.canLoadEarlierSessionWindow
             : model.canLoadLaterSessionWindow
         return Button {

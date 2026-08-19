@@ -210,7 +210,7 @@ extension AppModel {
                     before: 499,
                     after: 0
                 )
-                    .sorted(by: TimelineFrame.chronologicalAscending)
+                .sorted(by: TimelineFrame.chronologicalAscending)
             }
             selectedSessionIndex = sessions.firstIndex(where: { $0.startMs == session.startMs })
             if searchSessionScoped {

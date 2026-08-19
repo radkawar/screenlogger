@@ -50,7 +50,7 @@ extension AppModel {
                             before: loadedSessionTarget == nil ? 499 : 249,
                             after: loadedSessionTarget == nil ? 0 : 250
                         )
-                            .sorted(by: TimelineFrame.chronologicalAscending)
+                        .sorted(by: TimelineFrame.chronologicalAscending)
                     } else {
                         try s.recentTimeline(limit: 100)
                             .sorted(by: TimelineFrame.chronologicalAscending)
@@ -132,7 +132,8 @@ extension AppModel {
                 if let selectedSessionStart,
                     let selected = sessions.first(where: { $0.startMs == selectedSessionStart })
                 {
-                    let target = wasFollowingLatest
+                    let target =
+                        wasFollowingLatest
                         ? selected.endMs
                         : (previousSelectionTimestamp ?? selected.endMs)
                     let timeline = try store.timeline(
@@ -141,7 +142,7 @@ extension AppModel {
                         before: wasFollowingLatest ? 499 : 249,
                         after: wasFollowingLatest ? 0 : 250
                     )
-                        .sorted(by: TimelineFrame.chronologicalAscending)
+                    .sorted(by: TimelineFrame.chronologicalAscending)
                     return (stats, recent, sessions, timeline)
                 }
                 let timeline = try store.recentTimeline(limit: 100)

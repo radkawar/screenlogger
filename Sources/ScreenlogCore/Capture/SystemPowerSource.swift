@@ -17,8 +17,9 @@ public enum SystemPowerSource {
 
         var foundBattery = false
         for source in sourceList {
-            guard let description = IOPSGetPowerSourceDescription(snapshot, source)?
-                .takeUnretainedValue() as? [String: Any]
+            guard
+                let description = IOPSGetPowerSourceDescription(snapshot, source)?
+                    .takeUnretainedValue() as? [String: Any]
             else { continue }
             let state = description[kIOPSPowerSourceStateKey as String] as? String
             if state == (kIOPSBatteryPowerValue as String) { return .battery }

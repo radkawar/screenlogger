@@ -55,7 +55,7 @@ extension AppModel {
                         before: 249,
                         after: 250
                     )
-                        .sorted(by: TimelineFrame.chronologicalAscending)
+                    .sorted(by: TimelineFrame.chronologicalAscending)
                 }
                 return try store.recentTimeline(limit: 100)
                     .sorted(by: TimelineFrame.chronologicalAscending)
