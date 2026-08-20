@@ -101,6 +101,19 @@ struct CaptureTimingSettingsSection: View {
 
                 Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
+                Label(
+                    "On battery, capture waits at least 5 seconds and uses lighter text recognition.",
+                    systemImage: "battery.25percent"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
+                .accessibilityIdentifier("capture.timing.battery-note")
+
+                Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
+
                 SettingsCardRow(
                     icon: "moon.zzz",
                     title: "Pause When Inactive",
@@ -193,9 +206,9 @@ struct CaptureImageSettingsSection: View {
     private var qualityHelp: String {
         switch model.quality {
         case .standard:
-            return "Standard saves compact images. Text recognition still uses native display pixels."
+            return "Standard saves compact images. Text recognition uses the same stored resolution."
         case .high:
-            return "High saves sharper images. Text recognition still uses native display pixels."
+            return "High saves sharper images. Text recognition uses the same stored resolution."
         case .ultra: return "Ultra saves the display at native resolution with minimal compression."
         }
     }
@@ -218,7 +231,7 @@ struct CaptureTextRecognitionSettingsSection: View {
                 SettingsCardRow(
                     icon: "text.viewfinder",
                     title: "Text Recognition",
-                    subtitle: "Uses native display pixels to make captures searchable on this Mac."
+                    subtitle: "Makes captures searchable on this Mac using the selected image quality."
                 ) {
                     Label("On", systemImage: "checkmark")
                         .font(.caption.weight(.semibold))

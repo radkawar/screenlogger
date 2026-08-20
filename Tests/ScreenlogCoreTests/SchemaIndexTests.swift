@@ -1,3 +1,4 @@
+import Foundation
 import SQLite3
 import XCTest
 
@@ -71,6 +72,17 @@ final class SchemaIndexTests: XCTestCase {
         XCTAssertTrue(triggers.contains("frame_ai"))
         XCTAssertTrue(triggers.contains("frame_ad"))
         XCTAssertTrue(triggers.contains("frame_au"))
+
+        let insertSQL = try triggerSQL(named: "frame_ai", in: store.db)
+        XCTAssertTrue(
+            insertSQL.localizedCaseInsensitiveContains("index_search"),
+            "frame_ai must skip FTS when index_search is 0: \(insertSQL)"
+        )
+        let deleteSQL = try triggerSQL(named: "frame_ad", in: store.db)
+        XCTAssertTrue(
+            deleteSQL.localizedCaseInsensitiveContains("index_search"),
+            "frame_ad must skip FTS delete when index_search is 0: \(deleteSQL)"
+        )
         XCTAssertTrue(triggers.contains("transcript_segment_ai"))
         XCTAssertTrue(triggers.contains("transcript_segment_ad"))
         XCTAssertTrue(triggers.contains("transcript_segment_au"))
@@ -153,5 +165,19 @@ final class SchemaIndexTests: XCTestCase {
             }
         }
         return names
+    }
+
+    private func triggerSQL(named name: String, in db: SQLiteDatabase) throws -> String {
+        let stmt = try db.prepare("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?")
+        defer { sqlite3_finalize(stmt) }
+        SQLiteBind.text(stmt, 1, name)
+        guard sqlite3_step(stmt) == SQLITE_ROW else {
+            throw NSError(
+                domain: "SchemaIndexTests",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "missing trigger \(name)"]
+            )
+        }
+        return SQLiteColumn.text(stmt, 0) ?? ""
     }
 }

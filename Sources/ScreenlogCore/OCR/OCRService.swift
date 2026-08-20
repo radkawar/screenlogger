@@ -48,7 +48,7 @@ public final class OCRService: @unchecked Sendable {
         // Run Vision off the cooperative pool; never require MainActor.
         try await withCheckedThrowingContinuation { cont in
             // Perform on a background queue so callers on any executor stay free.
-            DispatchQueue.global(qos: .userInitiated).async {
+            DispatchQueue.global(qos: .utility).async {
                 let request = VNRecognizeTextRequest()
                 request.recognitionLevel = self.recognitionLevel
                 request.usesLanguageCorrection = self.usesLanguageCorrection

@@ -104,7 +104,7 @@ public final class ScreenCaptureService: NSObject, @unchecked Sendable {
                     excludingApplications: excludedApplications,
                     exceptingWindows: []
                 )
-                let config = Self.streamConfiguration(for: display)
+                let config = streamConfiguration(for: display)
                 let image = try await SCScreenshotManager.captureImage(
                     contentFilter: filter,
                     configuration: config
@@ -169,12 +169,13 @@ public final class ScreenCaptureService: NSObject, @unchecked Sendable {
         return bitmaps
     }
 
-    private static func streamConfiguration(for display: SCDisplay) -> SCStreamConfiguration {
+    private func streamConfiguration(for display: SCDisplay) -> SCStreamConfiguration {
         let config = SCStreamConfiguration()
-        let scale = backingScale(for: display)
-        let size = captureOutputSize(
+        let scale = Self.backingScale(for: display)
+        let size = Self.captureOutputSize(
             nativeWidth: display.width * scale,
-            nativeHeight: display.height * scale
+            nativeHeight: display.height * scale,
+            maxDimension: maxDimension
         )
         config.width = size.width
         config.height = size.height
@@ -184,16 +185,17 @@ public final class ScreenCaptureService: NSObject, @unchecked Sendable {
         return config
     }
 
-    /// OCR always receives native backing pixels. Image quality controls only
-    /// the still written after OCR has completed.
+    /// Screenshot and OCR share this size. Standard and High match the stored
+    /// still; Ultra (maxDimension 0) keeps native backing pixels.
     static func captureOutputSize(
         nativeWidth: Int,
-        nativeHeight: Int
+        nativeHeight: Int,
+        maxDimension: Int
     ) -> (width: Int, height: Int) {
         outputSize(
             nativeWidth: nativeWidth,
             nativeHeight: nativeHeight,
-            maxDimension: 0
+            maxDimension: maxDimension
         )
     }
 

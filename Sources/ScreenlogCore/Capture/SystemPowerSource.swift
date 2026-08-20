@@ -7,8 +7,8 @@ public enum SystemPowerSourceState: Sendable, Equatable {
     case unknown
 }
 
-/// Small, synchronous IOKit probe used only by the low-frequency maintenance
-/// scheduler. Capture and live transcription never depend on this value.
+/// Small, synchronous IOKit probe used by the maintenance scheduler and the
+/// capture-loop battery policy. Live transcription does not depend on this value.
 public enum SystemPowerSource {
     public static func current() -> SystemPowerSourceState {
         guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),

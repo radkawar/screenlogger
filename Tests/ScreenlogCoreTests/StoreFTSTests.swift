@@ -62,6 +62,44 @@ final class StoreFTSTests: XCTestCase {
         XCTAssertTrue(frame!.foreground?.contains(phrase) == true)
     }
 
+    func testReusedOCRSkipsSearchIndexRewrite() throws {
+        let phrase = "reusedocr\(String(UUID().uuidString.prefix(8)).replacingOccurrences(of: "-", with: ""))"
+        let indexed = try store.store(
+            payload: CapturePayload(
+                imageData: Data([0x00, 0x01]),
+                timestampMs: 1_700_000_001_000,
+                width: 10,
+                height: 10,
+                foreground: phrase,
+                title: "Notes",
+                imageFileExtension: "bin",
+                indexSearch: true
+            )
+        )
+        let reused = try store.store(
+            payload: CapturePayload(
+                imageData: Data([0x00, 0x02]),
+                timestampMs: 1_700_000_001_500,
+                width: 10,
+                height: 10,
+                foreground: phrase,
+                title: "Notes",
+                imageFileExtension: "bin",
+                indexSearch: false
+            )
+        )
+
+        let hits = try store.ftsSearch(query: phrase, limit: 10)
+        XCTAssertEqual(hits.map(\.frameID), [indexed])
+        XCTAssertEqual(try store.frame(id: reused)?.foreground, phrase)
+
+        try store.withSerializedMutation {
+            try store.db.exec("DELETE FROM frame WHERE id = \(reused)")
+        }
+        let hitsAfterDelete = try store.ftsSearch(query: phrase, limit: 10)
+        XCTAssertEqual(hitsAfterDelete.map(\.frameID), [indexed])
+    }
+
     func testLibrarySearchAdvertisesOnlyActiveCompactedMedia() throws {
         let activeToken = "activecompact\(UUID().uuidString.prefix(8))"
         let purgedToken = "purgedcompact\(UUID().uuidString.prefix(8))"

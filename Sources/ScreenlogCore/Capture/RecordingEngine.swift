@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import OSLog
+import Vision
 
 private let log = Logger(subsystem: "dev.screenlog", category: "recording")
 
@@ -64,6 +65,14 @@ private actor CapturePipeline {
     /// Fail closed for supported browsers when their active domain is unknown.
     var pauseWhenBrowserAddressUnavailable = false
     var displayMode: CaptureDisplayMode = .active
+    private var fastRecognition = false
+    private var lastStoredByDisplay: [UInt32: StoredDisplayStill] = [:]
+
+    private struct StoredDisplayStill: Sendable {
+        var encoded: EncodedStill
+        var boxes: [OCRBox]
+        var storedAtMs: Int64
+    }
 
     struct CycleOutcome: Sendable {
         /// One frame per successfully stored display. Empty when privacy skips
@@ -117,6 +126,22 @@ private actor CapturePipeline {
         capture.stillQuality = self.stillQuality
     }
 
+    func applyRecognitionEconomy(fast: Bool) {
+        fastRecognition = fast
+        let level: VNRequestTextRecognitionLevel = fast ? .fast : .accurate
+        fullOCR.recognitionLevel = level
+        fullOCR.usesLanguageCorrection = !fast
+        for service in differentialOCRByDisplay.values {
+            service.recognitionLevel = level
+            service.usesLanguageCorrection = !fast
+        }
+    }
+
+    func applyEnergyProfile(_ energy: CaptureEnergyProfile) {
+        applyCaptureQuality(maxDimension: energy.maxDimension, stillQuality: energy.stillQuality)
+        applyRecognitionEconomy(fast: energy.fastRecognition)
+    }
+
     func setCaptureAXTree(_ value: Bool) { captureAXTree = value }
     func setCaptureBrowserURL(_ value: Bool) { captureBrowserURL = value }
     func setUseDifferentialOCR(_ value: Bool) { useDifferentialOCR = value }
@@ -142,7 +167,13 @@ private actor CapturePipeline {
         useDifferentialOCR = differentialOCR
     }
 
-    func captureAndStore(store: Store) async throws -> CycleOutcome {
+    func captureAndStore(
+        store: Store,
+        energy: CaptureEnergyProfile? = nil
+    ) async throws -> CycleOutcome {
+        if let energy {
+            applyEnergyProfile(energy)
+        }
         // Cheap early exclusions before ScreenCaptureKit, OCR, or encoding.
         let earlyBundle = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         if ScreenloggerCapturePrivacy.isScreenlogger(bundleID: earlyBundle) {
@@ -257,11 +288,11 @@ private actor CapturePipeline {
             )
         }
 
-        var frameIDs: [Int64] = []
-        var reusedCount = 0
-        var axNodes = 0
-        var attachedAXTree = false
+        var prepared: [PreparedDisplay] = []
         var firstFailure: Error?
+        let collectAX = energy?.collectAccessibilityTree ?? captureAXTree
+        let heartbeatSeconds =
+            energy?.unchangedHeartbeatSeconds ?? CapturePowerPolicy.unchangedHeartbeatSeconds
 
         // Remove each processed bitmap so native multi-display buffers are
         // released as soon as their OCR and stored copy are complete.
@@ -293,19 +324,65 @@ private actor CapturePipeline {
                     rawOCR = try await fullOCR.recognize(image: bitmap.image)
                     reused = false
                 }
+                prepared.append(
+                    PreparedDisplay(
+                        bitmap: bitmap,
+                        visibleWindows: visibleWindows,
+                        containsFocusedWindow: containsFocusedWindow,
+                        rawOCR: rawOCR,
+                        reused: reused,
+                        displayKey: bitmap.displayID ?? UInt32.max
+                    )
+                )
+            } catch {
+                firstFailure = firstFailure ?? error
+                log.error(
+                    "display processing failed id=\(bitmap.displayID ?? 0): \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
 
+        if prepared.isEmpty {
+            if let firstFailure { throw firstFailure }
+            return CycleOutcome(frameIDs: [], ocrReused: false, axNodes: 0, pauseReason: nil)
+        }
+
+        let nowMs = prepared[0].bitmap.timestampMs
+        let storeInterval = CapturePowerPolicy.shouldStoreInterval(
+            displays: prepared.map { item in
+                (item.reused, lastStoredByDisplay[item.displayKey]?.storedAtMs)
+            },
+            nowMs: nowMs,
+            heartbeatSeconds: heartbeatSeconds
+        )
+        if !storeInterval {
+            return CycleOutcome(
+                frameIDs: [],
+                ocrReused: true,
+                axNodes: 0,
+                pauseReason: nil
+            )
+        }
+
+        var frameIDs: [Int64] = []
+        var reusedCount = 0
+        var axNodes = 0
+        var attachedAXTree = false
+
+        for item in prepared {
+            do {
                 let attributed = OCRService.attributeToForegroundBackground(
-                    result: rawOCR,
-                    imageWidth: bitmap.width,
-                    imageHeight: bitmap.height,
-                    captureDisplay: bitmap.captureDisplay,
-                    windowBounds: visibleWindows,
+                    result: item.rawOCR,
+                    imageWidth: item.bitmap.width,
+                    imageHeight: item.bitmap.height,
+                    captureDisplay: item.bitmap.captureDisplay,
+                    windowBounds: item.visibleWindows,
                     foregroundBundleID: bundleID,
-                    allowVisibleWindowFallback: displayCount == 1 || containsFocusedWindow
+                    allowVisibleWindowFallback: displayCount == 1 || item.containsFocusedWindow
                 )
 
                 // Attach the active browser address only to its visible window.
-                var windowBounds = visibleWindows
+                var windowBounds = item.visibleWindows
                 if let url, let bundleID {
                     if let index = windowBounds.indices
                         .sorted(by: { windowBounds[$0].zOrder < windowBounds[$1].zOrder })
@@ -315,57 +392,73 @@ private actor CapturePipeline {
                     }
                 }
 
-                // Encode exactly once, after privacy checks and OCR have
-                // consumed the native ScreenCaptureKit image. Standard and
-                // High resize only this stored copy; Ultra keeps native pixels.
-                let encoded = try await capture.encodeStill(bitmap.image)
-                let storedOCRBoxes = OCRService.rescaleBoxes(
-                    attributed.boxes,
-                    sourceWidth: bitmap.width,
-                    sourceHeight: bitmap.height,
-                    destinationWidth: encoded.pixelWidth,
-                    destinationHeight: encoded.pixelHeight
-                )
+                let encoded: EncodedStill
+                let storedOCRBoxes: [OCRBox]
+                let indexSearch: Bool
+                if item.reused, let last = lastStoredByDisplay[item.displayKey] {
+                    encoded = last.encoded
+                    storedOCRBoxes = last.boxes
+                    indexSearch = false
+                } else {
+                    encoded = try await capture.encodeStill(item.bitmap.image)
+                    storedOCRBoxes = OCRService.rescaleBoxes(
+                        attributed.boxes,
+                        sourceWidth: item.bitmap.width,
+                        sourceHeight: item.bitmap.height,
+                        destinationWidth: encoded.pixelWidth,
+                        destinationHeight: encoded.pixelHeight
+                    )
+                    indexSearch = true
+                }
                 let payload = CapturePayload(
                     imageData: encoded.data,
-                    timestampMs: bitmap.timestampMs,
+                    timestampMs: item.bitmap.timestampMs,
                     width: encoded.pixelWidth,
                     height: encoded.pixelHeight,
                     foreground: attributed.foreground,
                     background: attributed.background,
                     title: title,
                     bundleID: bundleID,
-                    bundleVersion: bitmap.focusedBundleVersion ?? "",
-                    displayName: bitmap.displayName,
+                    bundleVersion: item.bitmap.focusedBundleVersion ?? "",
+                    displayName: item.bitmap.displayName,
                     url: url,
                     domain: domain,
                     ocrBoxes: storedOCRBoxes,
                     windowBounds: windowBounds,
                     isInactive: false,
                     imageFileExtension: encoded.fileExtension,
-                    captureDisplay: bitmap.captureDisplay
+                    captureDisplay: item.bitmap.captureDisplay,
+                    indexSearch: indexSearch
                 )
 
                 let frameID = try store.store(payload: payload)
                 frameIDs.append(frameID)
-                if reused { reusedCount += 1 }
+                lastStoredByDisplay[item.displayKey] = StoredDisplayStill(
+                    encoded: encoded,
+                    boxes: storedOCRBoxes,
+                    storedAtMs: item.bitmap.timestampMs
+                )
+                if item.reused { reusedCount += 1 }
 
-                if !attachedAXTree,
-                    containsFocusedWindow || displayCount == 1,
-                    captureAXTree,
-                    AccessibilityPermission.isTrusted(prompt: false),
-                    let snapshot = axExtractor.captureFocusedTree(
-                        expectedPID: bitmap.focusedProcessID
-                    )
+                if !item.reused,
+                    !attachedAXTree,
+                    item.containsFocusedWindow || displayCount == 1,
+                    collectAX,
+                    AccessibilityPermission.isTrusted(prompt: false)
                 {
-                    try store.storeAXSnapshot(frameID: frameID, snapshot: snapshot)
-                    axNodes = snapshot.nodeCount
-                    attachedAXTree = true
+                    axExtractor.maxNodes = AXTreeExtractor.nodeLimit(bundleID: bundleID)
+                    if let snapshot = axExtractor.captureFocusedTree(
+                        expectedPID: item.bitmap.focusedProcessID
+                    ) {
+                        try store.storeAXSnapshot(frameID: frameID, snapshot: snapshot)
+                        axNodes = snapshot.nodeCount
+                        attachedAXTree = true
+                    }
                 }
             } catch {
                 firstFailure = firstFailure ?? error
                 log.error(
-                    "display processing failed id=\(bitmap.displayID ?? 0): \(error.localizedDescription, privacy: .public)"
+                    "display processing failed id=\(item.bitmap.displayID ?? 0): \(error.localizedDescription, privacy: .public)"
                 )
             }
         }
@@ -382,11 +475,22 @@ private actor CapturePipeline {
         )
     }
 
+    private struct PreparedDisplay {
+        var bitmap: CapturedBitmap
+        var visibleWindows: [WindowBound]
+        var containsFocusedWindow: Bool
+        var rawOCR: OCRResult
+        var reused: Bool
+        var displayKey: UInt32
+    }
+
     private func differentialOCRService(for displayID: UInt32?) -> DifferentialOCRService {
         let key = displayID ?? UInt32.max
         if let existing = differentialOCRByDisplay[key] { return existing }
         let service = DifferentialOCRService()
         service.recognitionLanguages = recognitionLanguages
+        service.recognitionLevel = fastRecognition ? .fast : .accurate
+        service.usesLanguageCorrection = !fastRecognition
         differentialOCRByDisplay[key] = service
         return service
     }
@@ -459,7 +563,7 @@ public final class RecordingEngine: ObservableObject {
     /// Auto maintenance: run age/size retention in the background loop.
     public var autoRetentionEnabled = true
     /// Background video encoding and retention wait for external power by
-    /// default. Live capture, OCR, and opted-in transcription remain continuous.
+    /// default. Live capture stays on; interval, OCR, and AX get cheaper on battery.
     public var deferAutomaticMaintenanceOnBattery = true
     /// When true, skip capture cycles while the user is system-idle.
     public var pauseOnInactivity = true
@@ -518,6 +622,8 @@ public final class RecordingEngine: ObservableObject {
     private var store: Store?
     private var dataRoot: URL?
     private var exclusions: ExclusionStore = .shared
+    private var cachedPowerSource: SystemPowerSourceState = .unknown
+    private var cachedPowerSourceAt = Date.distantPast
 
     public init() {
         audioTranscription.statusDidChange = { [weak self] status in
@@ -710,8 +816,10 @@ public final class RecordingEngine: ObservableObject {
         pausedForInactivity = false
         pauseReason = nil
         // Unstructured task: awaits on pipeline release MainActor during OCR/encode/DB.
-        task = Task { [weak self] in await self?.runLoop() }
-        maintenanceTask = Task { [weak self] in await self?.maintenanceLoop() }
+        task = Task(priority: .utility) { [weak self] in await self?.runLoop() }
+        maintenanceTask = Task(priority: .background) { [weak self] in
+            await self?.maintenanceLoop()
+        }
         scheduleAudioReconciliation(markCaptureAvailable: true)
         log.info("recording started interval=\(self.intervalSeconds)s")
         return isRecording
@@ -781,7 +889,9 @@ public final class RecordingEngine: ObservableObject {
             throw CaptureError.diskFull
         }
         // await pipeline to MainActor free during capture/OCR/store
-        let outcome = try await pipeline.captureAndStore(store: store)
+        var energy = currentEnergyProfile()
+        energy.unchangedHeartbeatSeconds = 0
+        let outcome = try await pipeline.captureAndStore(store: store, energy: energy)
         if let reason = outcome.pauseReason {
             lastCycleFrameCount = 0
             pauseReason = reason
@@ -848,7 +958,7 @@ public final class RecordingEngine: ObservableObject {
                 pausedForInactivity = true
                 pauseReason = .inactivity
                 lastError = nil
-                let ns = UInt64(intervalSeconds * 1_000_000_000)
+                let ns = UInt64(currentCaptureInterval() * 1_000_000_000)
                 try? await Task.sleep(nanoseconds: ns)
                 continue
             }
@@ -861,7 +971,10 @@ public final class RecordingEngine: ObservableObject {
             do {
                 if let store {
                     // Suspension point: CapturePipeline runs OCR / HEIC / DB off MainActor.
-                    let outcome = try await pipeline.captureAndStore(store: store)
+                    let outcome = try await pipeline.captureAndStore(
+                        store: store,
+                        energy: currentEnergyProfile()
+                    )
                     if let id = outcome.frameIDs.last {
                         lastFrameID = id
                         lastCycleFrameCount = outcome.frameIDs.count
@@ -894,10 +1007,36 @@ public final class RecordingEngine: ObservableObject {
             let retryDelay = failureBackoff.delay(
                 afterConsecutiveFailures: consecutiveFailures
             )
-            let sleepSeconds = max(intervalSeconds, retryDelay)
+            let sleepSeconds = max(currentCaptureInterval(), retryDelay)
             let ns = UInt64(sleepSeconds * 1_000_000_000)
             try? await Task.sleep(nanoseconds: ns)
         }
+    }
+
+    private func currentPowerSource() -> SystemPowerSourceState {
+        let now = Date()
+        if now.timeIntervalSince(cachedPowerSourceAt) < 15 {
+            return cachedPowerSource
+        }
+        cachedPowerSource = SystemPowerSource.current()
+        cachedPowerSourceAt = now
+        return cachedPowerSource
+    }
+
+    private func currentCaptureInterval() -> TimeInterval {
+        CapturePowerPolicy.captureInterval(
+            configured: intervalSeconds,
+            powerSource: currentPowerSource()
+        )
+    }
+
+    private func currentEnergyProfile() -> CaptureEnergyProfile {
+        CaptureEnergyProfile.make(
+            configuredMaxDimension: maxDimension,
+            stillQuality: stillQuality,
+            captureAXTree: captureAXTree,
+            powerSource: currentPowerSource()
+        )
     }
 
     private func maintenanceLoop() async {

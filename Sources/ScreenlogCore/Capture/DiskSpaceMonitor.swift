@@ -11,10 +11,17 @@ public final class DiskSpaceMonitor: @unchecked Sendable {
 
     /// Default: 1 GB.
     public var minimumFreeBytes: Int64 = 1_000_000_000
+    /// Reuse the last capacity reading so the capture loop does not invoke
+    /// CacheDelete on every interval.
+    public var cacheTTL: TimeInterval = 45
 
     private let lock = NSLock()
     private var _isPaused = false
     private var _lastFreeBytes: Int64?
+    private var lastRefreshAt: Date?
+    private var lastRefreshPath: String?
+    var now: () -> Date = Date.init
+    var capacityProvider: (URL) -> Int64? = { DiskSpaceMonitor.volumeAvailableBytes(at: $0) }
 
     public init() {}
 
@@ -34,10 +41,27 @@ public final class DiskSpaceMonitor: @unchecked Sendable {
     /// Query free space for the volume containing `path` and update the pause flag.
     /// - Returns: `true` when recording may continue (enough free space).
     @discardableResult
-    public func refresh(at path: URL) -> Bool {
-        let free = Self.freeBytes(at: path)
+    public func refresh(at path: URL, force: Bool = false) -> Bool {
+        let currentPath = path.path
+        lock.lock()
+        if !force,
+            let lastRefreshAt,
+            let lastRefreshPath,
+            lastRefreshPath == currentPath,
+            now().timeIntervalSince(lastRefreshAt) < cacheTTL,
+            _lastFreeBytes != nil
+        {
+            let paused = _isPaused
+            lock.unlock()
+            return !paused
+        }
+        lock.unlock()
+
+        let free = capacityProvider(path)
         lock.lock()
         _lastFreeBytes = free
+        lastRefreshAt = now()
+        lastRefreshPath = currentPath
         let wasPaused = _isPaused
         if let free {
             _isPaused = free < minimumFreeBytes
@@ -49,8 +73,10 @@ public final class DiskSpaceMonitor: @unchecked Sendable {
         lock.unlock()
 
         if paused && !wasPaused {
-            let mb = (free ?? 0) / (1024 * 1024)
-            log.warning("low disk space (\(mb) MB free < \(self.minimumFreeBytes / (1024 * 1024)) MB); pausing capture")
+            let mb = (free ?? 0) / (1_024 * 1_024)
+            log.warning(
+                "low disk space (\(mb) MB free < \(self.minimumFreeBytes / (1_024 * 1_024)) MB); pausing capture"
+            )
         } else if !paused && wasPaused {
             log.info("disk space recovered; resuming capture eligibility")
         }
@@ -74,19 +100,25 @@ public final class DiskSpaceMonitor: @unchecked Sendable {
     public func clearPause() {
         lock.lock()
         _isPaused = false
+        _lastFreeBytes = nil
+        lastRefreshAt = nil
+        lastRefreshPath = nil
         lock.unlock()
     }
 
     public static func freeBytes(at path: URL) -> Int64? {
+        volumeAvailableBytes(at: path)
+    }
+
+    /// Uses ordinary available capacity. `volumeAvailableCapacityForImportantUsage`
+    /// asks CacheDelete to inventory every client and is too expensive for the
+    /// capture loop.
+    public static func volumeAvailableBytes(at path: URL) -> Int64? {
         let filePath = path.path
         do {
             let values = try URL(fileURLWithPath: filePath).resourceValues(forKeys: [
-                .volumeAvailableCapacityForImportantUsageKey,
-                .volumeAvailableCapacityKey,
+                .volumeAvailableCapacityKey
             ])
-            if let important = values.volumeAvailableCapacityForImportantUsage, important >= 0 {
-                return important
-            }
             if let available = values.volumeAvailableCapacity {
                 return Int64(available)
             }

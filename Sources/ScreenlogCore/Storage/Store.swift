@@ -404,8 +404,9 @@ public final class Store: @unchecked Sendable {
             INSERT INTO frame(
                 timestamp, image_path, width, height,
                 foreground, background, title, segment, is_inactive,
-                capture_display_x, capture_display_y, capture_display_width, capture_display_height
-            ) VALUES(?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                capture_display_x, capture_display_y, capture_display_width, capture_display_height,
+                index_search
+            ) VALUES(?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
         let stmt = try db.prepare(sql)
         defer { sqlite3_finalize(stmt) }
@@ -421,6 +422,7 @@ public final class Store: @unchecked Sendable {
         SQLiteBind.double(stmt, 10, payload.captureDisplay?.y)
         SQLiteBind.double(stmt, 11, payload.captureDisplay?.width)
         SQLiteBind.double(stmt, 12, payload.captureDisplay?.height)
+        SQLiteBind.bool(stmt, 13, payload.indexSearch)
         if sqlite3_step(stmt) != SQLITE_DONE {
             throw SQLiteError.step("insert frame failed")
         }

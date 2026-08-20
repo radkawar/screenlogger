@@ -49,29 +49,31 @@ final class CaptureOnceFailureTests: XCTestCase {
         XCTAssertEqual(encoded.pixelHeight, 2)
     }
 
-    func testCaptureResolutionPolicyAlwaysPreservesNativePixelsForOCR() {
+    func testUltraCapturePreservesNativePixels() {
         let size = ScreenCaptureService.captureOutputSize(
             nativeWidth: 6_016,
-            nativeHeight: 3_384
+            nativeHeight: 3_384,
+            maxDimension: CaptureQualityPreset.nativeResolutionMaxDimension
         )
         XCTAssertEqual(size.width, 6_016)
         XCTAssertEqual(size.height, 3_384)
     }
 
-    func testEveryDisplayKeepsNativeOCRPixelsAndIndependentStoredSizing() {
+    func testStandardAndHighCaptureMatchStoredResolution() {
         let displays = [
             (width: 6_016, height: 3_384),
             (width: 3_840, height: 2_160),
         ]
 
-        let ocrSizes = displays.map {
+        let standardSizes = displays.map {
             ScreenCaptureService.captureOutputSize(
                 nativeWidth: $0.width,
-                nativeHeight: $0.height
+                nativeHeight: $0.height,
+                maxDimension: CaptureQualityPreset.standard.maxDimension
             )
         }
-        XCTAssertEqual(ocrSizes.map(\.width), [6_016, 3_840])
-        XCTAssertEqual(ocrSizes.map(\.height), [3_384, 2_160])
+        XCTAssertEqual(standardSizes.map(\.width), [1_920, 1_920])
+        XCTAssertEqual(standardSizes.map(\.height), [1_080, 1_080])
 
         let storedSizes = displays.map {
             ScreenCaptureService.outputSize(
@@ -80,8 +82,8 @@ final class CaptureOnceFailureTests: XCTestCase {
                 maxDimension: 1_920
             )
         }
-        XCTAssertEqual(storedSizes.map(\.width), [1_920, 1_920])
-        XCTAssertEqual(storedSizes.map(\.height), [1_080, 1_080])
+        XCTAssertEqual(storedSizes.map(\.width), standardSizes.map(\.width))
+        XCTAssertEqual(storedSizes.map(\.height), standardSizes.map(\.height))
     }
 
     func testCaptureResolutionPolicyDownscalesWithoutUpscaling() {

@@ -213,6 +213,8 @@ public struct CapturePayload: Sendable {
     public var isInactive: Bool
     public var imageFileExtension: String
     public var captureDisplay: CaptureDisplayRect?
+    /// When false, the insert trigger skips rewriting `ocr_fts` for reused text.
+    public var indexSearch: Bool
 
     public init(
         imageData: Data,
@@ -231,7 +233,8 @@ public struct CapturePayload: Sendable {
         windowBounds: [WindowBound] = [],
         isInactive: Bool = false,
         imageFileExtension: String = "heic",
-        captureDisplay: CaptureDisplayRect? = nil
+        captureDisplay: CaptureDisplayRect? = nil,
+        indexSearch: Bool = true
     ) {
         self.imageData = imageData
         self.timestampMs = timestampMs
@@ -250,6 +253,7 @@ public struct CapturePayload: Sendable {
         self.isInactive = isInactive
         self.imageFileExtension = imageFileExtension
         self.captureDisplay = captureDisplay
+        self.indexSearch = indexSearch
     }
 }
 

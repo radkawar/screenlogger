@@ -21,7 +21,7 @@ extension SchemaMigrationError: LocalizedError {
 /// Screenlogger schema and migrations for frames, OCR, segments, FTS5, and AX context.
 /// Uses plain SQLite3 (not SQLCipher). Bookkeeping via `schema_migrations` (not grdb_migrations).
 public enum Schema {
-    public static let currentVersion = 6
+    public static let currentVersion = 7
 
     public static let createStatements: [String] = [
         // ---- Core activity graph ----
@@ -111,7 +111,8 @@ public enum Schema {
             capture_display_x REAL,
             capture_display_y REAL,
             capture_display_width REAL,
-            capture_display_height REAL
+            capture_display_height REAL,
+            index_search INTEGER NOT NULL DEFAULT 1
         )
         """,
         """
@@ -184,13 +185,17 @@ public enum Schema {
         )
         """,
         """
-        CREATE TRIGGER IF NOT EXISTS frame_ai AFTER INSERT ON frame BEGIN
+        CREATE TRIGGER IF NOT EXISTS frame_ai AFTER INSERT ON frame
+        WHEN COALESCE(new.index_search, 1) != 0
+        BEGIN
             INSERT INTO ocr_fts(rowid, foreground, background, title)
             VALUES (new.id, new.foreground, new.background, new.title);
         END
         """,
         """
-        CREATE TRIGGER IF NOT EXISTS frame_ad AFTER DELETE ON frame BEGIN
+        CREATE TRIGGER IF NOT EXISTS frame_ad AFTER DELETE ON frame
+        WHEN COALESCE(old.index_search, 1) != 0
+        BEGIN
             INSERT INTO ocr_fts(ocr_fts, rowid, foreground, background, title)
             VALUES('delete', old.id, old.foreground, old.background, old.title);
         END
@@ -390,6 +395,11 @@ public enum Schema {
                 try setUserVersion(db, 6)
             }
 
+            if try userVersion(db) < 7 {
+                try migrateToV7(db)
+                try setUserVersion(db, 7)
+            }
+
             if try userVersion(db) < currentVersion {
                 try setUserVersion(db, currentVersion)
             }
@@ -431,6 +441,7 @@ public enum Schema {
                 "id", "timestamp", "video", "video_index", "image_path", "width", "height",
                 "foreground", "background", "title", "tree", "segment", "is_inactive", "ax_root_hash",
                 "capture_display_x", "capture_display_y", "capture_display_width", "capture_display_height",
+                "index_search",
             ],
             "ocr": ["id", "frame", "x", "y", "width", "height", "text_offset", "text_length"],
             "window_bound": [
@@ -684,6 +695,40 @@ public enum Schema {
                 INSERT INTO transcript_fts(transcript_fts, rowid, text)
                 VALUES('delete', old.id, old.text);
                 INSERT INTO transcript_fts(rowid, text) VALUES (new.id, new.text);
+            END
+            """
+        )
+    }
+
+    // MARK: - V7
+
+    private static func migrateToV7(_ db: SQLiteDatabase) throws {
+        try ensureColumns(
+            db,
+            table: "frame",
+            columns: [
+                ("index_search", "INTEGER NOT NULL DEFAULT 1")
+            ]
+        )
+        try db.exec("DROP TRIGGER IF EXISTS frame_ai")
+        try db.exec("DROP TRIGGER IF EXISTS frame_ad")
+        try db.exec(
+            """
+            CREATE TRIGGER frame_ai AFTER INSERT ON frame
+            WHEN COALESCE(new.index_search, 1) != 0
+            BEGIN
+                INSERT INTO ocr_fts(rowid, foreground, background, title)
+                VALUES (new.id, new.foreground, new.background, new.title);
+            END
+            """
+        )
+        try db.exec(
+            """
+            CREATE TRIGGER frame_ad AFTER DELETE ON frame
+            WHEN COALESCE(old.index_search, 1) != 0
+            BEGIN
+                INSERT INTO ocr_fts(ocr_fts, rowid, foreground, background, title)
+                VALUES('delete', old.id, old.foreground, old.background, old.title);
             END
             """
         )

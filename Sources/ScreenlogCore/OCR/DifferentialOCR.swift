@@ -32,6 +32,16 @@ public final class DifferentialOCRService: @unchecked Sendable {
         set { ocr.recognitionLanguages = newValue }
     }
 
+    public var recognitionLevel: VNRequestTextRecognitionLevel {
+        get { ocr.recognitionLevel }
+        set { ocr.recognitionLevel = newValue }
+    }
+
+    public var usesLanguageCorrection: Bool {
+        get { ocr.usesLanguageCorrection }
+        set { ocr.usesLanguageCorrection = newValue }
+    }
+
     public init() {
         let service = OCRService()
         ocr = service

@@ -36,10 +36,30 @@ public struct AXTreeSnapshot: Sendable {
 
 /// Walks the focused app accessibility tree into compact, assistant-friendly XML.
 public final class AXTreeExtractor: @unchecked Sendable {
-    public var maxDepth: Int = 12
-    public var maxNodes: Int = 2_500
+    public static let defaultMaxDepth = 10
+    public static let defaultMaxNodes = 1_500
+    public static let browserMaxNodes = 800
+
+    public var maxDepth: Int = AXTreeExtractor.defaultMaxDepth
+    public var maxNodes: Int = AXTreeExtractor.defaultMaxNodes
 
     public init() {}
+
+    public static func nodeLimit(bundleID: String?) -> Int {
+        BrowserURLService.isSupportedBrowser(bundleID: bundleID) ? browserMaxNodes : defaultMaxNodes
+    }
+
+    /// Geometry is useful on windows and the first level of chrome. Fetching
+    /// position and size on every web or list descendant is mostly IPC.
+    public static func shouldCaptureGeometry(role: String, depth: Int) -> Bool {
+        if depth <= 1 { return true }
+        switch role {
+        case "AXWindow", "AXSheet", "AXDrawer", "AXDialog":
+            return true
+        default:
+            return false
+        }
+    }
 
     public func captureFocusedTree(expectedPID: pid_t? = nil) -> AXTreeSnapshot? {
         guard AccessibilityPermission.isTrusted(prompt: false) else {
@@ -96,24 +116,25 @@ public final class AXTreeExtractor: @unchecked Sendable {
             return ""
         }
         nodeCount += 1
-        let role = stringAttr(element, kAXRoleAttribute as String) ?? "Unknown"
-        let title = stringAttr(element, kAXTitleAttribute as String)
-        let value = stringAttr(element, kAXValueAttribute as String)
-        let desc = stringAttr(element, kAXDescriptionAttribute as String)
-        let ident = stringAttr(element, kAXIdentifierAttribute as String)
+        let attributes = nodeAttributes(element)
+        let role = attributes.role ?? "Unknown"
 
         var attrs = "role=\"\(escape(role))\""
-        if let title, !title.isEmpty { attrs += " title=\"\(escape(title))\"" }
-        if let value, !value.isEmpty { attrs += " value=\"\(escape(String(value.prefix(200))))\"" }
-        if let desc, !desc.isEmpty { attrs += " description=\"\(escape(String(desc.prefix(120))))\"" }
-        if let ident, !ident.isEmpty { attrs += " id=\"\(escape(ident))\"" }
-        if let frame = frameAttr(element) {
+        if let title = attributes.title, !title.isEmpty { attrs += " title=\"\(escape(title))\"" }
+        if let value = attributes.value, !value.isEmpty {
+            attrs += " value=\"\(escape(String(value.prefix(200))))\""
+        }
+        if let desc = attributes.description, !desc.isEmpty {
+            attrs += " description=\"\(escape(String(desc.prefix(120))))\""
+        }
+        if let ident = attributes.identifier, !ident.isEmpty { attrs += " id=\"\(escape(ident))\"" }
+        if Self.shouldCaptureGeometry(role: role, depth: depth), let frame = frameAttr(element) {
             attrs +=
                 " x=\"\(Int(frame.origin.x))\" y=\"\(Int(frame.origin.y))\" w=\"\(Int(frame.size.width))\" h=\"\(Int(frame.size.height))\""
         }
 
         var childrenXML = ""
-        if let children = copyChildren(element) {
+        if let children = attributes.children {
             for child in children {
                 if nodeCount >= maxNodes {
                     isPartial = true
@@ -127,6 +148,86 @@ public final class AXTreeExtractor: @unchecked Sendable {
         }
         return String(repeating: "  ", count: depth) + "<Node \(attrs)>\n" + childrenXML + String(repeating: "  ", count: depth)
             + "</Node>\n"
+    }
+
+    private struct NodeAttributes {
+        var role: String?
+        var title: String?
+        var value: String?
+        var description: String?
+        var identifier: String?
+        var children: [AXUIElement]?
+    }
+
+    private func nodeAttributes(_ el: AXUIElement) -> NodeAttributes {
+        let names = [
+            kAXRoleAttribute as String,
+            kAXTitleAttribute as String,
+            kAXValueAttribute as String,
+            kAXDescriptionAttribute as String,
+            kAXIdentifierAttribute as String,
+            kAXChildrenAttribute as String,
+        ]
+        let batched = copyMultiple(el, names: names)
+        if !batched.isEmpty {
+            return NodeAttributes(
+                role: stringValue(batched[kAXRoleAttribute as String]),
+                title: stringValue(batched[kAXTitleAttribute as String]),
+                value: stringValue(batched[kAXValueAttribute as String]),
+                description: stringValue(batched[kAXDescriptionAttribute as String]),
+                identifier: stringValue(batched[kAXIdentifierAttribute as String]),
+                children: childrenValue(batched[kAXChildrenAttribute as String])
+            )
+        }
+        return NodeAttributes(
+            role: stringAttr(el, kAXRoleAttribute as String),
+            title: stringAttr(el, kAXTitleAttribute as String),
+            value: stringAttr(el, kAXValueAttribute as String),
+            description: stringAttr(el, kAXDescriptionAttribute as String),
+            identifier: stringAttr(el, kAXIdentifierAttribute as String),
+            children: copyChildren(el)
+        )
+    }
+
+    private func copyMultiple(_ el: AXUIElement, names: [String]) -> [String: CFTypeRef] {
+        var valuesRef: CFArray?
+        let status = AXUIElementCopyMultipleAttributeValues(
+            el,
+            names as CFArray,
+            AXCopyMultipleAttributeOptions(rawValue: 0),
+            &valuesRef
+        )
+        guard status == .success, let values = valuesRef as? [Any] else { return [:] }
+        var result: [String: CFTypeRef] = [:]
+        for (index, name) in names.enumerated() where index < values.count {
+            if let unpacked = Self.unpackedAttributeValue(values[index]) {
+                result[name] = unpacked
+            }
+        }
+        return result
+    }
+
+    static func unpackedAttributeValue(_ value: Any) -> CFTypeRef? {
+        if value is NSNull { return nil }
+        let cf = value as CFTypeRef
+        if CFGetTypeID(cf) == AXValueGetTypeID() {
+            let axValue = unsafeBitCast(cf, to: AXValue.self)
+            if AXValueGetType(axValue) == .axError { return nil }
+        }
+        return cf
+    }
+
+    private func stringValue(_ value: CFTypeRef?) -> String? {
+        guard let value else { return nil }
+        if let s = value as? String { return s }
+        if let n = value as? NSNumber { return n.stringValue }
+        if let url = value as? URL { return url.absoluteString }
+        return nil
+    }
+
+    private func childrenValue(_ value: CFTypeRef?) -> [AXUIElement]? {
+        guard let value else { return nil }
+        return (value as? [AXUIElement]).flatMap { $0.isEmpty ? nil : $0 }
     }
 
     private func copyChildren(_ el: AXUIElement) -> [AXUIElement]? {
