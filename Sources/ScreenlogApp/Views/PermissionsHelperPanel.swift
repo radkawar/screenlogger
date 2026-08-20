@@ -2,36 +2,6 @@ import AppKit
 import ScreenlogCore
 import SwiftUI
 
-/// The product surface that initiated the temporary capture setup flow.
-///
-/// Setup is a detour, not a new workspace. Keeping its origin explicit lets
-/// the controller restore a retained window without losing its navigation
-/// state, search, filters, or selection.
-enum CaptureSetupOrigin: Equatable {
-    case library
-    case timeline
-    case settings
-    case direct
-    case directFirstRun
-
-    var returnSurfaceName: String {
-        switch self {
-        case .library: return "Library"
-        case .timeline, .direct: return "Timeline"
-        case .directFirstRun: return "Library"
-        case .settings: return "Settings"
-        }
-    }
-
-    var returnsToInitiatingSurface: Bool {
-        switch self {
-        case .library, .timeline, .settings: return true
-        case .direct, .directFirstRun: return false
-        }
-    }
-
-}
-
 private enum CaptureSetupOutcome: Equatable {
     case completed
     case cancelled
@@ -41,6 +11,7 @@ private enum CaptureSetupDestination: Equatable {
     case library
     case timeline(TimelineNavigationOrigin)
     case settings
+    case settingsGuide
     case none
 }
 
@@ -74,6 +45,7 @@ private enum CaptureSetupReturnPath: Equatable {
     case library
     case timeline(TimelineNavigationOrigin)
     case settings
+    case settingsGuide
     case direct
     case firstRun
 
@@ -85,6 +57,8 @@ private enum CaptureSetupReturnPath: Equatable {
             self = .timeline(timelineOrigin)
         case .settings:
             self = .settings
+        case .settingsGuide:
+            self = .settingsGuide
         case .direct:
             self = .direct
         case .directFirstRun:
@@ -100,6 +74,8 @@ private enum CaptureSetupReturnPath: Equatable {
             return .timeline(origin)
         case .settings:
             return .settings
+        case .settingsGuide:
+            return .settingsGuide
         case .direct:
             return outcome == .completed ? .timeline(.direct) : .none
         case .firstRun:
@@ -346,6 +322,9 @@ final class PermissionsHelperController: NSObject, NSWindowDelegate {
             model.openMainShell(origin: origin)
         case .settings:
             model.openProductSettings()
+        case .settingsGuide:
+            model.openProductSettings(.supportGuide)
+            model.requestUserGuidePresentation()
         case .none:
             break
         }

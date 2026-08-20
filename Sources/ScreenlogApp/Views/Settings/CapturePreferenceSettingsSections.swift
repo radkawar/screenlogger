@@ -509,9 +509,6 @@ struct AudioTranscriptionSettingsSection: View {
 
 enum CaptureSettingsCopy {
     static func interval(_ seconds: Double) -> String {
-        if seconds == floor(seconds) {
-            return "Every \(Int(seconds)) \(Int(seconds) == 1 ? "second" : "seconds")"
-        }
-        return String(format: "Every %.1f seconds", seconds)
+        CaptureLocalProcessingCopy.intervalLabel(seconds)
     }
 }

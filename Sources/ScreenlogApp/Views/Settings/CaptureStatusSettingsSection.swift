@@ -26,7 +26,10 @@ struct CaptureStatusSettingsSection: View {
                 Divider()
 
                 Label(
-                    "\(intervalLabel), captures and recognized text are saved to the Library on this Mac.",
+                    CaptureLocalProcessingCopy.caption(
+                        intervalSeconds: model.intervalSeconds,
+                        isSaving: CaptureLocalProcessingCopy.isActivelySaving(status)
+                    ),
                     systemImage: "internaldrive"
                 )
                 .font(.caption)
@@ -203,9 +206,5 @@ struct CaptureStatusSettingsSection: View {
 
     private func performStatusAction(_ action: CaptureStatusPrimaryAction) {
         model.performCaptureStatusPrimaryAction(action, setupOrigin: .settings)
-    }
-
-    private var intervalLabel: String {
-        CaptureSettingsCopy.interval(model.intervalSeconds)
     }
 }

@@ -24,6 +24,10 @@ final class MainShellController: NSObject, NSWindowDelegate, NSToolbarDelegate {
         window?.isVisible == true && window?.isMiniaturized == false
     }
 
+    var isMiniaturized: Bool {
+        window?.isMiniaturized == true
+    }
+
     /// Frame of the floating shell (for positioning Settings nearby).
     var windowFrame: NSRect? {
         window?.frame

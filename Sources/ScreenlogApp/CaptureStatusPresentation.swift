@@ -550,3 +550,27 @@ enum CaptureStatusResolver {
         )
     }
 }
+
+/// Interval caption used by the Capture pane. The same string must stay
+/// truthful when automatic capture is off or paused.
+enum CaptureLocalProcessingCopy {
+    static func intervalLabel(_ seconds: Double) -> String {
+        if seconds == floor(seconds) {
+            return "Every \(Int(seconds)) \(Int(seconds) == 1 ? "second" : "seconds")"
+        }
+        return String(format: "Every %.1f seconds", seconds)
+    }
+
+    static func caption(intervalSeconds: Double, isSaving: Bool) -> String {
+        let interval = intervalLabel(intervalSeconds)
+        if isSaving {
+            return "\(interval), captures and recognized text are saved to the Library on this Mac."
+        }
+        return
+            "When capture is on, Screenlogger saves captures and recognized text to the Library on this Mac \(interval.lowercased())."
+    }
+
+    static func isActivelySaving(_ status: CaptureStatusPresentation) -> Bool {
+        status.phase == .on
+    }
+}

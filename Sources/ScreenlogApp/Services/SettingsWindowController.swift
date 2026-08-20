@@ -30,6 +30,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         }
 
         if let window {
+            window.title = "Settings"
             enforceWindowSizeContract(on: window)
             NSApp.activate(ignoringOtherApps: true)
             if window.isMiniaturized {

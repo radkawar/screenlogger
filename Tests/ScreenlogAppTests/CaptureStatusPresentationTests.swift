@@ -287,6 +287,34 @@ final class CaptureStatusPresentationTests: XCTestCase {
         XCTAssertFalse(result.controls.canCaptureOnce)
     }
 
+    func testLocalProcessingCopyDoesNotClaimSavingWhileCaptureIsOff() {
+        let offStatus = resolve(input())
+        let onStatus = resolve(input(isRecording: true))
+        let pausedStatus = resolve(input(isRecording: true, pauseReason: .privateBrowsing))
+
+        let off = CaptureLocalProcessingCopy.caption(
+            intervalSeconds: 2,
+            isSaving: CaptureLocalProcessingCopy.isActivelySaving(offStatus)
+        )
+        let on = CaptureLocalProcessingCopy.caption(
+            intervalSeconds: 2,
+            isSaving: CaptureLocalProcessingCopy.isActivelySaving(onStatus)
+        )
+        let paused = CaptureLocalProcessingCopy.caption(
+            intervalSeconds: 2,
+            isSaving: CaptureLocalProcessingCopy.isActivelySaving(pausedStatus)
+        )
+
+        XCTAssertEqual(offStatus.phase, .off)
+        XCTAssertEqual(onStatus.phase, .on)
+        XCTAssertEqual(pausedStatus.phase, .automaticPause(.privateBrowsing))
+        XCTAssertFalse(off.contains("are saved"))
+        XCTAssertFalse(paused.contains("are saved"))
+        XCTAssertTrue(off.localizedCaseInsensitiveContains("when capture is on"))
+        XCTAssertTrue(on.contains("are saved"))
+        XCTAssertEqual(CaptureLocalProcessingCopy.intervalLabel(2), "Every 2 seconds")
+    }
+
     func testOpeningLibraryDoesNotOfferDuplicateRetry() {
         let result = resolve(input(library: .opening(.schemaMigrationFailed)))
 

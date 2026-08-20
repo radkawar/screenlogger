@@ -407,9 +407,6 @@ struct AssistantHandoffSheet: View {
         if case .preferredUnavailable(let preferred, _) = request.decision {
             return preferred
         }
-        let detected = AssistantIntegrationTarget.allCases.filter { target in
-            model.agentSkillSnapshotState(target).snapshot?.presence.isPresent == true
-        }
-        return detected.count == 1 ? detected[0] : nil
+        return model.assistantSettingsRecoveryTarget()
     }
 }

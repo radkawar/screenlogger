@@ -70,6 +70,17 @@ extension AppModel {
         )
     }
 
+    /// Prefer the one assistant that is already present when Settings is the
+    /// recovery destination. With several detected assistants there is no
+    /// truthful single row to focus, so the shared Assistant Connections
+    /// section remains the destination.
+    func assistantSettingsRecoveryTarget() -> AssistantIntegrationTarget? {
+        let detected = AssistantIntegrationTarget.allCases.filter { target in
+            agentSkillSnapshotState(target).snapshot?.presence.isPresent == true
+        }
+        return detected.count == 1 ? detected[0] : nil
+    }
+
     private func joinedExplicitValues(_ values: [String?]) -> String? {
         var seen = Set<String>()
         let unique = values.compactMap { value -> String? in

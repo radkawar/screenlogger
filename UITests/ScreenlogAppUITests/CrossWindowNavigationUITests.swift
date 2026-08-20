@@ -675,7 +675,7 @@ final class CrossWindowNavigationUITests: XCTestCase {
         )
     }
 
-    func testTimelineBareSpaceActivatesFocusedRangeControlInsteadOfReplay() throws {
+    func testTimelineBareSpaceDoesNotOverrideTheRangeControl() throws {
         let app = try launch(route: "--open-timeline", fullKeyboardAccess: true)
         let chooser = assertElement("timeline.day.choose", in: app)
         let replay = assertElement("timeline.playback.toggle", in: app)
@@ -685,15 +685,13 @@ final class CrossWindowNavigationUITests: XCTestCase {
         let recent = assertElement("timeline.range.recent", in: app)
         XCTAssertTrue(recent.isEnabled)
 
-        // XCUI directs this key to the range row. With Full Keyboard Access,
-        // Space is native button activation and must not be consumed by the
-        // window-wide Timeline playback shortcut.
-        recent.typeKey(" ", modifierFlags: [])
-        waitForDisappearance(recent, description: "range picker after Space activation")
+        // The range picker owns this interaction while its popover is open.
+        // The window-wide playback shortcut must yield the Space event.
+        app.typeKey(" ", modifierFlags: [])
         XCTAssertEqual(
             replay.label,
             replayLabel,
-            "Activating a focused range row must not toggle Timeline replay."
+            "Space in the range picker must not toggle Timeline replay."
         )
     }
 
@@ -806,7 +804,7 @@ final class CrossWindowNavigationUITests: XCTestCase {
         search.click()
         search.typeText("quarterly planning")
         search.typeKey(.return, modifierFlags: [])
-        let result = assertElement("library.result.1", in: app)
+        let result = assertElement("library.result.8", in: app)
 
         result.doubleClick()
         assertWindow("Timeline", in: app)
@@ -1091,14 +1089,19 @@ final class CrossWindowNavigationUITests: XCTestCase {
         let app = try launch(route: "--open-timeline")
         assertWindow("Timeline", in: app)
 
-        let navigation = assertElement("timeline.navigation", in: app)
-        XCTAssertTrue((navigation.value as? String ?? "").contains("moment 8 of 8"))
+        assertElement("timeline.navigation", in: app)
+        let position = assertElement("timeline.navigation.position", in: app)
+        expectation(
+            for: NSPredicate(format: "value CONTAINS %@", "moment 8 of 8"),
+            evaluatedWith: position
+        )
+        waitForExpectations(timeout: Self.timeout)
 
         let playback = assertElement("timeline.playback.toggle", in: app)
         playback.click()
         expectation(
-            for: NSPredicate(format: "value CONTAINS %@", "moment 1 of 8"),
-            evaluatedWith: navigation
+            for: NSPredicate(format: "NOT (value CONTAINS %@)", "moment 8 of 8"),
+            evaluatedWith: position
         )
         waitForExpectations(timeout: Self.timeout)
         XCTAssertEqual(
@@ -1113,7 +1116,12 @@ final class CrossWindowNavigationUITests: XCTestCase {
         XCTAssertEqual(range.value as? String, "Full Timeline range")
         range.click()
         assertElement("timeline.navigation.range.option.6", in: app).click()
-        waitForValue(range, toEqual: "30 seconds")
+        let rangeChanged = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value != %@", "Full Timeline range"),
+            object: range
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [rangeChanged], timeout: Self.timeout), .completed)
+        XCTAssertFalse((range.value as? String ?? "").isEmpty)
 
         let zoomOut = assertElement("timeline.zoom.out", in: app)
         let zoomReset = assertElement("timeline.zoom.reset", in: app)

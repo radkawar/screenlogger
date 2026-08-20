@@ -660,13 +660,25 @@ extension AppModel {
                 // fall through to filesystem scan
             }
         }
-        // Bundle discovery touches two Applications directories, opens bundle
-        // metadata, and enumerates running applications. Keep that filesystem
-        // work off MainActor so first Library presentation and typing remain
-        // responsive while autocomplete catalogs warm in the background.
-        let installed = await Task.detached(priority: .utility) {
-            Self.scanAppsForCatalog()
-        }.value
+        // Bundle discovery opens bundle metadata across the Applications
+        // directories. Keep that filesystem work off MainActor so first
+        // Library presentation and typing remain responsive while autocomplete
+        // catalogs warm in the background. Routed UI fixtures use their stable
+        // catalog instead of inheriting applications from the test Mac.
+        let installed: [(name: String, bundleID: String)]
+        #if DEBUG
+            if let fixtureApplications = AppUITestFixture.discoveredApplications {
+                installed = fixtureApplications.map { ($0.name, $0.bundleID) }
+            } else {
+                installed = await Task.detached(priority: .utility) {
+                    Self.scanAppsForCatalog()
+                }.value
+            }
+        #else
+            installed = await Task.detached(priority: .utility) {
+                Self.scanAppsForCatalog()
+            }.value
+        #endif
         var seen = Set(apps.map { $0.bundleID.lowercased() })
         for a in installed where !seen.contains(a.bundleID.lowercased()) {
             seen.insert(a.bundleID.lowercased())
@@ -682,7 +694,11 @@ extension AppModel {
         let fm = FileManager.default
         var out: [(String, String)] = []
         var seen = Set<String>()
-        for root in ["/Applications", NSHomeDirectory() + "/Applications"] {
+        for root in [
+            "/Applications",
+            "/System/Applications",
+            NSHomeDirectory() + "/Applications",
+        ] {
             guard let items = try? fm.contentsOfDirectory(atPath: root) else { continue }
             for name in items where name.hasSuffix(".app") {
                 let path = (root as NSString).appendingPathComponent(name)
@@ -692,13 +708,6 @@ extension AppModel {
                 seen.insert(key)
                 out.append((fm.displayName(atPath: path), bid))
             }
-        }
-        for app in NSWorkspace.shared.runningApplications {
-            guard let bid = app.bundleIdentifier else { continue }
-            let key = bid.lowercased()
-            guard !seen.contains(key) else { continue }
-            seen.insert(key)
-            out.append((app.localizedName ?? bid, bid))
         }
         return out
     }

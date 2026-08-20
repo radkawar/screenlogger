@@ -631,6 +631,7 @@ extension HistoryPane {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .focusable()
             .help(
                 recentRangeSelected
                     ? "Showing the latest moments"
@@ -712,6 +713,7 @@ extension HistoryPane {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .focusable()
                             .help(
                                 sessionSelected
                                     ? "Showing this session"

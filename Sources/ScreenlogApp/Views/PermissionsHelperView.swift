@@ -384,7 +384,7 @@ struct PermissionsHelperView: View {
     private var actionGuidance: (text: String, symbol: String) {
         if !model.permissions.isCaptureReady {
             return (
-                "Allowing access does not start capture. \(completionDestinationGuidance)",
+                CaptureSetupGuidance.missingPermissionFooter(for: origin),
                 "hand.raised"
             )
         }
@@ -407,16 +407,9 @@ struct PermissionsHelperView: View {
             )
         }
         return (
-            "Capture stays off until you choose Start Capture. \(completionDestinationGuidance)",
+            CaptureSetupGuidance.readyFooter(for: origin),
             "hand.tap"
         )
-    }
-
-    private var completionDestinationGuidance: String {
-        if origin.returnsToInitiatingSurface {
-            return "Starting capture returns you to \(origin.returnSurfaceName)."
-        }
-        return "Starting capture opens \(origin.returnSurfaceName)."
     }
 
     @ViewBuilder

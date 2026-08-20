@@ -26,10 +26,11 @@ struct PermissionsSetupProgress: View {
             Label(progressTitle, systemImage: progressSymbol)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Setup progress, \(progressTitle)")
+                .accessibilityIdentifier("setup.progress.summary")
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Setup progress")
-        .accessibilityValue(progressTitle)
         .accessibilityIdentifier("setup.progress")
     }
 

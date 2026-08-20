@@ -8,6 +8,7 @@ import SwiftUI
 struct TimelineKeyMonitor: NSViewRepresentable {
     let shortcuts: [KeyboardShortcutActionID: KeyboardShortcutBinding]
     let onSlash: () -> Void
+    var onEscape: (() -> Void)?
     var onCommandK: (() -> Void)?
     var onStepBack: (() -> Void)?
     var onStepForward: (() -> Void)?
@@ -32,6 +33,7 @@ struct TimelineKeyMonitor: NSViewRepresentable {
     private func update(_ view: KeyCatcherView) {
         view.shortcuts = shortcuts
         view.onSlash = onSlash
+        view.onEscape = onEscape
         view.onCommandK = onCommandK
         view.onStepBack = onStepBack
         view.onStepForward = onStepForward
@@ -46,6 +48,7 @@ struct TimelineKeyMonitor: NSViewRepresentable {
     final class KeyCatcherView: NSView {
         var shortcuts: [KeyboardShortcutActionID: KeyboardShortcutBinding] = [:]
         var onSlash: (() -> Void)?
+        var onEscape: (() -> Void)?
         var onCommandK: (() -> Void)?
         var onStepBack: (() -> Void)?
         var onStepForward: (() -> Void)?
@@ -68,6 +71,16 @@ struct TimelineKeyMonitor: NSViewRepresentable {
                     window.isKeyWindow,
                     event.windowNumber == window.windowNumber
                 else { return event }
+
+                if event.keyCode == 53,
+                    !event.isARepeat,
+                    event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
+                    window.attachedSheet == nil,
+                    !self.isEditingTextField
+                {
+                    DispatchQueue.main.async { self.onEscape?() }
+                    return nil
+                }
 
                 if self.matches(.searchLibrary, event) {
                     DispatchQueue.main.async { self.onCommandK?() }
@@ -154,25 +167,42 @@ struct TimelineKeyMonitor: NSViewRepresentable {
         private var timelineContentOwnsBareKeyboardShortcuts: Bool {
             guard !isEditingTextField else { return false }
 
+            // Popovers are temporary control surfaces. Even before one of
+            // their controls becomes first responder, native activation keys
+            // belong to the popover rather than Timeline playback.
+            if window?.childWindows?.contains(where: { $0.isVisible }) == true {
+                return false
+            }
+
             if let firstResponder = window?.firstResponder,
                 Self.isInteractiveResponder(firstResponder)
             {
                 return false
             }
 
-            guard let role = focusedAccessibilityRole else { return true }
+            let roles = focusedAccessibilityRoles
+            if roles.contains(where: Self.interactiveAccessibilityRoles.contains) {
+                return false
+            }
+            guard let role = roles.first else { return true }
             return Self.timelineContentRoles.contains(role)
         }
 
-        private var focusedAccessibilityRole: NSAccessibility.Role? {
-            let focusedElement = NSApp.accessibilityFocusedUIElement
-            if let element = focusedElement as? NSAccessibilityElement {
-                return element.accessibilityRole()
+        private var focusedAccessibilityRoles: [NSAccessibility.Role] {
+            var roles: [NSAccessibility.Role] = []
+            var candidate: Any? = NSApp.accessibilityFocusedUIElement
+            for _ in 0..<8 {
+                if let element = candidate as? NSAccessibilityElement {
+                    if let role = element.accessibilityRole() { roles.append(role) }
+                    candidate = element.accessibilityParent()
+                } else if let view = candidate as? NSView {
+                    if let role = view.accessibilityRole() { roles.append(role) }
+                    candidate = view.accessibilityParent()
+                } else {
+                    break
+                }
             }
-            if let view = focusedElement as? NSView {
-                return view.accessibilityRole()
-            }
-            return nil
+            return roles
         }
 
         private static func isInteractiveResponder(_ responder: NSResponder) -> Bool {
@@ -189,6 +219,19 @@ struct TimelineKeyMonitor: NSViewRepresentable {
             .image,
             .staticText,
             .window,
+        ]
+
+        private static let interactiveAccessibilityRoles: Set<NSAccessibility.Role> = [
+            .button,
+            .checkBox,
+            .comboBox,
+            .menu,
+            .menuButton,
+            .menuItem,
+            .popUpButton,
+            .radioButton,
+            .slider,
+            .textField,
         ]
     }
 }

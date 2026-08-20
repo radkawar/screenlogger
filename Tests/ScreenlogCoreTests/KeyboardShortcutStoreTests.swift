@@ -21,6 +21,18 @@ final class KeyboardShortcutStoreTests: XCTestCase {
         super.tearDown()
     }
 
+    func testLibraryFindAndSearchTitlesStateAVisibleDifference() {
+        let find = KeyboardShortcutRegistry.standard.definition(for: .findLibrary)
+        let search = KeyboardShortcutRegistry.standard.definition(for: .searchLibrary)
+
+        XCTAssertEqual(find?.title, "Find in Library")
+        XCTAssertEqual(find?.subtitle, "Selects or replaces the current query")
+        XCTAssertEqual(search?.title, "Search Library")
+        XCTAssertEqual(search?.subtitle, "Opens Library")
+        XCTAssertNotEqual(find?.title, search?.title)
+        XCTAssertNotEqual(find?.subtitle, search?.subtitle)
+    }
+
     func testStandardRegistryCoversEveryActionAndHasNoConflicts() {
         let registry = KeyboardShortcutRegistry.standard
 

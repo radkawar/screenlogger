@@ -296,6 +296,7 @@ public struct KeyboardShortcutBinding: Hashable, Codable, Sendable {
 public struct KeyboardShortcutDefinition: Identifiable, Hashable, Sendable {
     public let id: KeyboardShortcutActionID
     public let title: String
+    public let subtitle: String?
     public let category: KeyboardShortcutCategory
     public let scope: KeyboardShortcutScope
     public let defaultBinding: KeyboardShortcutBinding
@@ -303,12 +304,14 @@ public struct KeyboardShortcutDefinition: Identifiable, Hashable, Sendable {
     public init(
         id: KeyboardShortcutActionID,
         title: String,
+        subtitle: String? = nil,
         category: KeyboardShortcutCategory,
         scope: KeyboardShortcutScope,
         defaultBinding: KeyboardShortcutBinding
     ) {
         self.id = id
         self.title = title
+        self.subtitle = subtitle
         self.category = category
         self.scope = scope
         self.defaultBinding = defaultBinding
@@ -422,6 +425,7 @@ public struct KeyboardShortcutRegistry: Sendable {
         .init(
             id: .findLibrary,
             title: "Find in Library",
+            subtitle: "Selects or replaces the current query",
             category: .library,
             scope: .application,
             defaultBinding: .init(key: .character("f"), modifiers: .command)
@@ -429,6 +433,7 @@ public struct KeyboardShortcutRegistry: Sendable {
         .init(
             id: .searchLibrary,
             title: "Search Library",
+            subtitle: "Opens Library",
             category: .library,
             scope: .application,
             defaultBinding: .init(key: .character("k"), modifiers: .command)

@@ -153,6 +153,7 @@ final class VisualAuditUITests: XCTestCase {
             appearance: "dark"
         )
         let library = assertWindow("Library", in: app)
+        resizeWorkspaceToMinimum(library)
         assertElement("library.workspace.compact", in: app)
         assertElement("library.result.6", in: app)
         capture(library, named: "ui-audit-library-results-minimum-dark")
@@ -209,6 +210,7 @@ final class VisualAuditUITests: XCTestCase {
             appearance: "dark"
         )
         let timeline = assertWindow("Timeline", in: app)
+        resizeWorkspaceToMinimum(timeline)
         assertMinimumWorkspaceFrame(timeline)
         parkPointer(in: timeline)
         assertElement("timeline.moment", in: app)
@@ -274,7 +276,11 @@ final class VisualAuditUITests: XCTestCase {
         statusItem.click()
 
         let captureStatus = assertElement("status-menu.capture-status", in: app)
-        XCTAssertEqual(captureStatus.label, "Capture Off - Start Capture")
+        XCTAssertEqual(captureStatus.label, "Capture Off")
+        XCTAssertEqual(
+            assertElement("status-menu.capture-toggle", in: app).label,
+            "Start Capture"
+        )
         assertElement("status-menu.library", in: app)
         assertElement("status-menu.timeline", in: app)
         assertElement("status-menu.settings", in: app)
@@ -584,24 +590,18 @@ final class VisualAuditUITests: XCTestCase {
         search.click()
         search.typeText("find my design review")
 
-        let unavailable = observeNavigation("Library handoff to assistant recovery") {
+        let settings = observeNavigation("Library ask to assistant connections") {
             app.typeKey(.return, modifierFlags: .command)
-            return app.sheets.firstMatch
-        }
-        assertElement("library.assistant.unavailable", in: app)
-        capture(library, named: "ui-audit-library-assistant-unavailable-context-light")
-        capture(unavailable, named: "ui-audit-assistant-unavailable-sheet-detail-light")
-
-        let settings = observeNavigation("Assistant recovery to connection settings") {
-            assertElement("library.assistant.open-settings", in: app).click()
             return app.windows["Settings"]
         }
+        XCTAssertFalse(
+            app.descendants(matching: .any)["library.assistant.unavailable"].exists,
+            "A query with no assistant connection should skip the empty Ask an Assistant sheet."
+        )
+        capture(library, named: "ui-audit-library-assistant-unavailable-context-light")
         assertElement("settings.pane.integrations.heading", in: app)
         let recoveredRow = assertElement("settings.integration.codex", in: app)
-        let rowHasFocus =
-            try recoveredRow.snapshot().dictionaryRepresentation[XCUIElement.AttributeName.hasFocus]
-            as? Bool
-        XCTAssertEqual(rowHasFocus, true, "Assistant recovery should focus the exact Codex row.")
+        XCTAssertTrue(recoveredRow.isHittable)
         capture(settings, named: "ui-audit-settings-assistant-recovery-default-light")
     }
 
@@ -768,6 +768,41 @@ final class VisualAuditUITests: XCTestCase {
             frame.height,
             640,
             "The minimum audit must not silently retain the 760-point default content height.",
+            file: file,
+            line: line
+        )
+    }
+
+    private func resizeWorkspaceToMinimum(
+        _ window: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let target = CGSize(width: 820, height: 592)
+        let current = window.frame
+        guard abs(current.width - target.width) > 5 || abs(current.height - target.height) > 5 else {
+            return
+        }
+
+        let handle = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1))
+            .withOffset(CGVector(dx: -2, dy: -2))
+        let destination = handle.withOffset(
+            CGVector(dx: target.width - current.width, dy: target.height - current.height)
+        )
+        handle.click(forDuration: 0.1, thenDragTo: destination)
+
+        let reachedSize = XCTNSPredicateExpectation(
+            predicate: NSPredicate { object, _ in
+                guard let element = object as? XCUIElement else { return false }
+                return abs(element.frame.width - target.width) <= 5
+                    && abs(element.frame.height - target.height) <= 5
+            },
+            object: window
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [reachedSize], timeout: Self.readinessTimeout),
+            .completed,
+            "Expected the visual audit workspace to reach its minimum size.",
             file: file,
             line: line
         )

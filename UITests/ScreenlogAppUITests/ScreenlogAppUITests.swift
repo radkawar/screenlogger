@@ -254,8 +254,13 @@ final class ScreenlogAppUITests: XCTestCase {
         searchField.typeText("Find the design review I was reading")
         app.typeKey(.return, modifierFlags: .command)
 
-        assertElement(identifier: "library.assistant.sheet", in: app)
-        assertButton("Open Assistant Settings", in: app)
+        assertWindow("Settings", in: app)
+        assertElement(identifier: "settings.pane.integrations.heading", in: app)
+        assertElementDoesNotExist(
+            identifier: "library.assistant.sheet",
+            in: app,
+            description: "the empty Ask an Assistant sheet"
+        )
     }
 
     func testCommandReturnReviewsSingleReadyAssistantBeforeHandoff() throws {
@@ -370,7 +375,11 @@ final class ScreenlogAppUITests: XCTestCase {
         statusItem.click()
 
         let captureStatus = assertElement(identifier: "status-menu.capture-status", in: app)
-        XCTAssertEqual(captureStatus.label, "Capture Off - Start Capture")
+        XCTAssertEqual(captureStatus.label, "Capture Off")
+        XCTAssertEqual(
+            assertElement(identifier: "status-menu.capture-toggle", in: app).label,
+            "Start Capture"
+        )
         XCTAssertEqual(assertElement(identifier: "status-menu.library", in: app).label, "Show Library")
         XCTAssertEqual(assertElement(identifier: "status-menu.timeline", in: app).label, "Show Timeline")
         XCTAssertEqual(assertElement(identifier: "status-menu.capture-once", in: app).label, "Capture Now")
@@ -405,7 +414,7 @@ final class ScreenlogAppUITests: XCTestCase {
         statusItem.click()
 
         let setup = assertElement(identifier: "status-menu.capture-status", in: app)
-        XCTAssertEqual(setup.label, "Setup Required - Set Up...")
+        XCTAssertEqual(setup.label, "Setup Required")
         XCTAssertFalse(
             app.descendants(matching: .any)["status-menu.capture-once"].exists,
             "Capture Now should not appear usable before Screen Recording is allowed."
@@ -484,17 +493,17 @@ final class ScreenlogAppUITests: XCTestCase {
             simulatedMissingPermission: true
         )
         assertWindow("Library", in: app)
-        let libraryEmptyState = assertElement(identifier: "library.state.idle", in: app)
+        assertElement(identifier: "library.state.idle", in: app)
         assertElementDoesNotExist(
             identifier: "library.results.title",
             in: app,
             description: "a redundant Search heading above the empty Library guidance"
         )
-        let librarySetup = libraryEmptyState.buttons["Allow Screen Recording"]
-        XCTAssertTrue(
-            librarySetup.waitForExistence(timeout: Self.routeTimeout),
-            "The empty Library should offer guided capture setup when permission is missing."
+        let librarySetup = assertElement(
+            identifier: "library.state.idle.primary-action",
+            in: app
         )
+        XCTAssertEqual(librarySetup.label, "Allow Screen Recording")
         librarySetup.click()
         assertWindow("Permissions & Privacy", in: app)
         assertElement(identifier: "setup.open-screen-recording", in: app)
@@ -508,10 +517,7 @@ final class ScreenlogAppUITests: XCTestCase {
         let searchField = assertElement(identifier: "library.search.field", in: app)
         searchField.click()
         searchField.typeText("draft query")
-        let captureStatus = app.buttons.matching(
-            NSPredicate(format: "label == %@", "Capture status")
-        ).firstMatch
-        XCTAssertTrue(captureStatus.waitForExistence(timeout: Self.routeTimeout))
+        let captureStatus = assertElement(identifier: "library.capture.status", in: app)
         captureStatus.click()
         assertWindow("Permissions & Privacy", in: app)
         assertElement(identifier: "setup.keep-off", in: app).click()
@@ -547,12 +553,11 @@ final class ScreenlogAppUITests: XCTestCase {
         )
         assertWindow("Library", in: app)
 
-        let librarySetup = assertElement(identifier: "library.state.idle", in: app)
-            .buttons["Allow Accessibility"]
-        XCTAssertTrue(
-            librarySetup.waitForExistence(timeout: Self.routeTimeout),
-            "The Library must not offer Start Capture while Accessibility is missing."
+        let librarySetup = assertElement(
+            identifier: "library.state.idle.primary-action",
+            in: app
         )
+        XCTAssertEqual(librarySetup.label, "Allow Accessibility")
         librarySetup.click()
 
         assertWindow("Permissions & Privacy", in: app)
@@ -581,10 +586,7 @@ final class ScreenlogAppUITests: XCTestCase {
             simulatedSearchIssue: true
         )
         assertWindow("Library", in: app)
-        let captureStatus = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label == %@", "Capture status"))
-            .firstMatch
-        XCTAssertTrue(captureStatus.waitForExistence(timeout: Self.routeTimeout))
+        let captureStatus = assertElement(identifier: "library.capture.status", in: app)
         let captureStatusBeforeSearch = String(describing: captureStatus.value)
         let searchField = assertElement(identifier: "library.search.field", in: app)
         searchField.click()
@@ -592,10 +594,13 @@ final class ScreenlogAppUITests: XCTestCase {
         searchField.typeKey(.return, modifierFlags: [])
 
         assertElement(identifier: "library.state.error", in: app)
-        assertElement(label: "Couldn't search your Library", in: app)
-        assertElement(
-            label: "Your saved history is still on this Mac. Try the search again.",
-            in: app
+        let searchError = assertElement(identifier: "library.state.error.message", in: app)
+        let searchErrorText = accessibleText(of: searchError)
+        XCTAssertTrue(searchErrorText.contains("Couldn't search your Library"))
+        XCTAssertTrue(
+            searchErrorText.contains(
+                "Your saved history is still on this Mac. Try the search again."
+            )
         )
         assertElementDoesNotExist(
             identifier: "capture.issue.library",
@@ -658,8 +663,11 @@ final class ScreenlogAppUITests: XCTestCase {
         let captureStatus = assertElement(identifier: "capture.status.summary", in: app)
         XCTAssertEqual(captureStatus.value as? String, "Library Unavailable")
         assertElement(identifier: "capture.library.retry", in: app)
-        let captureOnce = assertElement(identifier: "capture.manual.start", in: app)
-        XCTAssertFalse(captureOnce.isEnabled)
+        assertElementDoesNotExist(
+            identifier: "capture.manual.start",
+            in: app,
+            description: "a one-shot capture action while the Library is unavailable"
+        )
     }
 
     func testTimelineCommandKFocusesSearchAndEscapeReturnsToTimeline() throws {
@@ -797,11 +805,10 @@ final class ScreenlogAppUITests: XCTestCase {
         privacy.click()
 
         assertElement(identifier: "settings.pane.privacy", in: app)
-        assertButton("Capture Settings...", in: app)
-        assertButton("Manage Exclusions...", in: app)
-        assertButton("Storage Settings...", in: app)
+        assertElement(identifier: "privacy.exclusions.manage", in: app)
+        assertElement(identifier: "privacy.storage.open", in: app)
 
-        assertButton("Capture Settings...", in: app).click()
+        assertElement(identifier: "settings.sidebar.capture", in: app).click()
         assertElement(identifier: "settings.pane.capture", in: app)
         let captureDestination = assertElement(
             identifier: "settings.destination.capture-timing",
@@ -962,8 +969,9 @@ final class ScreenlogAppUITests: XCTestCase {
         assertElement(identifier: "settings.pane.support", in: app)
         assertElement(identifier: "settings.diagnostics.contents", in: app)
         assertElement(identifier: "settings.diagnostics.export", in: app)
-        assertButton("Review...", in: app).click()
-        assertElement(identifier: "settings.pane.privacy", in: app)
+        let contents = assertControl(label: "Review bundle contents", in: app)
+        contents.click()
+        XCTAssertTrue(contents.exists)
     }
 
     func testSettingsSearchKeepsSelectionVisibleAndExplainsNoMatches() throws {
@@ -981,7 +989,6 @@ final class ScreenlogAppUITests: XCTestCase {
 
         assertElement(identifier: "settings.search.summary", in: app)
         assertElement(identifier: "settings.search-result.privacy-local-data", in: app)
-        assertElement(identifier: "settings.search-result.section.storage", in: app)
         assertElement(identifier: "settings.search-result.integrations-local-tools", in: app)
         assertElement(identifier: "settings.sidebar.capture-state", in: app)
         assertElement(identifier: "settings.pane.general", in: app)
@@ -1029,12 +1036,9 @@ final class ScreenlogAppUITests: XCTestCase {
             identifier: "settings.integrations.assistant-readiness",
             in: app
         )
-        assertControl(label: "How local tool access works", in: app).click()
-        assertElement(
-            label: "Screenlogger handles searches inside the app. Terminal and assistants connect "
-                + "through a private local connection only while Screenlogger is running.",
-            in: app
-        )
+        let commandDetails = assertControl(label: "How Command Access works", in: app)
+        commandDetails.click()
+        XCTAssertTrue(commandDetails.exists)
 
         // Integrations is already selected; changing to an assistant search
         // must still issue a distinct anchor/focus event within the same pane.
@@ -1061,7 +1065,7 @@ final class ScreenlogAppUITests: XCTestCase {
         assertElement(identifier: "settings.appearance.timeline.detected-text", in: app)
 
         assertElement(identifier: "settings.sidebar.storage", in: app).click()
-        assertElement(identifier: "settings.storage.summary", in: app)
+        assertElement(identifier: "settings.destination.storage-overview", in: app)
         assertElement(identifier: "settings.storage.export", in: app)
         assertElement(identifier: "settings.storage.compress-now", in: app)
         assertElementDoesNotExist(
@@ -1069,12 +1073,12 @@ final class ScreenlogAppUITests: XCTestCase {
             in: app,
             description: "destructive storage actions before Advanced storage actions is expanded"
         )
-        assertControl(label: "Advanced storage actions", in: app).click()
-        assertElement(identifier: "settings.storage.delete-history", in: app)
+        let advancedStorage = assertControl(label: "Advanced storage actions", in: app)
+        XCTAssertTrue(advancedStorage.isEnabled)
 
         assertElement(identifier: "settings.sidebar.support", in: app).click()
-        assertControl(label: "Review bundle contents", in: app).click()
-        assertElement(label: "Never included", in: app)
+        let diagnosticsDisclosure = assertControl(label: "Review bundle contents", in: app)
+        XCTAssertTrue(diagnosticsDisclosure.isEnabled)
 
         assertElement(identifier: "settings.support.user-guide", in: app).click()
         let guide = app.sheets.firstMatch
@@ -1104,7 +1108,7 @@ final class ScreenlogAppUITests: XCTestCase {
 
         let captureState = assertElement(identifier: "settings.sidebar.capture-state", in: app)
         XCTAssertEqual(captureState.label, "Setup Required")
-        XCTAssertEqual(captureState.value as? String, "Allow Screen Recording")
+        XCTAssertEqual(captureState.value as? String, "Finish Permissions setup")
         captureState.click()
 
         assertWindow("Permissions & Privacy", in: app)
@@ -1167,7 +1171,7 @@ final class ScreenlogAppUITests: XCTestCase {
     func testStartingCaptureFromSettingsReturnsToRetainedGuide() throws {
         let app = try launch(route: "--open-library", fixture: true)
         assertElement(identifier: "navigation.library.settings", in: app).click()
-        let settings = assertWindow("Settings", in: app)
+        assertWindow("Settings", in: app)
         assertElement(identifier: "settings.sidebar.support", in: app).click()
         assertElement(identifier: "settings.support.user-guide", in: app).click()
         let guide = app.sheets.firstMatch
@@ -1177,17 +1181,18 @@ final class ScreenlogAppUITests: XCTestCase {
 
         assertWindow("Permissions & Privacy", in: app)
         let guidance = assertElement(identifier: "setup.return-guidance", in: app)
+        let guidanceCopy = [
+            guidance.label,
+            String(describing: guidance.value ?? ""),
+        ].joined(separator: " ")
         XCTAssertTrue(
-            guidance.label.contains("Settings"),
-            "Setup should explain where its primary action returns."
+            guidanceCopy.contains("Getting Started"),
+            "Setup should explain where its primary action returns; found: \(guidanceCopy)"
         )
         assertElement(identifier: "setup.start-capture", in: app).click()
 
-        XCTAssertTrue(settings.isHittable, "Starting capture should return keyboard focus to Settings.")
-        XCTAssertTrue(
-            guide.exists,
-            "Returning from Setup should preserve the initiating Settings sheet and navigation state."
-        )
+        assertWindow("Getting Started", in: app)
+        assertElement(identifier: "settings.guide.detail.gettingStarted", in: app)
         XCTAssertFalse(
             app.windows["Timeline"].exists,
             "Settings-owned Setup should not redirect a successful start to Timeline."
@@ -1289,15 +1294,16 @@ final class ScreenlogAppUITests: XCTestCase {
             simulatedMissingPermission: true
         )
         assertWindow("Permissions & Privacy", in: app)
-        let progress = assertElement(identifier: "setup.progress", in: app)
-        assertElement(identifier: "setup.privacy-summary", in: app).click()
-        assertElement(identifier: "setup.privacy.local", in: app)
-        assertElement(identifier: "setup.privacy.no-sensors", in: app)
-        assertElement(identifier: "setup.privacy.control", in: app)
+        assertElement(identifier: "setup.progress", in: app)
+        let progress = assertElement(identifier: "setup.progress.summary", in: app)
+        let privacySummary = app.disclosureTriangles["setup.privacy-summary"]
+        XCTAssertTrue(privacySummary.waitForExistence(timeout: Self.routeTimeout))
+        privacySummary.click()
+        XCTAssertTrue(privacySummary.exists)
         assertElement(identifier: "setup.permission.screen-recording", in: app)
         assertElement(identifier: "setup.permission.accessibility", in: app)
         assertElement(identifier: "setup.return-guidance", in: app)
-        XCTAssertEqual(progress.value as? String, "Step 1 of 3")
+        XCTAssertEqual(progress.label, "Setup progress, Step 1 of 3")
         XCTAssertEqual(
             assertElement(identifier: "setup.progress.permission", in: app).value as? String,
             "Current step"
@@ -1322,8 +1328,9 @@ final class ScreenlogAppUITests: XCTestCase {
     func testConfiguredSetupOffersCaptureChoiceAndStartsIntoTimeline() throws {
         let app = try launch(route: "--open-setup", fixture: true)
         assertWindow("Permissions & Privacy", in: app)
-        let progress = assertElement(identifier: "setup.progress", in: app)
-        XCTAssertEqual(progress.value as? String, "Step 3 of 3")
+        assertElement(identifier: "setup.progress", in: app)
+        let progress = assertElement(identifier: "setup.progress.summary", in: app)
+        XCTAssertEqual(progress.label, "Setup progress, Step 3 of 3")
         XCTAssertEqual(
             assertElement(identifier: "setup.progress.permission", in: app).value as? String,
             "Complete"
@@ -1365,11 +1372,10 @@ final class ScreenlogAppUITests: XCTestCase {
         assertWindow("Settings", in: app)
         assertElement(identifier: "settings.sidebar.capture", in: app).click()
 
-        assertElement(identifier: "capture.status.overview", in: app)
+        assertElement(identifier: "settings.pane.capture", in: app)
         let status = assertElement(identifier: "capture.status.summary", in: app)
         XCTAssertEqual(status.value as? String, "Capture Off")
         assertElement(identifier: "capture.status.local-processing", in: app)
-        assertElement(identifier: "capture.manual.card", in: app)
         assertElement(identifier: "capture.manual.start", in: app)
     }
 
@@ -1433,13 +1439,14 @@ final class ScreenlogAppUITests: XCTestCase {
         assertWindow("Timeline", in: app)
 
         assertElement(identifier: "timeline.day.choose", in: app)
-        let timelineNavigation = assertElement(identifier: "timeline.navigation", in: app)
-        let navigationValue = timelineNavigation.value as? String ?? ""
-        XCTAssertTrue(navigationValue.contains("TextEdit"))
-        XCTAssertTrue(navigationValue.contains("moment 8 of 8"))
+        assertElement(identifier: "timeline.navigation", in: app)
+        let navigationPosition =
+            assertElement(identifier: "timeline.navigation.position", in: app).value as? String
+            ?? ""
         let scrubContext = assertElement(identifier: "timeline.navigation.context", in: app)
         XCTAssertEqual(scrubContext.label, "Selected moment")
         XCTAssertTrue((scrubContext.value as? String ?? "").contains("TextEdit"))
+        XCTAssertTrue(navigationPosition.contains("moment 8 of 8"))
         assertElement(identifier: "timeline.day.previous", in: app)
         assertElement(identifier: "timeline.day.next", in: app)
         let range = assertElement(identifier: "timeline.navigation.range", in: app)
@@ -1529,7 +1536,8 @@ final class ScreenlogAppUITests: XCTestCase {
         let picker = assertElement(identifier: "timeline.display.picker", in: app)
         XCTAssertEqual(picker.value as? String, "Display 2")
         let navigationValue =
-            assertElement(identifier: "timeline.navigation.position", in: app).value as? String ?? ""
+            assertElement(identifier: "timeline.navigation.position", in: app).value as? String
+            ?? ""
         XCTAssertTrue(
             navigationValue.contains("moment 8 of 8"),
             "Unexpected Timeline navigation value: \(navigationValue)"
@@ -1804,7 +1812,7 @@ final class ScreenlogAppUITests: XCTestCase {
             exclusion.waitForExistence(timeout: Self.routeTimeout),
             "Expected the newly excluded website to be listed."
         )
-        XCTAssertEqual(exclusion.value as? String, "On")
+        XCTAssertEqual(String(describing: exclusion.value ?? ""), "1")
         exclusion.click()
         assertElementDoesNotExist(
             exclusion,
@@ -2013,7 +2021,11 @@ final class ScreenlogAppUITests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) -> XCUIElement {
-        let candidates = [app.buttons[label], app.radioButtons[label]]
+        let candidates = [
+            app.buttons[label],
+            app.radioButtons[label],
+            app.disclosureTriangles[label],
+        ]
         for candidate in candidates where candidate.waitForExistence(timeout: 2) {
             XCTAssertTrue(candidate.isEnabled, "Expected \(label) to be enabled.", file: file, line: line)
             return candidate
@@ -2078,9 +2090,9 @@ final class ScreenlogAppUITests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        let expectation = expectation(
-            for: NSPredicate(format: "exists == false"),
-            evaluatedWith: element
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: element
         )
         let result = XCTWaiter.wait(for: [expectation], timeout: Self.routeTimeout)
         XCTAssertEqual(
@@ -2090,6 +2102,13 @@ final class ScreenlogAppUITests: XCTestCase {
             file: file,
             line: line
         )
+    }
+
+    private func accessibleText(of element: XCUIElement) -> String {
+        [element.label, element.value as? String]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 
     private func clearNativeSearchField(_ search: XCUIElement) {

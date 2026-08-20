@@ -264,6 +264,8 @@ targets:
       # presentation sources can be tested without launching Screenlogger or
       # running any application lifecycle/bootstrap behavior.
       - path: Sources/ScreenlogApp/CaptureStatusPresentation.swift
+      - path: Sources/ScreenlogApp/CaptureSetupPresentation.swift
+      - path: Sources/ScreenlogApp/LibraryAssistantAskPresentation.swift
       - path: Sources/ScreenlogApp/AudioTranscriptionPermissionPresentation.swift
       - path: Sources/ScreenlogApp/AppInstallLocation.swift
       - path: Sources/ScreenlogApp/CaptureOperationModels.swift

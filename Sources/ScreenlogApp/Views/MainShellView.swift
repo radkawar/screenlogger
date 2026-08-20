@@ -68,6 +68,7 @@ struct MainShellView: View {
             TimelineKeyMonitor(
                 shortcuts: timelineKeyboardShortcuts,
                 onSlash: { model.openSearchWindow(intent: .timelineContext) },
+                onEscape: { leaveTimeline() },
                 onCommandK: { model.openSearchWindow(intent: .timelineContext) },
                 onStepBack: {
                     model.stopReplay()
@@ -93,11 +94,7 @@ struct MainShellView: View {
             .frame(width: 0, height: 0)
         )
         .onExitCommand {
-            if offersLibraryReturn {
-                model.returnToLibrary()
-            } else {
-                model.closeMainShell()
-            }
+            leaveTimeline()
         }
     }
 
@@ -123,6 +120,14 @@ struct MainShellView: View {
 
     private var offersLibraryReturn: Bool {
         model.timelineNavigationOrigin == .libraryResult
+    }
+
+    private func leaveTimeline() {
+        if offersLibraryReturn {
+            model.returnToLibrary()
+        } else {
+            model.closeMainShell()
+        }
     }
 
     private var timelineDeletionIssue: LibraryDeletionIssue? {

@@ -58,7 +58,7 @@ private struct ScreenloggerCommands: Commands {
                 actionID: .showTimeline,
                 accessibilityIdentifier: "commands.show-timeline"
             ) {
-                model.openMainShell(origin: .direct)
+                model.showMainShellFromGlobalRoute()
             }
         }
 

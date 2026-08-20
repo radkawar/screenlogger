@@ -430,7 +430,13 @@ import ScreenlogCore
         static func installIfRequested(on model: AppModel) {
             guard let configuration, let permissionsSnapshot else { return }
 
+            // Native windows may be created after the fixture model was
+            // installed. Reapply window-only presentation overrides on each
+            // route without resetting mutable fixture state such as capture.
             applyPresentationOverridesIfRequested(on: model)
+
+            let identifier = ObjectIdentifier(model)
+            guard installingModels.insert(identifier).inserted else { return }
 
             model.permissions = permissionsSnapshot
             model.permissionFlowCoordinator = PermissionFlowCoordinator(
@@ -461,9 +467,6 @@ import ScreenlogCore
             // rest of the isolated model state so Library, Settings, and
             // screenshot routes all observe the same deterministic boundary.
             _ = installIsolatedAssistantStateIfRequested(on: model)
-
-            let identifier = ObjectIdentifier(model)
-            guard installingModels.insert(identifier).inserted else { return }
 
             Task { @MainActor [weak model] in
                 guard let model else { return }

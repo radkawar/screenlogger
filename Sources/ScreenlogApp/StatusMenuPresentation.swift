@@ -1,5 +1,13 @@
 import ScreenlogCore
 
+/// Menu-bar capture-status row. Status words stay on this item; Start / Stop
+/// remain separate commands.
+enum StatusMenuCapturePresentation {
+    static func statusTitle(_ status: CaptureStatusPresentation) -> String {
+        status.compactLabel
+    }
+}
+
 enum AudioTranscriptionMenuAction: Equatable {
     case toggle
     case openSettings

@@ -44,6 +44,19 @@ extension AppModel {
         MainShellController.shared.show(model: self, focusSearch: false)
     }
 
+    /// Present Timeline from a global Show command.
+    ///
+    /// Deminiaturizing is restoration and must preserve a result's Back to
+    /// Library path. Invoking Show Timeline on an already presented workspace
+    /// is an explicit direct route and clears that temporary handoff.
+    func showMainShellFromGlobalRoute() {
+        if MainShellController.shared.isMiniaturized {
+            showMainShell()
+        } else {
+            openMainShell(origin: .direct)
+        }
+    }
+
     /// Open the Library for a specific user intent.
     func openSearchWindow(intent: LibraryPresentationIntent = .show) {
         // Any explicit Library presentation completes a result handoff. Leaving
@@ -309,6 +322,7 @@ extension AppModel {
 
     var canCopySelectedFrameImage: Bool {
         if selectedFrameImage != nil { return true }
+        guard selectedFramePreviewIssue == nil else { return false }
         if let path = selectedTimelineFrame?.imagePath, !path.isEmpty,
             FileManager.default.fileExists(atPath: path)
         {

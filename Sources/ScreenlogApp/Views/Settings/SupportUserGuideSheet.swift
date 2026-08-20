@@ -130,7 +130,7 @@ struct SupportUserGuideSheet: View {
                 .accessibilityIdentifier("settings.guide.action.gettingStarted")
             } else {
                 guideAction("Finish Setup", systemImage: "checklist") {
-                    model.showPermissions(origin: .settings)
+                    model.showPermissions(origin: .settingsGuide)
                 }
                 .accessibilityIdentifier("settings.guide.action.gettingStarted")
             }
@@ -162,7 +162,7 @@ struct SupportUserGuideSheet: View {
                 .accessibilityIdentifier("settings.guide.action.troubleshooting")
             } else {
                 guideAction("Finish Permissions Setup", systemImage: "exclamationmark.shield") {
-                    model.showPermissions(origin: .settings)
+                    model.showPermissions(origin: .settingsGuide)
                 }
                 .accessibilityIdentifier("settings.guide.action.troubleshooting")
             }

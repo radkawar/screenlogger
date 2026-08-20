@@ -2,6 +2,49 @@ import ScreenlogCore
 import XCTest
 
 final class StatusMenuPresentationTests: XCTestCase {
+    func testCaptureStatusTitleStaysSeparateFromStartAndStopActions() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let off = CaptureStatusResolver.resolve(
+            CaptureStatusInput(
+                library: .ready,
+                permissions: PermissionsSnapshot(
+                    screenRecording: true,
+                    accessibility: true
+                ),
+                isRecording: false,
+                timedPauseUntil: nil,
+                pauseReason: nil,
+                pausedForDisk: false,
+                captureIssue: nil
+            ),
+            at: now
+        ) { _ in "10:00 AM" }
+
+        XCTAssertEqual(off.compactLabel, "Capture Off")
+        XCTAssertEqual(off.actionLabel, "Start Capture")
+        XCTAssertEqual(StatusMenuCapturePresentation.statusTitle(off), "Capture Off")
+        XCTAssertFalse(StatusMenuCapturePresentation.statusTitle(off).contains("Start Capture"))
+
+        let setup = CaptureStatusResolver.resolve(
+            CaptureStatusInput(
+                library: .ready,
+                permissions: PermissionsSnapshot(
+                    screenRecording: false,
+                    accessibility: true
+                ),
+                isRecording: false,
+                timedPauseUntil: nil,
+                pauseReason: nil,
+                pausedForDisk: false,
+                captureIssue: nil
+            ),
+            at: now
+        ) { _ in "10:00 AM" }
+
+        XCTAssertEqual(StatusMenuCapturePresentation.statusTitle(setup), "Setup Required")
+        XCTAssertFalse(StatusMenuCapturePresentation.statusTitle(setup).contains(" - "))
+    }
+
     func testSupportedAudioControlIsAnIndependentCheckedToggle() {
         let active = AudioTranscriptionStatus(
             phase: .active,

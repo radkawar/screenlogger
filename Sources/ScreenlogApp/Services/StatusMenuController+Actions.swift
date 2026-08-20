@@ -179,7 +179,7 @@ extension StatusMenuController {
     }
 
     @objc func openTimeline(_ sender: Any?) {
-        appModel.openMainShell(origin: .direct)
+        appModel.showMainShellFromGlobalRoute()
     }
 
     @objc func quitApp(_ sender: Any?) {

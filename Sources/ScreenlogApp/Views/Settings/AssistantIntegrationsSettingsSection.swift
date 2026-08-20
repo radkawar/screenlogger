@@ -354,7 +354,7 @@ private struct AssistantIntegrationRow: View {
                     .accessibilityHidden(true)
             }
         }
-        .focusable(focusIsRequested)
+        .focusable()
         .focused($keyboardFocused)
         .accessibilityFocused($accessibilityFocused)
         .accessibilityElement(children: .contain)

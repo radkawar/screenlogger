@@ -321,7 +321,6 @@ struct ExcludedWebsitesSettingsContent: View {
                             .labelsHidden()
                             .toggleStyle(.checkbox)
                             .accessibilityLabel("Exclude \(domain)")
-                            .accessibilityValue(SettingsAccessibilityValue.onOff(true))
                             .accessibilityHint(policy.accessibilityHint)
                         }
                         .padding(.horizontal, 14)

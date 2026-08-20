@@ -186,8 +186,10 @@ struct LibraryResultStateView: View {
                     )
                 }
                 .buttonStyle(.bordered)
+                .accessibilityIdentifier("library.state.idle.primary-action")
             }
             .frame(maxWidth: 600)
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("library.state.idle")
 
         case .needsMoreInput:
@@ -206,6 +208,10 @@ struct LibraryResultStateView: View {
                     systemImage: "exclamationmark.triangle",
                     description: Text(issue.message)
                 )
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(issue.title)
+                .accessibilityValue(issue.message)
+                .accessibilityIdentifier("library.state.error.message")
                 Group {
                     if dynamicTypeSize.isAccessibilitySize {
                         VStack(spacing: 10) {
@@ -218,6 +224,7 @@ struct LibraryResultStateView: View {
                     }
                 }
             }
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("library.state.error")
 
         case .filteredEmpty:

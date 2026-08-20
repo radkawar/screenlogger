@@ -104,10 +104,10 @@ extension StatusMenuController {
         for item in menu.items {
             switch ItemTag(rawValue: item.tag) {
             case .captureStatus:
-                item.title = statusMenuTitle(status)
+                item.title = StatusMenuCapturePresentation.statusTitle(status)
                 item.image = menuSymbolImage(status.symbolName)
                 item.toolTip = status.detail
-                item.isEnabled = status.primaryAction != nil
+                item.isEnabled = statusRowPerformsRecovery(status)
                 item.setAccessibilityLabel(item.title)
                 item.setAccessibilityHelp(statusAccessibilityHelp(status))
             case .audioTranscriptionStatus:
@@ -129,11 +129,25 @@ extension StatusMenuController {
             case .libraryRecoveryEnd:
                 item.isHidden = !showsLibraryRecoveryTools
             case .toggleRecording:
-                item.title = "Stop Capture"
-                item.image = menuSymbolImage("stop.circle")
-                item.isHidden = !status.controls.canStop
-                item.isEnabled = status.controls.canStop
-                item.toolTip = status.controls.canStop ? "Stop automatic capture" : nil
+                if status.controls.canStop {
+                    item.title = "Stop Capture"
+                    item.image = menuSymbolImage("stop.circle")
+                    item.isHidden = false
+                    item.isEnabled = true
+                    item.toolTip = "Stop automatic capture"
+                } else if status.primaryAction == .startCapture {
+                    item.title = "Start Capture"
+                    item.image = menuSymbolImage("record.circle")
+                    item.isHidden = false
+                    item.isEnabled = true
+                    item.toolTip = "Start automatic capture"
+                } else {
+                    item.title = "Stop Capture"
+                    item.image = menuSymbolImage("stop.circle")
+                    item.isHidden = true
+                    item.isEnabled = false
+                    item.toolTip = nil
+                }
             case .pauseOneHour:
                 item.title = "Pause Capture for 1 Hour"
                 item.image = menuSymbolImage("clock.badge.xmark")
@@ -272,9 +286,14 @@ extension StatusMenuController {
         }
     }
 
-    private func statusMenuTitle(_ status: CaptureStatusPresentation) -> String {
-        guard let actionLabel = status.actionLabel else { return status.compactLabel }
-        return "\(status.compactLabel) - \(actionLabel)"
+    private func statusRowPerformsRecovery(_ status: CaptureStatusPresentation) -> Bool {
+        switch status.primaryAction {
+        case .startCapture, .none:
+            return false
+        case .retryLibrary, .setupCapture, .retryCapture, .resumeCapture,
+            .manageStorage, .reviewWebsiteExclusions:
+            return true
+        }
     }
 
     private func exclusionActionTitle(_ name: String) -> String {

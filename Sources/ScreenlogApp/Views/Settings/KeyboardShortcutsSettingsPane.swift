@@ -118,7 +118,7 @@ struct KeyboardShortcutsSettingsPane: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(definition.title)
                         .font(.system(size: 13, weight: .medium))
-                    Text(definition.scope.settingsDetail)
+                    Text(definition.subtitle ?? definition.scope.settingsDetail)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

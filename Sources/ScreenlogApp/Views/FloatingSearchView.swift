@@ -159,20 +159,22 @@ struct FloatingSearchView: View {
                 }
             }
 
-            Button {
-                presentAssistantHandoff()
-            } label: {
-                Label("Ask Assistant", systemImage: "arrow.up.forward.app")
+            if LibraryAssistantAskPolicy.isPrimaryControlVisible(hasQuery: hasAssistantQuery) {
+                Button {
+                    presentAssistantHandoff()
+                } label: {
+                    Label("Ask Assistant", systemImage: "arrow.up.forward.app")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .fixedSize()
+                .disabled(model.libraryStartupIssue != nil)
+                .help(
+                    "Ask an Assistant (\(model.keyboardShortcutDisplayLabel(for: .askAssistant)))"
+                )
+                .accessibilityHint("Reviews the exact search context before opening an assistant")
+                .accessibilityIdentifier("library.assistant.open")
             }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
-            .fixedSize()
-            .disabled(model.libraryStartupIssue != nil)
-            .help(
-                "Ask an Assistant (\(model.keyboardShortcutDisplayLabel(for: .askAssistant)))"
-            )
-            .accessibilityHint("Reviews the exact search context before opening an assistant")
-            .accessibilityIdentifier("library.assistant.open")
         }
         .zIndex(3)
     }
@@ -340,6 +342,10 @@ struct FloatingSearchView: View {
         }
     }
 
+    private var hasAssistantQuery: Bool {
+        (try? model.buildLibraryAssistantHandoffPrompt()) != nil
+    }
+
     private func presentAssistantHandoff() {
         assistantHandoffValidationMessage = nil
         commitRecognizedOperatorDrafts()
@@ -364,6 +370,26 @@ struct FloatingSearchView: View {
             assistantHandoffValidationMessage =
                 "Checking Assistant Connections... Try again in a moment."
             return
+        }
+
+        switch LibraryAssistantAskPolicy.resolve(
+            hasQuery: true,
+            connectionCount: destinations.count
+        ) {
+        case .hidden:
+            return
+        case .openIntegrations:
+            let focusedIdentifier = model.assistantSettingsRecoveryTarget().map {
+                "settings.integration.\($0.rawValue)"
+            }
+            model.requestSettingsNavigation(
+                to: .integrationsAssistantConnections,
+                focusedElementIdentifier: focusedIdentifier
+            )
+            model.openProductSettings()
+            return
+        case .openHandoff:
+            break
         }
 
         selectedSuggestionID = nil
