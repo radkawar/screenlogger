@@ -101,10 +101,12 @@ final class SQLiteStorageEngineTests: XCTestCase {
     func testReadsRunOnTheirOwnConnectionWhileTheWriterHoldsATransaction() throws {
         let frameID = try store.insertSeedFrame(timestampMs: 1_000, foreground: "committed", title: "before")
         let writerIsHolding = expectation(description: "writer transaction open")
+        let writerFinished = expectation(description: "writer transaction finished")
         let readFinished = expectation(description: "read finished during the write transaction")
         let releaseWriter = DispatchSemaphore(value: 0)
 
         DispatchQueue.global().async {
+            defer { writerFinished.fulfill() }
             do {
                 try self.store.db.transaction {
                     try self.store.db.exec("UPDATE frame SET title = 'during' WHERE id = \(frameID)")
@@ -131,6 +133,7 @@ final class SQLiteStorageEngineTests: XCTestCase {
         wait(for: [readFinished], timeout: 5)
 
         releaseWriter.signal()
+        wait(for: [writerFinished], timeout: 5)
         XCTAssertEqual(try store.frame(id: frameID)?.title, "during")
     }
 
