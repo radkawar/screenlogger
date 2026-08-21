@@ -580,6 +580,11 @@ final class AppModel: ObservableObject {
 
             // CLI bridge: Unix domain socket at <root>/cli.sock (app owns SQLite).
             applyCLIEnabled()
+            // A Sparkle relaunch and a DMG replacement both arrive here. Keep
+            // previously installed, Screenlogger-owned command and assistant
+            // resources aligned with the running app without touching missing,
+            // modified, or unrelated destinations.
+            refreshIntegrationSettings(automatic: true)
             if ProcessInfo.processInfo.environment["SCREENLOG_XPC_MACH"] == "1" {
                 do {
                     try ScreenlogXPCHost.shared.start(

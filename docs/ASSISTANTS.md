@@ -26,6 +26,11 @@ Install is idempotent. Upgrade replaces only authenticated stale content. Remove
 does not delete unrelated files and stops on conflicts unless the user explicitly
 chooses a recovery action.
 
+After an integration has been installed, launching a newer Screenlogger build
+updates its Screenlogger-owned skill copy automatically. Missing integrations
+are not installed implicitly, and unrelated or blocked destinations are left
+for explicit review in Settings.
+
 ## Search handoff
 
 Command-Return from Library search opens the configured assistant. If one ready

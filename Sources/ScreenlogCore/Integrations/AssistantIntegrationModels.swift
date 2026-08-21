@@ -112,6 +112,19 @@ public struct AssistantIntegrationInspection: Equatable, Sendable {
         if isRegistered == false { return .setupIncomplete }
         return .ready
     }
+
+    /// Relaunch maintenance upgrades only a previously installed integration
+    /// that Screenlogger can still authenticate. Missing and blocked targets
+    /// remain untouched.
+    public var needsAutomaticMaintenance: Bool {
+        guard isOwned else { return false }
+        switch readiness {
+        case .updateAvailable, .setupIncomplete:
+            return true
+        case .ready, .notInstalled, .blocked:
+            return false
+        }
+    }
 }
 
 /// User-facing readiness shared by Settings and `screenlog skill status`.

@@ -4,6 +4,17 @@ import XCTest
 @testable import ScreenlogCore
 
 final class CLIArtifactInstallationServiceTests: XCTestCase {
+    func testAutomaticUpgradeRequiresAnIntactManagedInstallation() {
+        XCTAssertFalse(CLIArtifactInstallationState.notInstalled.needsAutomaticUpgrade)
+        XCTAssertFalse(CLIArtifactInstallationState.current.needsAutomaticUpgrade)
+        XCTAssertTrue(CLIArtifactInstallationState.managed.needsAutomaticUpgrade)
+        XCTAssertFalse(
+            CLIArtifactInstallationState.conflict(
+                .unrecognized(existing: ["/tmp/unrelated-screenlog"])
+            ).needsAutomaticUpgrade
+        )
+    }
+
     func testInstallCreatesAuthenticatedReceiptAndRecognizesCurrentPair() throws {
         let fixture = try Fixture()
         defer { fixture.remove() }

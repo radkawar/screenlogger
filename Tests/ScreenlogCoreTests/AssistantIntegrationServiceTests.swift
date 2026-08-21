@@ -4,6 +4,26 @@ import XCTest
 @testable import ScreenlogCore
 
 final class AssistantIntegrationServiceTests: XCTestCase {
+    func testAutomaticMaintenanceOnlySelectsOwnedStaleOrIncompleteIntegrations() {
+        let destination = URL(fileURLWithPath: "/tmp/screenlog-cli-skill", isDirectory: true)
+        let inspection: (AssistantIntegrationState, Bool?) -> AssistantIntegrationInspection = {
+            state, registered in
+            AssistantIntegrationInspection(
+                target: .codex,
+                destination: destination,
+                state: state,
+                isRegistered: registered
+            )
+        }
+
+        XCTAssertTrue(inspection(.staleCopy, nil).needsAutomaticMaintenance)
+        XCTAssertTrue(inspection(.currentCopy, false).needsAutomaticMaintenance)
+        XCTAssertFalse(inspection(.currentCopy, nil).needsAutomaticMaintenance)
+        XCTAssertFalse(inspection(.missing, nil).needsAutomaticMaintenance)
+        XCTAssertFalse(inspection(.brokenLink("missing"), nil).needsAutomaticMaintenance)
+        XCTAssertFalse(inspection(.conflict, nil).needsAutomaticMaintenance)
+    }
+
     func testSupportedTargetsAndDestinationsAreCanonical() throws {
         let home = URL(fileURLWithPath: "/Users/example", isDirectory: true)
         let service = AssistantIntegrationService(homeDirectory: home, environment: [:])

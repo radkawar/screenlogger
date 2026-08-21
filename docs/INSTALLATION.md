@@ -19,6 +19,11 @@ Screenlogger requires macOS 14 or later.
 Public release builds are Developer ID signed, notarized by Apple, and carry a
 stapled ticket for offline Gatekeeper validation.
 
+When a DMG replacement or in-app update launches the new build, Screenlogger
+also refreshes an existing receipt-backed `screenlog` command and existing
+Screenlogger-owned assistant skills from the new app bundle. It does not
+implicitly install tools that were never enabled or replace unrelated files.
+
 ## First run
 
 Screenlogger needs two macOS permissions before capture can start:

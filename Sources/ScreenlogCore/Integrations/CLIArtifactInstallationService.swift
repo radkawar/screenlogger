@@ -41,6 +41,14 @@ public enum CLIArtifactInstallationState: Equatable, Sendable {
     /// artifacts or could not be compared because no source was supplied.
     case managed
     case conflict(CLIArtifactConflict)
+
+    /// Automatic maintenance may replace only an intact receipt-backed
+    /// installation. Missing, modified, and unrelated files always require an
+    /// explicit user decision.
+    public var needsAutomaticUpgrade: Bool {
+        if case .managed = self { return true }
+        return false
+    }
 }
 
 /// A transaction directory retained because Screenlogger could not restore

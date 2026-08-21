@@ -73,7 +73,7 @@ extension AppModel {
     ///
     /// The CLI links ScreenlogCore through `@executable_path`, so installing only
     /// the executable creates a command that immediately fails at dyld launch.
-    func installCLIToLocalBin() {
+    func installCLIToLocalBin(announce: Bool = true) {
         let bin = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
             ".local/bin",
             isDirectory: true
@@ -106,7 +106,9 @@ extension AppModel {
                     model.prepareCLICommandAvailability(forceReset: true)
                     model.clearAssistantLiveVerification()
                     model.continueAssistantAccessVerification()
-                    model.statusMessage = "Terminal command installed"
+                    if announce {
+                        model.statusMessage = "Terminal command installed"
+                    }
                 }
             } catch CLIArtifactInstallationError.conflict(let conflict) {
                 await MainActor.run {
@@ -179,7 +181,7 @@ extension AppModel {
         }
     }
 
-    func refreshCLIInstallState() {
+    func refreshCLIInstallState(automaticallyUpgradeManaged: Bool = false) {
         guard !cliInstallState.isBusy else { return }
         let bin = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".local/bin", isDirectory: true)
@@ -215,6 +217,12 @@ extension AppModel {
                 }
                 model.prepareCLICommandAvailability()
                 model.continueAssistantAccessVerification()
+                if automaticallyUpgradeManaged,
+                    inspection.needsAutomaticUpgrade,
+                    artifacts != nil
+                {
+                    model.installCLIToLocalBin(announce: false)
+                }
             }
         }
     }
@@ -583,10 +591,10 @@ extension AppModel {
         }
         if automatic { lastAutomaticIntegrationRefreshAt = Date() }
         if !automatic { clearAssistantLiveVerification() }
-        refreshCLIInstallState()
+        refreshCLIInstallState(automaticallyUpgradeManaged: true)
         for target in AgentSkillTarget.allCases {
             assistantIntegrationActionNotices[target] = nil
-            startAgentSkillInspection(target, feedback: .silent)
+            startAgentSkillInspection(target, feedback: .automaticMaintenance)
         }
     }
 
@@ -649,8 +657,14 @@ extension AppModel {
         return bits.isEmpty ? "Detected" : bits.joined(separator: ", ")
     }
 
-    func installAgentSkill(_ target: AgentSkillTarget, reinstall: Bool = false) {
-        assistantIntegrationActionNotices[target] = nil
+    func installAgentSkill(
+        _ target: AgentSkillTarget,
+        reinstall: Bool = false,
+        announce: Bool = true
+    ) {
+        if announce {
+            assistantIntegrationActionNotices[target] = nil
+        }
         guard
             let token = beginAssistantIntegrationWork(
                 .installation,
@@ -665,14 +679,20 @@ extension AppModel {
                     reinstall: reinstall
                 )
                 guard !Task.isCancelled else { return }
-                self?.completeAgentSkillInstall(result, target: target, token: token)
+                self?.completeAgentSkillInstall(
+                    result,
+                    target: target,
+                    token: token,
+                    announce: announce
+                )
             } catch {
                 guard !Task.isCancelled else { return }
                 self?.completeAssistantIntegrationFailure(
                     error,
                     kind: .installation,
                     target: target,
-                    token: token
+                    token: token,
+                    announce: announce
                 )
             }
         }
@@ -742,6 +762,9 @@ extension AppModel {
         switch feedback {
         case .silent:
             break
+        case .automaticMaintenance:
+            guard snapshot.inspection?.needsAutomaticMaintenance == true else { return }
+            installAgentSkill(target, announce: false)
         case .availability:
             if let issue = snapshot.inspectionIssue {
                 publishAssistantIntegrationNotice(
@@ -779,17 +802,20 @@ extension AppModel {
     private func completeAgentSkillInstall(
         _ result: AgentSkillMutationResult,
         target: AgentSkillTarget,
-        token: UUID
+        token: UUID,
+        announce: Bool
     ) {
         guard finishAssistantIntegrationWork(.installation, target: target, token: token) else {
             return
         }
         agentSkillSnapshotStates[target] = .loaded(result.snapshot)
-        publishAssistantIntegrationNotice(
-            result.change.changed ? .installed(target) : .verified(target),
-            for: target
-        )
-        statusMessage = "\(target.label) integration files installed"
+        if announce {
+            publishAssistantIntegrationNotice(
+                result.change.changed ? .installed(target) : .verified(target),
+                for: target
+            )
+            statusMessage = "\(target.label) integration files installed"
+        }
     }
 
     private func completeAgentSkillRemoval(
@@ -811,13 +837,16 @@ extension AppModel {
         _ error: Error,
         kind: AssistantIntegrationWorkKind,
         target: AgentSkillTarget,
-        token: UUID
+        token: UUID,
+        announce: Bool = true
     ) {
         guard finishAssistantIntegrationWork(kind, target: target, token: token) else { return }
-        publishAssistantIntegrationNotice(
-            .failed(assistantIntegrationActionFailure(error)),
-            for: target
-        )
+        if announce {
+            publishAssistantIntegrationNotice(
+                .failed(assistantIntegrationActionFailure(error)),
+                for: target
+            )
+        }
         let operation = kind == .removal ? "removal" : "install"
         writeBootstrapLog(
             "assistant integration \(operation) failed target=\(target.rawValue): \(error)"
@@ -900,6 +929,7 @@ extension AppModel {
 
 private enum AgentSkillInspectionFeedback: Sendable {
     case silent
+    case automaticMaintenance
     case availability
     case inspectionStatus
 }
