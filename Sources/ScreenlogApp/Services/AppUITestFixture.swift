@@ -487,7 +487,7 @@ import ScreenlogCore
                             // a day. Treat it as one synthetic run without
                             // weakening production's 60-second compaction gap.
                             compactor.maxGapMs = .max
-                            guard try compactor.compactIfNeeded(store: store) > 0 else {
+                            guard try await compactor.compact(store: store) > 0 else {
                                 throw FixtureError.compactionFailed
                             }
                         }

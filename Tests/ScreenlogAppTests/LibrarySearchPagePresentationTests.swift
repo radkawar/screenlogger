@@ -125,4 +125,28 @@ final class LibrarySearchPagePresentationTests: XCTestCase {
             "80+ results"
         )
     }
+
+    func testLoadMoreRequiresAnActualNextPageCursor() {
+        XCTAssertFalse(
+            LibrarySearchPagePresentation(
+                visibleCount: 80,
+                isTruncated: true,
+                hasNextPage: false
+            ).canLoadMore
+        )
+        XCTAssertTrue(
+            LibrarySearchPagePresentation(
+                visibleCount: 80,
+                isTruncated: true,
+                hasNextPage: true
+            ).canLoadMore
+        )
+        XCTAssertFalse(
+            LibrarySearchPagePresentation(
+                visibleCount: LibrarySearchPagePresentation.maximumVisibleResults,
+                isTruncated: true,
+                hasNextPage: true
+            ).canLoadMore
+        )
+    }
 }

@@ -131,6 +131,17 @@ final class CaptureStatusPresentationTests: XCTestCase {
                 symbol: "record.circle.fill"
             ),
             TestCase(
+                name: "capture on with reduced energy use",
+                input: input(isRecording: true, energySaverReason: .battery),
+                phase: .energySaving(.battery),
+                scope: .capture,
+                label: "Battery Saver",
+                tone: .neutral,
+                action: nil,
+                destination: .capture,
+                symbol: "battery.50percent"
+            ),
+            TestCase(
                 name: "capture off",
                 input: input(),
                 phase: .off,
@@ -208,6 +219,17 @@ final class CaptureStatusPresentationTests: XCTestCase {
                 pauseReason: .lowDiskSpace
             ))
         XCTAssertEqual(expiredPauseDoesNotWin.phase, .lowDiskSpace)
+
+        let permissionStillWinsOverEnergySaving = resolve(
+            input(
+                screenRecordingAllowed: false,
+                isRecording: true,
+                energySaverReason: .battery
+            ))
+        XCTAssertEqual(
+            permissionStillWinsOverEnergySaving.phase,
+            .setupRequired(resumeAt: nil)
+        )
     }
 
     func testAccessibilityOnlyRecoveryNamesAndRoutesTheMissingPermission() {
@@ -265,6 +287,13 @@ final class CaptureStatusPresentationTests: XCTestCase {
                 canCaptureOnce: true
             )
         )
+
+        let energySaving = resolve(
+            input(isRecording: true, energySaverReason: .lowPowerMode)
+        )
+        XCTAssertTrue(energySaving.controls.canStop)
+        XCTAssertTrue(energySaving.controls.canSchedulePause)
+        XCTAssertTrue(energySaving.controls.canCaptureOnce)
 
         let privacyPause = resolve(input(isRecording: true, pauseReason: .privateBrowsing))
         XCTAssertTrue(privacyPause.controls.canStop)
@@ -392,6 +421,16 @@ final class CaptureStatusPresentationTests: XCTestCase {
                 )
             ),
             TestCase(
+                name: "energy saving capture",
+                status: resolve(input(isRecording: true, energySaverReason: .battery)),
+                expected: toolbar(
+                    "Stop Capture",
+                    "stop.fill",
+                    .stopCapture,
+                    "Stop automatic capture."
+                )
+            ),
+            TestCase(
                 name: "running low disk state preserves stop",
                 status: resolve(input(isRecording: true, pauseReason: .lowDiskSpace)),
                 expected: toolbar(
@@ -433,6 +472,7 @@ final class CaptureStatusPresentationTests: XCTestCase {
         isRecording: Bool = false,
         timedPauseUntil: Date? = nil,
         pauseReason: CapturePauseReason? = nil,
+        energySaverReason: CaptureEnergySaverReason? = nil,
         pausedForDisk: Bool = false,
         captureIssue: CaptureIssue? = nil
     ) -> CaptureStatusInput {
@@ -445,6 +485,7 @@ final class CaptureStatusPresentationTests: XCTestCase {
             isRecording: isRecording,
             timedPauseUntil: timedPauseUntil,
             pauseReason: pauseReason,
+            energySaverReason: energySaverReason,
             pausedForDisk: pausedForDisk,
             captureIssue: captureIssue
         )

@@ -1,5 +1,68 @@
+import Compression
 import Foundation
 import SQLite3
+
+enum AXPayloadCodec {
+    private static let magic = Data([0x53, 0x4C, 0x41, 0x58, 0x01])
+    private static let maximumDecodedBytes = 32 * 1024 * 1024
+
+    static func encode(_ data: Data) -> Data {
+        // Raw legacy payloads remain readable, while compressed payloads must
+        // never advertise a size that this same codec refuses to decode.
+        guard !data.isEmpty, data.count <= maximumDecodedBytes else { return data }
+        var compressed = Data(count: data.count)
+        let encodedCount = compressed.withUnsafeMutableBytes { outputBytes in
+            data.withUnsafeBytes { inputBytes in
+                compression_encode_buffer(
+                    outputBytes.bindMemory(to: UInt8.self).baseAddress!,
+                    outputBytes.count,
+                    inputBytes.bindMemory(to: UInt8.self).baseAddress!,
+                    inputBytes.count,
+                    nil,
+                    COMPRESSION_LZFSE
+                )
+            }
+        }
+        let headerSize = magic.count + MemoryLayout<UInt64>.size
+        guard encodedCount > 0, headerSize + encodedCount < data.count else { return data }
+        compressed.count = encodedCount
+
+        var output = magic
+        var decodedSize = UInt64(data.count).littleEndian
+        withUnsafeBytes(of: &decodedSize) { output.append(contentsOf: $0) }
+        output.append(compressed)
+        return output
+    }
+
+    static func decode(_ data: Data) -> Data? {
+        guard data.starts(with: magic) else { return data }
+        let sizeStart = magic.count
+        let payloadStart = sizeStart + MemoryLayout<UInt64>.size
+        guard data.count > payloadStart else { return nil }
+
+        var decodedSize: UInt64 = 0
+        for (offset, byte) in data[sizeStart..<payloadStart].enumerated() {
+            decodedSize |= UInt64(byte) << UInt64(offset * 8)
+        }
+        guard decodedSize > 0, decodedSize <= UInt64(maximumDecodedBytes) else { return nil }
+
+        let payload = data[payloadStart...]
+        var output = Data(count: Int(decodedSize))
+        let decodedCount = output.withUnsafeMutableBytes { outputBytes in
+            payload.withUnsafeBytes { inputBytes in
+                compression_decode_buffer(
+                    outputBytes.bindMemory(to: UInt8.self).baseAddress!,
+                    outputBytes.count,
+                    inputBytes.bindMemory(to: UInt8.self).baseAddress!,
+                    inputBytes.count,
+                    nil,
+                    COMPRESSION_LZFSE
+                )
+            }
+        }
+        return decodedCount == output.count ? output : nil
+    }
+}
 
 extension Store {
     // MARK: - Metadata
@@ -37,8 +100,9 @@ extension Store {
     public func storeAXSnapshot(frameID: Int64, snapshot: AXTreeSnapshot) throws {
         try withSerializedMutation {
             try db.transaction {
-                let payload = Data(snapshot.xml.utf8)
-                let hash = ContentHash.sha256(payload)
+                let rawPayload = Data(snapshot.xml.utf8)
+                let hash = ContentHash.sha256(rawPayload)
+                let payload = AXPayloadCodec.encode(rawPayload)
 
                 let node = try db.prepare(
                     """
@@ -133,10 +197,12 @@ extension Store {
             guard sqlite3_step(leg) == SQLITE_ROW, let data = SQLiteColumn.data(leg, 0) else {
                 return nil
             }
-            return String(data: data, encoding: .utf8)
+            guard let decoded = AXPayloadCodec.decode(data) else { return nil }
+            return String(data: decoded, encoding: .utf8)
         }
         guard let data = SQLiteColumn.data(stmt, 0) else { return nil }
-        return String(data: data, encoding: .utf8)
+        guard let decoded = AXPayloadCodec.decode(data) else { return nil }
+        return String(data: decoded, encoding: .utf8)
     }
 
     // MARK: - Aux: once_tasks / app_version / timezone

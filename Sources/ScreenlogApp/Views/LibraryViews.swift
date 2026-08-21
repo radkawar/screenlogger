@@ -27,6 +27,15 @@ struct SearchPane: View {
                         selection: $model.libraryWorkspaceNavigation.contentMode
                     )
 
+                    if let issue = libraryDeletionIssue {
+                        TimelineDeletionIssueBannerView(
+                            issue: issue,
+                            onRetry: { Task { await model.retryLibraryDeletionIssue() } },
+                            onDismiss: { model.dismissLibraryDeletionIssue() }
+                        )
+                        .frame(maxWidth: 620)
+                    }
+
                     if model.libraryWorkspaceNavigation.contentMode == .sessions {
                         LibrarySessionsView()
                     } else {
@@ -50,8 +59,11 @@ struct SearchPane: View {
             compactPreviewPopoverActive =
                 model.libraryWorkspaceNavigation.compactPreviewPresented
         }
-        .onChange(of: model.filteredSearchResults.map(\.frameID)) { _, frameIDs in
-            reconcileSelection(with: frameIDs)
+        // Mapping in the value position built a fresh identifier array on every
+        // body pass. The result list is already Equatable and compares its
+        // storage first, so the identifiers are derived only when it changes.
+        .onChange(of: model.filteredSearchResults) { _, results in
+            reconcileSelection(with: results.map(\.frameID))
         }
         .onChange(of: focusRequest) { _, _ in
             model.libraryWorkspaceNavigation.contentMode = .search
@@ -76,6 +88,20 @@ struct SearchPane: View {
             } else {
                 dismissTransientOverlays()
             }
+        }
+        .sheet(
+            item: libraryDeletionReview,
+            onDismiss: {
+                model.cancelLibraryDeletionReview()
+            }
+        ) { review in
+            LibraryDeletionReviewSheet(
+                review: review,
+                isDeleting: model.libraryDeletionInProgress,
+                issue: reviewDeletionIssue,
+                onDelete: { Task { await model.confirmLibraryDeletion() } },
+                onCancel: { model.cancelLibraryDeletionReview() }
+            )
         }
     }
 
@@ -199,6 +225,34 @@ struct SearchPane: View {
 
     private func showsInspector(totalWidth: CGFloat) -> Bool {
         !dynamicTypeSize.isAccessibilitySize && totalWidth >= 1_020
+    }
+
+    /// Deletion raised from a result reports here, not on the Timeline the user
+    /// never opened. Confirmation failures stay inside the open review sheet.
+    private var libraryDeletionIssue: LibraryDeletionIssue? {
+        guard let issue = model.libraryDeletionIssue, issue.origin == .library else { return nil }
+        if case .deletionFailed = issue { return nil }
+        return issue
+    }
+
+    private var reviewDeletionIssue: LibraryDeletionIssue? {
+        guard let issue = model.libraryDeletionIssue,
+            issue.origin == .library,
+            case .deletionFailed = issue
+        else { return nil }
+        return issue
+    }
+
+    private var libraryDeletionReview: Binding<LibraryDeletionReview?> {
+        Binding(
+            get: {
+                guard model.libraryDeletionReview?.origin == .library else { return nil }
+                return model.libraryDeletionReview
+            },
+            set: { review in
+                if review == nil { model.cancelLibraryDeletionReview() }
+            }
+        )
     }
 
     private func usesCompactFilters(totalWidth: CGFloat) -> Bool {
@@ -461,7 +515,17 @@ struct SearchPane: View {
                                     model.libraryWorkspaceNavigation.selectResult(result.frameID)
                                     resultsFocused = true
                                 },
-                                onOpen: { openResult(result) }
+                                onOpen: { openResult(result) },
+                                onDelete: {
+                                    Task {
+                                        await model.prepareLibraryDeletion(
+                                            .moment(frameID: result.frameID),
+                                            origin: .library,
+                                            title: "Delete This Moment?",
+                                            detail: result.libraryDeletionDetail
+                                        )
+                                    }
+                                }
                             )
                             .id(result.frameID)
                         }

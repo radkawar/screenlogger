@@ -9,10 +9,9 @@ struct HistoryPane: View {
     @State var showDayPicker = false
     @State var dayPickerSelection = Date()
     @State var timelineScaleStep = 0
-    @State var timelineScrubWindow: TimelineRibbonMapping.Window?
-    @State var hoveredTimelineFrameID: Int64?
     @State var stagePanOffset = CGSize.zero
     @State var stagePanGestureStart: CGSize?
+    @State var ocrHighlightMatches = TimelineOCRHighlightMatches()
 
     var body: some View {
         Group {
@@ -243,7 +242,7 @@ struct HistoryPane: View {
     }
 
     private func openLibraryFromFailure() {
-        if model.timelineNavigationOrigin == .libraryResult {
+        if model.timelineNavigationOrigin.returnsToLibrary {
             model.returnToLibrary()
         } else {
             model.openSearchWindow()

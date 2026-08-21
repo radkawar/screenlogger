@@ -145,6 +145,13 @@ struct LibrarySearchPagePresentation: Equatable, Sendable {
 
     let visibleCount: Int
     let isTruncated: Bool
+    let hasNextPage: Bool
+
+    init(visibleCount: Int, isTruncated: Bool, hasNextPage: Bool = false) {
+        self.visibleCount = visibleCount
+        self.isTruncated = isTruncated
+        self.hasNextPage = hasNextPage
+    }
 
     var countLabel: String {
         let suffix = isTruncated ? "+" : ""
@@ -153,7 +160,7 @@ struct LibrarySearchPagePresentation: Equatable, Sendable {
     }
 
     var canLoadMore: Bool {
-        isTruncated && visibleCount < Self.maximumVisibleResults
+        isTruncated && hasNextPage && visibleCount < Self.maximumVisibleResults
     }
 
 }

@@ -65,7 +65,7 @@ enum ScreenlogPerformanceMain {
 }
 
 private struct Configuration {
-    var frameCount = 5_000
+    var frameCount = 50_000
     var iterations = 25
     var outputPath = "build/performance/latest.json"
 
@@ -87,7 +87,7 @@ private struct Configuration {
                 }
                 outputPath = arguments[index]
             case "--help", "-h":
-                print("Usage: swift run -c release screenlog-performance [--frames 5000] [--iterations 25] [--output path]")
+                print("Usage: swift run -c release screenlog-performance [--frames 50000] [--iterations 25] [--output path]")
                 Foundation.exit(0)
             default:
                 throw BenchmarkError.invalidArgument("unknown argument: \(argument)")

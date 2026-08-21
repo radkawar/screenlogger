@@ -93,7 +93,10 @@ public final class Store: @unchecked Sendable {
                         return
                     }
                     do {
-                        continuation.resume(returning: try body(self))
+                        // WAL only keeps readers off the writer's back when
+                        // they run on their own connection. Mutations nested in
+                        // `body` still pin themselves to the writer.
+                        continuation.resume(returning: try self.db.withReadConnection { try body(self) })
                     } catch {
                         continuation.resume(throwing: error)
                     }
@@ -116,6 +119,34 @@ public final class Store: @unchecked Sendable {
     /// same executor as live capture writes; it is not a separate lock domain.
     public func withExclusiveMaintenance<T>(_ body: () throws -> T) rethrows -> T {
         try withSerializedMutation(body)
+    }
+
+    /// Run a read on a connection separate from the writer's, without leaving
+    /// the caller's thread. Use this for a synchronous read that must not queue
+    /// behind capture; `readAsync` already applies it.
+    public func withReadConnection<T>(_ body: () throws -> T) throws -> T {
+        try db.withReadConnection(body)
+    }
+
+    // MARK: - Storage reclamation
+
+    /// Give pages freed by retention or reviewed deletion back to the
+    /// filesystem. Bounded so it can share the executor that runs capture.
+    @discardableResult
+    public func reclaimFreeDatabasePages(maxPages: Int = 2_000) throws -> SQLiteFreeSpaceReclaim {
+        try withExclusiveMaintenance {
+            try db.reclaimFreePages(maxPages: maxPages)
+        }
+    }
+
+    /// User-initiated full rebuild of the database file. This is the only way
+    /// to shrink a library created before incremental auto-vacuum, and it
+    /// refuses to start unless the volume has room for a temporary copy.
+    @discardableResult
+    public func compactDatabaseFile() throws -> SQLiteCompactionReport {
+        try withExclusiveMaintenance {
+            try db.compactDatabaseFile()
+        }
     }
 
     /// Convenience for production location (or SCREENLOG_DATA_DIR).

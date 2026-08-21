@@ -149,6 +149,118 @@ final class DifferentialOCRTests: XCTestCase {
         XCTAssertEqual(recorder.callCount, 2)
     }
 
+    /// Regression: `CapturePipeline` is an actor, but actor isolation is not
+    /// mutual exclusion across suspension points. A manual "Capture Now" could
+    /// enter the pipeline while the recording loop was awaiting Vision or HEIC
+    /// encoding, and the two cycles then raced the shared differential OCR
+    /// state and the per-display last-stored still. `CaptureCycleGate` is what
+    /// keeps a cycle whole; it must admit exactly one holder at a time.
+    func testCaptureCycleGateSerializesOverlappingCaptureCycles() async throws {
+        let gate = CaptureCycleGate()
+        let observer = ConcurrencyObserver()
+
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<8 {
+                group.addTask {
+                    try? await gate.acquire()
+                    observer.enter()
+                    // Suspend inside the critical section: this is the window
+                    // that reentrancy used to open.
+                    await Task.yield()
+                    try? await Task.sleep(nanoseconds: 1_000_000)
+                    observer.leave()
+                    gate.release()
+                }
+            }
+        }
+
+        XCTAssertEqual(observer.peak, 1)
+        XCTAssertEqual(observer.completed, 8)
+    }
+
+    /// A failed cycle must not strand the gate: the loop would stop capturing.
+    func testCaptureCycleGateIsReleasedAfterAFailedCycle() async throws {
+        let gate = CaptureCycleGate()
+
+        func failingCycle() async throws {
+            try await gate.acquire()
+            defer { gate.release() }
+            throw CaptureError.noDisplay
+        }
+
+        do {
+            try await failingCycle()
+            XCTFail("expected the cycle to fail")
+        } catch {
+            // Expected.
+        }
+
+        let reacquired = Task {
+            try await gate.acquire()
+            gate.release()
+            return true
+        }
+        let value = try await reacquired.value
+        XCTAssertTrue(value)
+    }
+
+    func testCancelledCaptureCycleWaiterDoesNotEnterAndDoesNotStrandGate() async throws {
+        let gate = CaptureCycleGate()
+        try await gate.acquire()
+
+        let waiter = Task {
+            try await gate.acquire()
+            gate.release()
+            return true
+        }
+        await Task.yield()
+        waiter.cancel()
+        gate.release()
+
+        do {
+            _ = try await waiter.value
+            XCTFail("a canceled waiter must not enter a capture cycle")
+        } catch is CancellationError {
+            // Expected.
+        }
+
+        try await gate.acquire()
+        gate.release()
+    }
+
+    private final class ConcurrencyObserver: @unchecked Sendable {
+        private let lock = NSLock()
+        private var active = 0
+        private var maximum = 0
+        private var finished = 0
+
+        func enter() {
+            lock.lock()
+            active += 1
+            maximum = max(maximum, active)
+            lock.unlock()
+        }
+
+        func leave() {
+            lock.lock()
+            active -= 1
+            finished += 1
+            lock.unlock()
+        }
+
+        var peak: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return maximum
+        }
+
+        var completed: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return finished
+        }
+    }
+
     private func solidImage(width: Int, height: Int) throws -> CGImage {
         let context = try XCTUnwrap(
             CGContext(

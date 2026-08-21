@@ -134,7 +134,7 @@ extension ScreenlogCLIMain {
     static func parseActivityBound(_ raw: String, now: Date = Date()) throws -> Int64 {
         let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if value == "now" {
-            return Int64(now.timeIntervalSince1970 * 1000)
+            return try checkedEpochMilliseconds(now.timeIntervalSince1970 * 1000)
         }
         if let unit = value.last, ["d", "h", "m", "w"].contains(unit),
             let amount = Double(value.dropLast()), amount.isFinite, amount >= 0
@@ -148,15 +148,45 @@ extension ScreenlogCLIMain {
                 default: 1
                 }
             let milliseconds = (now.timeIntervalSince1970 - amount * secondsPerUnit) * 1000
-            guard milliseconds.isFinite,
-                milliseconds >= Double(Int64.min),
-                milliseconds <= Double(Int64.max)
-            else {
-                throw CLIError.message("activity bound is outside the supported date range")
-            }
-            return Int64(milliseconds)
+            return try checkedEpochMilliseconds(milliseconds)
         }
         return try parseTimestampMs(raw)
+    }
+
+    /// Apply timestamp-only sample pagination without overflowing at the integer boundary.
+    static func sampleActivityBounds(
+        _ args: [String],
+        order: ActivitySortOrder
+    ) throws -> ActivityBounds {
+        var bounds = try activityBounds(args)
+        guard let rawCursor = try stringFlag(args, name: "--cursor") else { return bounds }
+        let cursor = try parseTimestampMs(rawCursor)
+        switch order {
+        case .oldest:
+            guard cursor < Int64.max else {
+                throw CLIError.message("--cursor is outside the supported range")
+            }
+            bounds.sinceMs = max(bounds.sinceMs ?? .min, cursor + 1)
+        case .newest:
+            bounds.beforeMs = min(bounds.beforeMs ?? .max, cursor)
+        }
+        if let since = bounds.sinceMs, let before = bounds.beforeMs, since >= before {
+            throw CLIError.message("sample cursor falls outside the requested date range")
+        }
+        return bounds
+    }
+
+    private static func checkedEpochMilliseconds(_ value: Double) throws -> Int64 {
+        // Int64.max rounds up when represented as Double, so the upper bound must be exclusive.
+        let exclusiveUpperBound = 9_223_372_036_854_775_808.0
+        let inclusiveLowerBound = -9_223_372_036_854_775_808.0
+        guard value.isFinite,
+            value >= inclusiveLowerBound,
+            value < exclusiveUpperBound
+        else {
+            throw CLIError.message("activity bound is outside the supported date range")
+        }
+        return Int64(value)
     }
 
     static func commaSeparatedIDs(_ raw: String, maximumCount: Int = 100) throws -> [Int64] {

@@ -33,10 +33,27 @@ public enum SystemPowerSource {
 }
 
 public enum MaintenancePowerPolicy {
+    /// Automatic compression and retention are the heaviest recurring work in
+    /// the app. Thermal pressure and Low Power Mode defer them regardless of
+    /// the battery preference: both mean the system has already asked every
+    /// process to do less, and neither pass is time critical. User-initiated
+    /// maintenance is unaffected and always runs immediately.
+    public static func shouldDeferAutomaticWork(
+        conditions: CapturePowerConditions,
+        deferOnBattery: Bool
+    ) -> Bool {
+        if conditions.isThermallyPressured { return true }
+        if conditions.lowPowerModeEnabled { return true }
+        return deferOnBattery && conditions.powerSource == .battery
+    }
+
     public static func shouldDeferAutomaticWork(
         powerSource: SystemPowerSourceState,
         deferOnBattery: Bool
     ) -> Bool {
-        deferOnBattery && powerSource == .battery
+        shouldDeferAutomaticWork(
+            conditions: CapturePowerConditions(powerSource: powerSource),
+            deferOnBattery: deferOnBattery
+        )
     }
 }

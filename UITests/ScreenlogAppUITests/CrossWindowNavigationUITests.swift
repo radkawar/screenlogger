@@ -115,6 +115,30 @@ final class CrossWindowNavigationUITests: XCTestCase {
         assertElement("library.sessions", in: app)
     }
 
+    func testLibraryResultDeletionOpensReviewOnTheLibraryWindow() throws {
+        let app = try launch(route: "--open-library")
+        let search = assertElement("library.search.field", in: app)
+        search.click()
+        search.typeText("navigation")
+        search.typeKey(.return, modifierFlags: [])
+        let result = assertElement("library.result.6", in: app)
+
+        result.rightClick()
+        assertElement("library.result.context.delete", in: app).click()
+
+        let review = app.sheets.firstMatch
+        XCTAssertTrue(
+            review.waitForExistence(timeout: Self.timeout),
+            "Deleting a Library result should present its review on the Library window."
+        )
+        assertElement("library.deletion.review.irreversible-warning", in: app)
+        let cancel = assertElement("library.deletion.review.cancel", in: app)
+        assertElement("library.deletion.review.confirm", in: app)
+        cancel.click()
+        waitForDisappearance(review, description: "Library deletion review")
+        assertWindow("Library", in: app)
+    }
+
     func testStructuredSearchShowsAnOperatorOnceAndKeepsTermsEditable() throws {
         let app = try launch(route: "--open-library")
         let search = assertElement("library.search.field", in: app)

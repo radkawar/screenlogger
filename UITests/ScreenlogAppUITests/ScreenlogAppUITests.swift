@@ -1768,16 +1768,16 @@ final class ScreenlogAppUITests: XCTestCase {
         search.typeText("navigation")
         search.typeKey(.return, modifierFlags: [])
 
-        let firstResult = assertElement(identifier: "library.result.5", in: app)
-        assertElement(identifier: "library.result.6", in: app)
-        assertElement(identifier: "library.result.inspector.selection.6", in: app)
-
-        firstResult.click()
-
-        assertWindow("Library", in: app)
+        assertElement(identifier: "library.result.5", in: app)
+        let secondResult = assertElement(identifier: "library.result.6", in: app)
         assertElement(identifier: "library.result.inspector.selection.5", in: app)
 
-        firstResult.doubleClick()
+        secondResult.click()
+
+        assertWindow("Library", in: app)
+        assertElement(identifier: "library.result.inspector.selection.6", in: app)
+
+        secondResult.doubleClick()
 
         assertWindow("Timeline", in: app)
         assertElement(identifier: "timeline.location", in: app)

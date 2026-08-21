@@ -81,9 +81,14 @@ struct LibrarySessionsView: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("library.sessions")
         .task {
-            isRefreshing = true
-            await model.loadSessions()
-            isRefreshing = false
+            // MainShell loads sessions when it opens. Re-entering this mode
+            // should reuse that snapshot instead of rescanning the complete
+            // Library every time SwiftUI remounts the view.
+            if model.sessions.isEmpty {
+                isRefreshing = true
+                await model.loadSessions()
+                isRefreshing = false
+            }
             if model.libraryWorkspaceNavigation.selectedSessionStartMs == nil {
                 model.libraryWorkspaceNavigation.selectedSessionStartMs =
                     model.selectedSession?.startMs ?? model.sessions.first?.startMs

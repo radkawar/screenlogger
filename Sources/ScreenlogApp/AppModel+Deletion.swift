@@ -82,7 +82,7 @@ extension AppModel {
             refreshLibrarySize()
 
             let momentLabel = report.deletedMomentCount == 1 ? "moment" : "moments"
-            if review.origin == .timeline {
+            if review.origin.feedbackSurface == .notice {
                 publishTimelineNotice(
                     .momentsDeleted(
                         count: report.deletedMomentCount,

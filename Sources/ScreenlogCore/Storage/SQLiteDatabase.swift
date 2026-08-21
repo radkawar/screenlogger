@@ -36,6 +36,57 @@ public struct SQLiteReadOnlyValidation: Equatable, Sendable {
     }
 }
 
+/// How SQLite returns pages that deletion freed. Libraries created before
+/// Screenlogger enabled incremental auto-vacuum report `.none` and can only be
+/// shrunk by `compactDatabaseFile()`.
+public enum SQLiteAutoVacuumMode: Int, Sendable {
+    case none = 0
+    case full = 1
+    case incremental = 2
+}
+
+public struct SQLiteFreeSpaceReclaim: Equatable, Sendable {
+    /// Bytes handed back to the filesystem by this bounded pass.
+    public let reclaimedBytes: Int64
+    /// Bytes still parked on the free list after the pass.
+    public let remainingFreeBytes: Int64
+    /// False when the library predates incremental auto-vacuum, so a bounded
+    /// pass can never reclaim anything until the file is rebuilt.
+    public let isIncrementalVacuumAvailable: Bool
+}
+
+public struct SQLiteCompactionReport: Equatable, Sendable {
+    public let bytesBefore: Int64
+    public let bytesAfter: Int64
+
+    public var reclaimedBytes: Int64 { max(0, bytesBefore - bytesAfter) }
+}
+
+public enum SQLiteMaintenanceError: Error, CustomStringConvertible, Sendable {
+    case insufficientFreeSpace(requiredBytes: Int64, availableBytes: Int64)
+    case freeSpaceUnavailable(String)
+
+    public var description: String {
+        switch self {
+        case .insufficientFreeSpace(let required, let available):
+            return "Compacting needs \(required) free bytes; only \(available) are available"
+        case .freeSpaceUnavailable(let detail):
+            return "Could not measure free disk space before compacting: \(detail)"
+        }
+    }
+}
+
+/// Connection the running thread must use. A `nil` handle pins the thread to
+/// the writer, which is how a mutation keeps reading its own uncommitted rows
+/// even when it is nested inside a read scope.
+private final class SQLiteConnectionScope {
+    let handle: OpaquePointer?
+
+    init(handle: OpaquePointer?) {
+        self.handle = handle
+    }
+}
+
 /// Thin SQLite3 wrapper used by Screenlogger (no GRDB dependency).
 public final class SQLiteDatabase: @unchecked Sendable {
     public private(set) var db: OpaquePointer?
@@ -43,9 +94,26 @@ public final class SQLiteDatabase: @unchecked Sendable {
     /// Recursive because transactions call `exec`, and Store mutation helpers
     /// may compose inside maintenance transactions.
     private let mutationExecutor = NSRecursiveLock()
+    /// WAL lets readers run while the writer commits, but only across separate
+    /// connections. These are handed out for the duration of a read scope.
+    private let readConnections = NSCondition()
+    private var idleReadConnections: [OpaquePointer] = []
+    private var openReadConnectionCount = 0
+    private var readConnectionsClosed = false
+    private let allowsSeparateReadConnections: Bool
+    /// Store's read executor is serial, so one connection covers the UI path.
+    /// The spare absorbs a read issued from another executor without letting a
+    /// stall fan out into unbounded connections, each of which carries its own
+    /// page cache.
+    private static let maximumReadConnections = 2
+    /// Thread-local connection scopes belong to one database instance. A
+    /// process can briefly own two stores during import, restore, or tests; a
+    /// shared key would let a nested read use the other store's handle.
+    private let connectionScopeKey = "dev.screenlog.sqlite.connection-scope.\(UUID().uuidString)"
 
     public init(path: String) throws {
         self.path = path
+        self.allowsSeparateReadConnections = Self.pathSupportsSeparateConnections(path)
         var handle: OpaquePointer?
         let flags = SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
         if sqlite3_open_v2(path, &handle, flags, nil) != SQLITE_OK {
@@ -54,6 +122,12 @@ public final class SQLiteDatabase: @unchecked Sendable {
             throw SQLiteError.open("Failed to open \(path): \(msg)")
         }
         db = handle
+        // Must precede the first table: SQLite only records auto-vacuum in the
+        // header of an empty database, and converting an existing library needs
+        // a full VACUUM. New libraries therefore start able to return deleted
+        // pages to the filesystem in bounded chunks; on an existing library the
+        // pragma is a documented no-op.
+        try exec("PRAGMA auto_vacuum = INCREMENTAL;")
         try exec("PRAGMA journal_mode = WAL;")
         try exec("PRAGMA synchronous = NORMAL;")
         try exec("PRAGMA busy_timeout = 5000;")
@@ -66,6 +140,9 @@ public final class SQLiteDatabase: @unchecked Sendable {
     }
 
     deinit {
+        for handle in idleReadConnections {
+            sqlite3_close(handle)
+        }
         if let db {
             sqlite3_close(db)
         }
@@ -76,6 +153,7 @@ public final class SQLiteDatabase: @unchecked Sendable {
     /// statement or use this connection.
     public func close() throws {
         try withExclusiveMutation {
+            try closeReadConnections()
             guard let handle = db else { return }
             let result = sqlite3_close(handle)
             guard result == SQLITE_OK else {
@@ -89,8 +167,48 @@ public final class SQLiteDatabase: @unchecked Sendable {
     /// using this database connection.
     public func withExclusiveMutation<T>(_ body: () throws -> T) rethrows -> T {
         mutationExecutor.lock()
-        defer { mutationExecutor.unlock() }
+        // A mutation nested inside a read scope must keep reading its own
+        // uncommitted rows, so pin this thread to the writer for the duration
+        // and restore its read scope afterwards. A thread without a scope is
+        // already on the writer, and capture takes this path for every
+        // statement, so it is left untouched.
+        let scopes = Thread.current.threadDictionary
+        let enclosing = scopes[connectionScopeKey]
+        if enclosing != nil {
+            scopes[connectionScopeKey] = SQLiteConnectionScope(handle: nil)
+        }
+        defer {
+            if let enclosing {
+                scopes[connectionScopeKey] = enclosing
+            }
+            mutationExecutor.unlock()
+        }
         return try body()
+    }
+
+    /// Run reads on a connection of their own so a long search never queues
+    /// behind capture's writes. Statements prepared inside `body` must not
+    /// outlive it, and a transaction must never span the scope boundary.
+    public func withReadConnection<T>(_ body: () throws -> T) throws -> T {
+        let scopes = Thread.current.threadDictionary
+        // Already bound: a nested read reuses the enclosing connection, and a
+        // read inside a mutation stays on the writer.
+        guard scopes[connectionScopeKey] == nil else { return try body() }
+        guard let handle = checkOutReadConnection() else { return try body() }
+        scopes[connectionScopeKey] = SQLiteConnectionScope(handle: handle)
+        defer {
+            scopes.removeObject(forKey: connectionScopeKey)
+            checkInReadConnection(handle)
+        }
+        return try body()
+    }
+
+    /// The handle the running thread must use: its read connection when it is
+    /// inside a read scope, otherwise the single writer.
+    private var activeHandle: OpaquePointer? {
+        guard let scope = Thread.current.threadDictionary[connectionScopeKey] as? SQLiteConnectionScope
+        else { return db }
+        return scope.handle ?? db
     }
 
     public func exec(_ sql: String) throws {
@@ -106,9 +224,10 @@ public final class SQLiteDatabase: @unchecked Sendable {
     }
 
     public func prepare(_ sql: String) throws -> OpaquePointer {
+        let handle = activeHandle
         var stmt: OpaquePointer?
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) != SQLITE_OK {
-            throw SQLiteError.prepare(String(cString: sqlite3_errmsg(db)))
+        if sqlite3_prepare_v2(handle, sql, -1, &stmt, nil) != SQLITE_OK {
+            throw SQLiteError.prepare(String(cString: sqlite3_errmsg(handle)))
         }
         return stmt!
     }
@@ -133,6 +252,208 @@ public final class SQLiteDatabase: @unchecked Sendable {
                 throw error
             }
         }
+    }
+
+    // MARK: - Read connections
+
+    /// A `:memory:` (or unnamed temporary) database belongs to the connection
+    /// that opened it, so a second handle would open an empty database instead
+    /// of the one under test. Shared-cache memory URIs are excluded too rather
+    /// than depending on the caller's cache settings.
+    private static func pathSupportsSeparateConnections(_ path: String) -> Bool {
+        guard !path.isEmpty else { return false }
+        let lowered = path.lowercased()
+        return !lowered.contains(":memory:") && !lowered.contains("mode=memory")
+    }
+
+    /// Returns `nil` when reads must fall back to the writer connection.
+    private func checkOutReadConnection() -> OpaquePointer? {
+        guard allowsSeparateReadConnections else { return nil }
+        readConnections.lock()
+        defer { readConnections.unlock() }
+        while true {
+            guard !readConnectionsClosed, db != nil else { return nil }
+            if let handle = idleReadConnections.popLast() { return handle }
+            if openReadConnectionCount < Self.maximumReadConnections {
+                guard let handle = try? Self.openReadConnection(path: path) else {
+                    // Degrade to the writer rather than failing a user's read.
+                    return nil
+                }
+                openReadConnectionCount += 1
+                return handle
+            }
+            readConnections.wait()
+        }
+    }
+
+    private func checkInReadConnection(_ handle: OpaquePointer) {
+        readConnections.lock()
+        if readConnectionsClosed {
+            sqlite3_close(handle)
+            openReadConnectionCount -= 1
+        } else {
+            idleReadConnections.append(handle)
+        }
+        readConnections.signal()
+        readConnections.unlock()
+    }
+
+    private func closeReadConnections() throws {
+        readConnections.lock()
+        defer {
+            readConnections.broadcast()
+            readConnections.unlock()
+        }
+        readConnectionsClosed = true
+        guard openReadConnectionCount == idleReadConnections.count else {
+            throw SQLiteError.exec("Failed to close database: a read is still in progress")
+        }
+        for handle in idleReadConnections {
+            sqlite3_close(handle)
+        }
+        idleReadConnections.removeAll()
+        openReadConnectionCount = 0
+    }
+
+    private static func openReadConnection(path: String) throws -> OpaquePointer {
+        var handle: OpaquePointer?
+        // No SQLITE_OPEN_CREATE: a reader must never materialize a library.
+        // Read/write is still requested because a WAL reader has to be able to
+        // attach the shared-memory index; `query_only` supplies the actual
+        // single-writer guarantee.
+        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
+        guard sqlite3_open_v2(path, &handle, flags, nil) == SQLITE_OK, let opened = handle else {
+            let message = handle.flatMap { String(cString: sqlite3_errmsg($0)) } ?? "unknown"
+            if let handle { sqlite3_close(handle) }
+            throw SQLiteError.open("Failed to open read connection for \(path): \(message)")
+        }
+        do {
+            // Readers only ever wait on the brief exclusive locks a commit or a
+            // checkpoint takes, so a longer timeout than the writer's is cheap
+            // insurance against a spurious SQLITE_BUSY during a scan.
+            try execute("PRAGMA busy_timeout = 10000;", on: opened)
+            try execute("PRAGMA cache_size = -20000;", on: opened)
+            try execute("PRAGMA temp_store = MEMORY;", on: opened)
+            try execute("PRAGMA mmap_size = 268435456;", on: opened)
+            try execute("PRAGMA query_only = ON;", on: opened)
+        } catch {
+            sqlite3_close(opened)
+            throw error
+        }
+        return opened
+    }
+
+    private static func execute(_ sql: String, on handle: OpaquePointer) throws {
+        var err: UnsafeMutablePointer<CChar>?
+        let rc = sqlite3_exec(handle, sql, nil, nil, &err)
+        guard rc != SQLITE_OK else { return }
+        let message = err.map { String(cString: $0) } ?? "sqlite error \(rc)"
+        sqlite3_free(err)
+        throw SQLiteError.exec(message)
+    }
+
+    // MARK: - Free space
+
+    public func autoVacuumMode() throws -> SQLiteAutoVacuumMode {
+        try withExclusiveMutation {
+            SQLiteAutoVacuumMode(rawValue: Int(try integerScalar("PRAGMA auto_vacuum"))) ?? .none
+        }
+    }
+
+    /// Hand pages freed by retention or reviewed deletion back to the
+    /// filesystem, bounded so this can share the executor that runs capture.
+    ///
+    /// Libraries created before Screenlogger enabled incremental auto-vacuum
+    /// have no pointer map, so SQLite ignores `incremental_vacuum` on them.
+    /// That is reported rather than treated as an error; `compactDatabaseFile()`
+    /// is the deliberate, user-initiated way to convert one.
+    @discardableResult
+    public func reclaimFreePages(maxPages: Int = 2_000) throws -> SQLiteFreeSpaceReclaim {
+        try withExclusiveMutation {
+            let pageSize = try integerScalar("PRAGMA page_size")
+            let before = try integerScalar("PRAGMA freelist_count")
+            guard SQLiteAutoVacuumMode(rawValue: Int(try integerScalar("PRAGMA auto_vacuum"))) == .incremental
+            else {
+                return SQLiteFreeSpaceReclaim(
+                    reclaimedBytes: 0,
+                    remainingFreeBytes: before * pageSize,
+                    isIncrementalVacuumAvailable: false
+                )
+            }
+            try exec("PRAGMA incremental_vacuum(\(max(1, maxPages)));")
+            let after = try integerScalar("PRAGMA freelist_count")
+            if after < before {
+                // WAL records the shorter file in the log, so the bytes only
+                // leave the filesystem once a checkpoint copies them back.
+                // PASSIVE never waits on a live reader.
+                try exec("PRAGMA wal_checkpoint(PASSIVE);")
+            }
+            return SQLiteFreeSpaceReclaim(
+                reclaimedBytes: max(0, before - after) * pageSize,
+                remainingFreeBytes: after * pageSize,
+                isIncrementalVacuumAvailable: true
+            )
+        }
+    }
+
+    /// Rebuild the whole database file, which is the only way to shrink a
+    /// library created before incremental auto-vacuum and the only way to give
+    /// it a pointer map. Deliberately not on the capture path: VACUUM holds a
+    /// write lock for the length of a full-file rewrite and needs room for a
+    /// temporary copy, so it is offered as a user-initiated maintenance action
+    /// and refuses to start without the disk space it requires.
+    @discardableResult
+    public func compactDatabaseFile(freeSpaceMarginBytes: Int64 = 256 * 1024 * 1024) throws
+        -> SQLiteCompactionReport
+    {
+        try withExclusiveMutation {
+            let pageSize = try integerScalar("PRAGMA page_size")
+            let bytesBefore = try integerScalar("PRAGMA page_count") * pageSize
+            let available = try availableCapacityBytes()
+            let required = bytesBefore.addingReportingOverflow(max(0, freeSpaceMarginBytes))
+            let requiredBytes = required.overflow ? Int64.max : required.partialValue
+            guard available >= requiredBytes else {
+                throw SQLiteMaintenanceError.insufficientFreeSpace(
+                    requiredBytes: requiredBytes,
+                    availableBytes: available
+                )
+            }
+            // The pragma only reaches the header when VACUUM rewrites the file,
+            // which is exactly what makes this the conversion step for legacy
+            // libraries; afterwards retention can reclaim incrementally.
+            try exec("PRAGMA auto_vacuum = INCREMENTAL;")
+            try exec("VACUUM;")
+            try exec("PRAGMA wal_checkpoint(TRUNCATE);")
+            let pageSizeAfter = try integerScalar("PRAGMA page_size")
+            let bytesAfter = try integerScalar("PRAGMA page_count") * pageSizeAfter
+            return SQLiteCompactionReport(bytesBefore: bytesBefore, bytesAfter: bytesAfter)
+        }
+    }
+
+    private func availableCapacityBytes() throws -> Int64 {
+        let directory = URL(fileURLWithPath: path).deletingLastPathComponent()
+        do {
+            let values = try directory.resourceValues(
+                forKeys: [.volumeAvailableCapacityForImportantUsageKey]
+            )
+            guard let capacity = values.volumeAvailableCapacityForImportantUsage else {
+                throw SQLiteMaintenanceError.freeSpaceUnavailable("volume reported no capacity")
+            }
+            return capacity
+        } catch let error as SQLiteMaintenanceError {
+            throw error
+        } catch {
+            throw SQLiteMaintenanceError.freeSpaceUnavailable(String(describing: error))
+        }
+    }
+
+    private func integerScalar(_ sql: String) throws -> Int64 {
+        let stmt = try prepare(sql)
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_step(stmt) == SQLITE_ROW else {
+            throw SQLiteError.step("scalar query returned no row: \(sql)")
+        }
+        return SQLiteColumn.int64(stmt, 0)
     }
 
     /// Create a consistent standalone database without copying WAL/SHM files.

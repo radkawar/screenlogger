@@ -233,7 +233,6 @@ extension HistoryPane {
         sourceSize: CGSize,
         panOffset: CGSize
     ) -> some View {
-        let ocrBody = model.selectedTimelineFrame?.ocrText ?? ""
         ZStack {
             Image(nsImage: img)
                 .resizable()
@@ -243,7 +242,15 @@ extension HistoryPane {
                 .offset(panOffset)
 
             if model.showLiveText, !model.selectedFrameOCRBoxes.isEmpty {
-                let ocrUTF16 = Array(ocrBody.utf16)
+                // Matching is keyed to the moment and the query, so hover, pan,
+                // and zoom passes reuse the previous answer instead of rebuilding
+                // a UTF-16 buffer and a lowercased String for every OCR box.
+                let hits = ocrHighlightMatches.matchedBoxIndices(
+                    frameID: model.selectedTimelineFrame?.id,
+                    boxes: model.selectedFrameOCRBoxes,
+                    ocrText: model.selectedTimelineFrame?.ocrText ?? "",
+                    tokens: model.stageHighlightTokens
+                )
                 GeometryReader { geo in
                     let transform = OCRHighlightTransform(
                         sourceSize: sourceSize,
@@ -251,9 +258,9 @@ extension HistoryPane {
                         zoom: model.stageZoom,
                         contentOffset: panOffset
                     )
-                    ForEach(Array(model.selectedFrameOCRBoxes.enumerated()), id: \.offset) { _, box in
-                        let slice = Self.ocrSlice(ocrUTF16, offset: box.textOffset, length: box.textLength)
-                        let isHit = Self.boxMatchesTokens(slice, tokens: model.stageHighlightTokens)
+                    ForEach(model.selectedFrameOCRBoxes.indices, id: \.self) { index in
+                        let box = model.selectedFrameOCRBoxes[index]
+                        let isHit = hits.contains(index)
                         if let rect = transform.project(box) {
                             RoundedRectangle(cornerRadius: 2, style: .continuous)
                                 .fill(isHit ? model.accentSwiftUIColor.opacity(0.35) : model.accentSwiftUIColor.opacity(0.08))
@@ -356,6 +363,55 @@ extension HistoryPane {
         return "\(frame.appLabel), \(SLTimeFormat.full(frame.timestampMs))\(displayContext)\(availability)"
     }
 
+}
+
+/// Memoized search-hit lookup for the stage's Live Text overlay.
+///
+/// A real capture carries roughly a hundred OCR boxes. Deriving each box's text
+/// inside `body` meant hundreds of String allocations for every pointer-hover,
+/// pan, and zoom pass, none of which can change the answer. The match set only
+/// depends on the selected moment and the current highlight tokens, so it is
+/// computed once per change and replayed afterwards.
+@MainActor
+final class TimelineOCRHighlightMatches {
+    private struct Key: Equatable {
+        let frameID: Int64?
+        let boxCount: Int
+        let tokens: [String]
+    }
+
+    private var key: Key?
+    private var matches: Set<Int> = []
+
+    func matchedBoxIndices(
+        frameID: Int64?,
+        boxes: [OCRBox],
+        ocrText: String,
+        tokens: [String]
+    ) -> Set<Int> {
+        let requested = Key(frameID: frameID, boxCount: boxes.count, tokens: tokens)
+        if key == requested { return matches }
+        key = requested
+        matches = Self.computeMatches(boxes: boxes, ocrText: ocrText, tokens: tokens)
+        return matches
+    }
+
+    private static func computeMatches(
+        boxes: [OCRBox],
+        ocrText: String,
+        tokens: [String]
+    ) -> Set<Int> {
+        guard !tokens.isEmpty, !boxes.isEmpty, !ocrText.isEmpty else { return [] }
+        let utf16 = Array(ocrText.utf16)
+        var matched: Set<Int> = []
+        for index in boxes.indices {
+            let box = boxes[index]
+            let slice = ocrSlice(utf16, offset: box.textOffset, length: box.textLength)
+            if boxMatchesTokens(slice, tokens: tokens) { matched.insert(index) }
+        }
+        return matched
+    }
+
     private static func ocrSlice(_ utf16: [UInt16], offset: Int, length: Int) -> String {
         guard offset >= 0, length > 0 else { return "" }
         guard offset < utf16.count else { return "" }
@@ -369,5 +425,4 @@ extension HistoryPane {
         let lower = text.lowercased()
         return tokens.contains { lower.contains($0) }
     }
-
 }

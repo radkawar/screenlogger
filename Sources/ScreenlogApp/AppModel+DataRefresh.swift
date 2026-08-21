@@ -57,12 +57,15 @@ extension AppModel {
                     }
                 return (st, recent, tl)
             }
-            stats = snapshot.0
+            // Reassigning an unchanged @Published value still invalidates every
+            // view reading it, and `timeline.didSet` rebuilds the navigation
+            // index, so each republish below is gated on a real change.
+            if stats != snapshot.0 { stats = snapshot.0 }
             if light { return }
-            if let r = snapshot.1 { recent = r }
+            if let r = snapshot.1, recent != r { recent = r }
             if let tl = snapshot.2 {
                 let previousSelection = selectedTimelineID
-                timeline = tl
+                if timeline != tl { timeline = tl }
                 if let previousSelection,
                     tl.contains(where: { $0.id == previousSelection })
                 {
@@ -71,7 +74,7 @@ extension AppModel {
                     selectedTimelineID = tl.last?.id
                     rememberTimelineDisplayPreference(frameID: selectedTimelineID)
                 }
-                timelineLoadState = .ready
+                if timelineLoadState != .ready { timelineLoadState = .ready }
             }
             if selectedTimelineID == nil {
                 selectedTimelineID = timeline.last?.id
@@ -92,6 +95,16 @@ extension AppModel {
         }
     }
 
+    /// Session gap the Library sidebar groups by. Shared by every refresh path
+    /// so a live tail recompute lines up with a full `loadSessions()` reload.
+    static let librarySessionGapMs: Int64 = 5 * 60 * 1_000
+
+    /// Newest sessions a captured-frame refresh loads when the app has no
+    /// session list yet. A cold live-capture refresh must not sort the whole
+    /// library; opening the Library still calls `loadSessions()`, which loads
+    /// every session.
+    static let capturedFrameSessionColdLoadLimit = 200
+
     /// Refresh navigation data after the engine has durably saved a frame.
     /// Selection follows live capture only when the user was already at the
     /// newest moment; reviewing older history is never pulled forward.
@@ -107,6 +120,15 @@ extension AppModel {
         let wasFollowingLatest =
             previousSelection == nil
             || selectedTimelineMomentIndex == timelineMomentCount - 1
+        // A durable frame can only extend the newest session or open a new one,
+        // so the per-frame read recomputes that tail and reuses the older rows
+        // already in hand. Recomputing every session here sorts the whole
+        // library through three window functions every capture interval, and
+        // that read shares the store's serial queue with preview loads.
+        let knownSessions = sessions.sorted { $0.startMs > $1.startMs }
+        let sessionTailAnchorMs = knownSessions.first?.startMs
+        let gapMs = Self.librarySessionGapMs
+        let coldLoadLimit = Self.capturedFrameSessionColdLoadLimit
 
         do {
             let snapshot = try await store.readAsync {
@@ -122,7 +144,19 @@ extension AppModel {
                     return (stats, recent, nil, nil)
                 }
 
-                let sessions = try store.sessions(gapMs: 5 * 60 * 1_000)
+                let sessions: [SessionRow]
+                if let sessionTailAnchorMs {
+                    var tail = try store.sessions(
+                        gapMs: gapMs,
+                        fromTimestampMs: sessionTailAnchorMs
+                    )
+                    tail.append(
+                        contentsOf: knownSessions.filter { $0.startMs < sessionTailAnchorMs }
+                    )
+                    sessions = tail
+                } else {
+                    sessions = try store.sessions(gapMs: gapMs, limit: coldLoadLimit)
+                }
                 if preservesLibraryResultWindow {
                     // The loaded neighborhood is the user's chosen search
                     // result, not a live-tail window. Refresh session metadata
@@ -150,16 +184,27 @@ extension AppModel {
                 return (stats, recent, sessions, timeline)
             }
 
-            stats = snapshot.0
-            recent = snapshot.1
+            // Every assignment below is gated on a real change. This runs once
+            // per captured frame, and an unconditional republish invalidates
+            // the whole SwiftUI tree - and rebuilds the Timeline navigation
+            // index in `timeline.didSet` - even when nothing moved.
+            if stats != snapshot.0 { stats = snapshot.0 }
+            if recent != snapshot.1 { recent = snapshot.1 }
 
-            if let rows = snapshot.2 {
+            // A full `loadSessions()` can replace the list while this read is
+            // suspended - a deletion or a Library restore does exactly that.
+            // The newer list is authoritative, so a tail merged onto the older
+            // snapshot is dropped rather than applied over it.
+            if let rows = snapshot.2,
+                sessions.sorted(by: { $0.startMs > $1.startMs }) == knownSessions,
+                rows != knownSessions
+            {
                 applySessionRefresh(rows)
             }
 
             if let refreshedTimeline = snapshot.3 {
-                timeline = refreshedTimeline
-                timelineLoadState = .ready
+                if timeline != refreshedTimeline { timeline = refreshedTimeline }
+                if timelineLoadState != .ready { timelineLoadState = .ready }
                 if wasFollowingLatest {
                     if timelineMomentCount > 0 {
                         selectTimelineMoment(at: timelineMomentCount - 1)

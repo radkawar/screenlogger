@@ -76,6 +76,9 @@ struct SearchResultCard: View {
     let interactionEnabled: Bool
     let onSelect: () -> Void
     let onOpen: () -> Void
+    /// Supplied by the parent, which already observes the model. Observing it
+    /// here would invalidate every card in the grid on any model change.
+    let onDelete: () -> Void
     @State private var hovering = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -102,11 +105,17 @@ struct SearchResultCard: View {
                                 NSPasteboard.general.setString(snip, forType: .string)
                             }
                         }
+                        Divider()
+                        Button(role: .destructive, action: onDelete) {
+                            Label("Delete Moment...", systemImage: "trash")
+                        }
+                        .accessibilityIdentifier("library.result.context.delete")
                     }
                     .accessibilityAddTraits(.isButton)
                     .accessibilityAction(.default, onSelect)
                     .accessibilityAction(named: "Select for Preview", onSelect)
                     .accessibilityAction(named: "Open in Timeline", onOpen)
+                    .accessibilityAction(named: "Delete Moment", onDelete)
             } else {
                 baseCard
                     .accessibilityAddTraits(.isStaticText)
@@ -151,7 +160,7 @@ struct SearchResultCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if let snippet = cardSnippet {
+                if let snippet = cardHighlightedSnippet {
                     Text(snippet)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -247,6 +256,13 @@ struct SearchResultCard: View {
             snippet.caseInsensitiveCompare(result.searchDisplayTitle) != .orderedSame
         else { return nil }
         return snippet
+    }
+
+    /// Same gate as `cardSnippet`, with the matched terms emphasized. The plain
+    /// form is kept for the accessibility value, which takes no attributes.
+    private var cardHighlightedSnippet: AttributedString? {
+        guard cardSnippet != nil else { return nil }
+        return result.searchHighlightedSnippet
     }
 
     private var accessibilityValue: String {
@@ -363,8 +379,9 @@ struct SearchResultInspector: View {
                     .foregroundStyle(.tertiary)
             }
 
-            if let snippet = result.searchCleanedSnippet,
-                snippet.caseInsensitiveCompare(result.searchDisplayTitle) != .orderedSame
+            if let plain = result.searchCleanedSnippet,
+                plain.caseInsensitiveCompare(result.searchDisplayTitle) != .orderedSame,
+                let snippet = result.searchHighlightedSnippet
             {
                 Divider().opacity(0.5)
                 Text(snippet)
@@ -404,14 +421,28 @@ extension FTSResult {
     }
 
     fileprivate var searchCleanedSnippet: String? {
-        guard let snippet = snippet?.trimmingCharacters(in: .whitespacesAndNewlines), !snippet.isEmpty else {
-            return nil
+        SearchSnippet.parse(snippet)?.text
+    }
+
+    /// Snippet with the matched terms emphasized.
+    fileprivate var searchHighlightedSnippet: AttributedString? {
+        guard let parsed = SearchSnippet.parse(snippet) else { return nil }
+        var attributed = AttributedString(parsed.text)
+        for range in parsed.matches {
+            guard let lower = AttributedString.Index(range.lowerBound, within: attributed),
+                let upper = AttributedString.Index(range.upperBound, within: attributed)
+            else { continue }
+            attributed[lower..<upper].inlinePresentationIntent = .stronglyEmphasized
         }
-        return
-            snippet
-            .replacingOccurrences(of: "[", with: "")
-            .replacingOccurrences(of: "]", with: "")
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        return attributed
+    }
+}
+
+extension FTSResult {
+    /// Identifies the moment in the deletion review sheet. The sheet itself
+    /// reports the exact moment, file, and byte counts.
+    var libraryDeletionDetail: String {
+        "\(searchAppLabel) at \(SLTimeFormat.full(timestampMs))."
+            + " Every display captured at this moment is removed."
     }
 }

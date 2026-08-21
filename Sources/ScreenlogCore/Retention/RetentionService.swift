@@ -41,12 +41,15 @@ public struct RetentionRunReport: Sendable, Equatable, CustomStringConvertible {
     public var capBytes: Int64
     public var capSatisfied: Bool
     public var cutoffMs: Int64
+    /// Database bytes the bounded incremental vacuum returned to the filesystem
+    /// after this run's deletions.
+    public var reclaimedDatabaseBytes: Int64
     public var failureDetails: [String]
 
     public var hasFailures: Bool { failedVideoCount > 0 || failedStillCount > 0 }
 
     public var description: String {
-        "retention purged_videos=\(purgedVideoCount) purged_stills=\(purgedStillCount) failed_videos=\(failedVideoCount) failed_stills=\(failedStillCount) missing_files=\(missingFileCount) freed_bytes=\(freedBytes) library_bytes_before=\(libraryBytesBeforeCap) library_bytes_after=\(libraryBytesAfterCap) cap_bytes=\(capBytes) cap_satisfied=\(capSatisfied) cutoff_ms=\(cutoffMs)"
+        "retention purged_videos=\(purgedVideoCount) purged_stills=\(purgedStillCount) failed_videos=\(failedVideoCount) failed_stills=\(failedStillCount) missing_files=\(missingFileCount) freed_bytes=\(freedBytes) library_bytes_before=\(libraryBytesBeforeCap) library_bytes_after=\(libraryBytesAfterCap) cap_bytes=\(capBytes) cap_satisfied=\(capSatisfied) cutoff_ms=\(cutoffMs) reclaimed_db_bytes=\(reclaimedDatabaseBytes)"
     }
 }
 
@@ -349,37 +352,37 @@ public final class RetentionService: @unchecked Sendable {
         let retentionDays = max(0, policy.retentionDays)
         let cutoff = nowMs - Int64(retentionDays) * 86_400_000
 
-        func attempt(_ video: VideoRow) -> Bool {
-            guard attemptedVideoIDs.insert(video.id).inserted else { return false }
+        func attempt(_ video: VideoRow) -> PurgeResult? {
+            guard attemptedVideoIDs.insert(video.id).inserted else { return nil }
             do {
                 let result = try purge(video: video, store: store, didCommitUnavailable: didPurgeMedia)
                 purgedVideos += 1
                 freedBytes += result.freedBytes
                 if result.wasMissing { missingFiles += 1 }
-                return true
+                return result
             } catch {
                 failedVideos += 1
                 let detail = String(describing: error)
                 failures.append(detail)
                 log.error("Retention failed: \(detail, privacy: .private(mask: .hash))")
-                return false
+                return nil
             }
         }
 
-        func attempt(_ still: RetentionCandidate) -> Bool {
-            guard attemptedStillIDs.insert(still.id).inserted else { return false }
+        func attempt(_ still: RetentionCandidate) -> PurgeResult? {
+            guard attemptedStillIDs.insert(still.id).inserted else { return nil }
             do {
                 let result = try purge(still: still, store: store, didCommitUnavailable: didPurgeMedia)
                 purgedStills += 1
                 freedBytes += result.freedBytes
                 if result.wasMissing { missingFiles += 1 }
-                return true
+                return result
             } catch {
                 failedStills += 1
                 let detail = String(describing: error)
                 failures.append(detail)
                 log.error("Retention failed: \(detail, privacy: .private(mask: .hash))")
-                return false
+                return nil
             }
         }
 
@@ -408,24 +411,55 @@ public final class RetentionService: @unchecked Sendable {
             libraryBytesAfter = libraryBytesBefore
             if libraryBytesAfter > effectiveCap {
                 let candidates = try store.retentionCandidatesByOldestFrame()
-                for candidate in candidates {
-                    if libraryBytesAfter <= effectiveCap { break }
-                    switch candidate.kind {
-                    case .still:
-                        _ = attempt(candidate)
-                    case .video:
-                        _ = attempt(
-                            VideoRow(
-                                id: candidate.id,
-                                path: candidate.path,
-                                sizeBytes: candidate.sizeBytes,
-                                status: 0
+                var candidateIndex = 0
+                // Usually one estimate pass is exact. A second pass absorbs
+                // SQLite/WAL growth caused by the deletes without returning to
+                // a full filesystem walk after every file.
+                for _ in 0..<2 where libraryBytesAfter > effectiveCap {
+                    while candidateIndex < candidates.count,
+                        libraryBytesAfter > effectiveCap
+                    {
+                        let candidate = candidates[candidateIndex]
+                        candidateIndex += 1
+                        let result: PurgeResult?
+                        switch candidate.kind {
+                        case .still:
+                            result = attempt(candidate)
+                        case .video:
+                            result = attempt(
+                                VideoRow(
+                                    id: candidate.id,
+                                    path: candidate.path,
+                                    sizeBytes: candidate.sizeBytes,
+                                    status: 0
+                                )
                             )
-                        )
+                        }
+                        if let result {
+                            libraryBytesAfter = max(0, libraryBytesAfter - result.freedBytes)
+                        }
                     }
                     libraryBytesAfter = try ManagedLibraryStorage.byteSize(root: store.root)
                 }
             }
+            capSatisfied = libraryBytesAfter <= effectiveCap
+        }
+
+        // Deleting rows only moves their pages onto SQLite's free list. Hand
+        // that space back so a run that removed media actually shrinks the
+        // library on disk. The pass is bounded, so a very large backlog is
+        // reclaimed over several runs instead of blocking capture once.
+        var reclaimedDatabaseBytes: Int64 = 0
+        do {
+            reclaimedDatabaseBytes = try store.reclaimFreeDatabasePages().reclaimedBytes
+        } catch {
+            // Reclaiming is opportunistic: media is already gone and the run's
+            // outcome does not depend on it, so this is logged rather than
+            // reported as a retention failure the user should retry.
+            log.error("Retention reclaim failed: \(String(describing: error), privacy: .private(mask: .hash))")
+        }
+        if reclaimedDatabaseBytes > 0, effectiveCap > 0 {
+            libraryBytesAfter = try ManagedLibraryStorage.byteSize(root: store.root)
             capSatisfied = libraryBytesAfter <= effectiveCap
         }
 
@@ -441,6 +475,7 @@ public final class RetentionService: @unchecked Sendable {
             capBytes: effectiveCap,
             capSatisfied: capSatisfied,
             cutoffMs: cutoff,
+            reclaimedDatabaseBytes: reclaimedDatabaseBytes,
             failureDetails: failures
         )
         log.info("\(report.description, privacy: .public)")

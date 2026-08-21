@@ -188,19 +188,8 @@ extension ScreenlogCLIMain {
         case "sample":
             let limit = try intFlag(rest, name: "--limit", allowed: 1...500) ?? 50
             let minSeg = try intFlag(rest, name: "--min-seg-len", allowed: 1...10_000) ?? 1
-            var bounds = try activityBounds(rest)
             let order = try sampleOrder(rest)
-            if let cursor = try stringFlag(rest, name: "--cursor").map(parseTimestampMs) {
-                switch order {
-                case .oldest:
-                    guard cursor < Int64.max else {
-                        throw CLIError.message("--cursor is outside the supported range")
-                    }
-                    bounds.sinceMs = max(bounds.sinceMs ?? .min, cursor + 1)
-                case .newest:
-                    bounds.beforeMs = min(bounds.beforeMs ?? .max, cursor)
-                }
-            }
+            let bounds = try sampleActivityBounds(rest, order: order)
             let frames = try client.sample(
                 limit: limit,
                 minSegLen: minSeg,
@@ -225,16 +214,11 @@ extension ScreenlogCLIMain {
                 )
             } else {
                 for frame in frames {
-                    let document = CLIFrameDocument(
+                    for line in humanReadableSampleLines(
                         frame: frame,
                         maximumOCRCharacters: maximumOCRCharacters
-                    )
-                    print(
-                        "#\(frame.id)\t\(CLIOutputFormat.localISO(frame.timestampMs))"
-                            + "\tseg=\(frame.segmentID ?? -1)\t\(frame.title ?? "")"
-                    )
-                    if let ocr = document.ocr {
-                        print("  OCR\(document.ocrTruncated ? " (truncated)" : ""): \(ocr)")
+                    ) {
+                        print(line)
                     }
                 }
                 if let cursor = frames.last?.timestampMs {
@@ -367,6 +351,24 @@ extension ScreenlogCLIMain {
             throw CLIError.message("--order must be oldest or newest")
         }
         return order
+    }
+
+    static func humanReadableSampleLines(
+        frame: FrameRow,
+        maximumOCRCharacters: Int
+    ) -> [String] {
+        let document = CLIFrameDocument(
+            frame: frame,
+            maximumOCRCharacters: maximumOCRCharacters
+        )
+        var lines = [
+            "#\(frame.id)\t\(CLIOutputFormat.localISO(frame.timestampMs))"
+                + "\tseg=\(frame.segmentID ?? -1)\t\(frame.title ?? "")"
+        ]
+        if let ocr = document.ocr {
+            lines.append("  OCR\(document.ocrTruncated ? " (truncated)" : ""): \(ocr)")
+        }
+        return lines
     }
 
     private static func deduplicatedSearchResults(

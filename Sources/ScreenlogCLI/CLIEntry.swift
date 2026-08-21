@@ -46,7 +46,7 @@ enum ScreenlogCLIMain {
 
         // Help must be resolved before any client call. In particular,
         // `compact --help` and `retention --help` must never perform work.
-        if sub.contains(where: isHelpArgument), cmd != "skill", cmd != "install-skill" {
+        if sub.contains(where: isHelpArgument) {
             print(helpText(for: cmd, subcommand: sub.first))
             return
         }
@@ -124,7 +124,7 @@ enum ScreenlogCLIMain {
         `skill` and `install-skill` do not require the app. All other commands do.
         Search combines screen text and transcripts by default.
         Search operators: app:, site:, date:, since:, before:.
-        Run any command with --help for authoritative flags and examples.
+        Run any command with --help to view its usage.
         """
 
     static func helpText(for command: String, subcommand: String?) -> String {
@@ -146,6 +146,7 @@ enum ScreenlogCLIMain {
         case "record": return "Usage: screenlog record start|stop|once"
         case "compact": return "Usage: screenlog compact"
         case "retention": return "Usage: screenlog retention"
+        case "skill", "install-skill": return SkillInstaller.helpText
         default: return helpText
         }
     }

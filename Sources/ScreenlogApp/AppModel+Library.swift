@@ -59,10 +59,10 @@ extension AppModel {
 
     /// Open the Library for a specific user intent.
     func openSearchWindow(intent: LibraryPresentationIntent = .show) {
-        // Any explicit Library presentation completes a result handoff. Leaving
+        // Any explicit Library presentation completes a Library handoff. Leaving
         // the old origin alive behind the Library lets a later direct Timeline
         // route expose a stale Back button.
-        if timelineNavigationOrigin == .libraryResult {
+        if timelineNavigationOrigin.returnsToLibrary {
             timelineNavigationOrigin = .direct
         }
         SearchWindowController.shared.show(model: self, intent: intent)
@@ -251,10 +251,13 @@ extension AppModel {
     /// to Library handoff used by individual search results.
     func openLibrarySession(_ session: SessionRow) {
         stopReplay()
+        searchTask?.cancel()
+        searchDebounceTask?.cancel()
         SearchWindowController.shared.hide()
         shellSearchMode = false
+        stageHighlightTokens = []
         timelineLoadState = .loading
-        openMainShell(origin: .libraryResult)
+        openMainShell(origin: .librarySession)
         Task { await loadSession(session) }
     }
 

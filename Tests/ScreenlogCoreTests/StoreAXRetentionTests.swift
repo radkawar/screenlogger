@@ -66,6 +66,46 @@ final class StoreAXRetentionTests: XCTestCase {
         )
     }
 
+    func testAXPayloadCodecCompressesAndRoundTripsLargeTrees() throws {
+        let xml =
+            "<AccessibilityTree>" + String(repeating: "<Node role=\"AXStaticText\" value=\"Repeated text\" />", count: 2_000)
+            + "</AccessibilityTree>"
+        let raw = Data(xml.utf8)
+        let encoded = AXPayloadCodec.encode(raw)
+
+        XCTAssertLessThan(encoded.count, raw.count / 2)
+        XCTAssertEqual(AXPayloadCodec.decode(encoded), raw)
+    }
+
+    func testAXPayloadCodecReadsLegacyRawPayloads() {
+        let legacy = Data("<AccessibilityTree />".utf8)
+        XCTAssertEqual(AXPayloadCodec.decode(legacy), legacy)
+    }
+
+    func testAXPayloadCodecRejectsTruncatedCompressedPayload() throws {
+        let raw = Data(String(repeating: "repeated accessibility text ", count: 4_000).utf8)
+        var encoded = AXPayloadCodec.encode(raw)
+        XCTAssertLessThan(encoded.count, raw.count)
+        encoded.removeLast()
+        XCTAssertNil(AXPayloadCodec.decode(encoded))
+    }
+
+    func testStoredAXPayloadIsCompressedWithoutChangingContentHash() throws {
+        let xml =
+            "<AccessibilityTree>" + String(repeating: "<Node role=\"AXButton\" title=\"Save\" />", count: 500)
+            + "</AccessibilityTree>"
+        let frameID = try store.insertSeedFrame(timestampMs: 20, foreground: "compressed")
+        try store.storeAXSnapshot(
+            frameID: frameID,
+            snapshot: AXTreeSnapshot(xml: xml, nodeCount: 500, pid: 7, isPartial: false)
+        )
+
+        let payload = try XCTUnwrap(storedPayload(frameID: frameID))
+        XCTAssertLessThan(payload.count, Data(xml.utf8).count)
+        XCTAssertEqual(try store.axTreeXML(frameID: frameID), xml)
+        XCTAssertEqual(try store.frame(id: frameID)?.axRootHash, ContentHash.sha256(Data(xml.utf8)))
+    }
+
     func testAXSnapshotUpsertAndEdges() throws {
         let frameID = try store.insertSeedFrame(timestampMs: 9, foreground: "edge")
         try store.storeAXSnapshot(
@@ -124,6 +164,16 @@ final class StoreAXRetentionTests: XCTestCase {
 
     private func countAXEdges() throws -> Int {
         try scalarCount("SELECT COUNT(*) FROM ax_node_edge")
+    }
+
+    private func storedPayload(frameID: Int64) throws -> Data? {
+        let stmt = try store.db.prepare(
+            "SELECT n.payload FROM ax_snapshot s JOIN ax_node n ON n.hash = s.root_hash WHERE s.frame_id = ?"
+        )
+        defer { sqlite3_finalize(stmt) }
+        SQLiteBind.int64(stmt, 1, frameID)
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+        return SQLiteColumn.data(stmt, 0)
     }
 
     private func scalarCount(_ sql: String) throws -> Int {

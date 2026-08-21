@@ -24,6 +24,12 @@ final class CLIActivityCommandTests: XCTestCase {
 
     func testNonFiniteRelativeDateAndInvalidBatchIdentifiersAreRejected() throws {
         XCTAssertThrowsError(try ScreenlogCLIMain.parseActivityBound("1e309d"))
+        XCTAssertThrowsError(
+            try ScreenlogCLIMain.parseActivityBound(
+                "now",
+                now: Date(timeIntervalSince1970: .infinity)
+            )
+        )
         XCTAssertNoThrow(try ScreenlogCLIMain.parseTimestampMs(String(Int64.min)))
         XCTAssertThrowsError(
             try ScreenlogCLIMain.commaSeparatedIDs("1,0,3")
@@ -31,6 +37,29 @@ final class CLIActivityCommandTests: XCTestCase {
         XCTAssertEqual(
             try ScreenlogCLIMain.commaSeparatedIDs("3,1,3,2"),
             [3, 1, 2]
+        )
+    }
+
+    func testSampleCursorIsOverflowSafeAndRespectsRequestedBounds() throws {
+        XCTAssertThrowsError(
+            try ScreenlogCLIMain.sampleActivityBounds(
+                ["--cursor", String(Int64.max)],
+                order: .oldest
+            )
+        )
+
+        let oldest = try ScreenlogCLIMain.sampleActivityBounds(
+            ["--since", "1000", "--before", "2000", "--cursor", "1500"],
+            order: .oldest
+        )
+        XCTAssertEqual(oldest.sinceMs, 1_500_001)
+        XCTAssertEqual(oldest.beforeMs, 2_000_000)
+
+        XCTAssertThrowsError(
+            try ScreenlogCLIMain.sampleActivityBounds(
+                ["--since", "1000", "--before", "2000", "--cursor", "2000"],
+                order: .oldest
+            )
         )
     }
 
@@ -68,6 +97,7 @@ final class CLIActivityCommandTests: XCTestCase {
         try await ScreenlogCLIMain.run(args: ["recent", "--help"])
         try await ScreenlogCLIMain.run(args: ["usage", "sessions", "--help"])
         try await ScreenlogCLIMain.run(args: ["query", "sample", "--help"])
+        try await ScreenlogCLIMain.run(args: ["skill", "remove", "--help"])
     }
 
     func testFrameDocumentBoundsOCRAndNeverSerializesMediaPaths() throws {
@@ -93,6 +123,31 @@ final class CLIActivityCommandTests: XCTestCase {
         XCTAssertEqual(document.displayName, "Editor")
         XCTAssertEqual(document.domain, "example.com")
         XCTAssertFalse(json.contains(privatePath))
+    }
+
+    func testHumanReadableSampleOutputIncludesBoundedOCRWhenRequested() {
+        let frame = FrameRow(
+            id: 7,
+            timestampMs: 1_000,
+            foreground: "abcdefghij",
+            title: "Editor",
+            segmentID: 3
+        )
+
+        XCTAssertEqual(
+            ScreenlogCLIMain.humanReadableSampleLines(
+                frame: frame,
+                maximumOCRCharacters: 4
+            ).last,
+            "  OCR (truncated): abcd"
+        )
+        XCTAssertEqual(
+            ScreenlogCLIMain.humanReadableSampleLines(
+                frame: frame,
+                maximumOCRCharacters: 0
+            ).count,
+            1
+        )
     }
 
     func testSearchDocumentNeverSerializesMediaPathsOrCompactionDetails() throws {

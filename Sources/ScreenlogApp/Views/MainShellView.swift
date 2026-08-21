@@ -59,7 +59,9 @@ struct MainShellView: View {
             model.shellSearchMode = false
             Task {
                 await model.loadSessions()
-                if model.timeline.isEmpty {
+                if model.timeline.isEmpty,
+                    model.timelineLoadState == .awaitingInitialLoad
+                {
                     await model.refreshTimeline()
                 }
             }
@@ -119,7 +121,7 @@ struct MainShellView: View {
     }
 
     private var offersLibraryReturn: Bool {
-        model.timelineNavigationOrigin == .libraryResult
+        model.timelineNavigationOrigin.returnsToLibrary
     }
 
     private func leaveTimeline() {

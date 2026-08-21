@@ -15,6 +15,7 @@ extension AppModel {
             isRecording: isRecording,
             timedPauseUntil: recordingPausedUntil,
             pauseReason: capturePauseReason,
+            energySaverReason: captureEnergySaverReason,
             pausedForDisk: pausedForDisk,
             captureIssue: captureIssue
         )

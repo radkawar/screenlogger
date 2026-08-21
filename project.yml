@@ -270,8 +270,10 @@ targets:
       - path: Sources/ScreenlogApp/AppInstallLocation.swift
       - path: Sources/ScreenlogApp/CaptureOperationModels.swift
       - path: Sources/ScreenlogApp/AssistantOperationalReadinessPresentation.swift
+      - path: Sources/ScreenlogApp/LibraryDeletionModels.swift
       - path: Sources/ScreenlogApp/LibraryStartupIssue.swift
       - path: Sources/ScreenlogApp/LibrarySearchPagePresentation.swift
+      - path: Sources/ScreenlogApp/SearchSnippet.swift
       - path: Sources/ScreenlogApp/Services/AssistantLiveVerification.swift
       - path: Sources/ScreenlogApp/Services/AssistantTestSearch.swift
       - path: Sources/ScreenlogApp/Services/BoundedLocalCommandRunner.swift

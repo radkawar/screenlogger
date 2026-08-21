@@ -4,6 +4,29 @@ import ScreenlogCore
 enum LibraryDeletionOrigin: Sendable, Equatable {
     case timeline
     case storage
+    /// Raised from a Library result, so its failures belong on the Library
+    /// surface rather than the Timeline the user did not open.
+    case library
+}
+
+/// Where the outcome of a deletion is reported.
+///
+/// Settings renders its result in place, so it needs no transient notice. The
+/// Timeline and Library windows have no such panel, and a deletion that
+/// reported only into a status string no view rendered was indistinguishable
+/// from one that silently failed.
+enum LibraryDeletionFeedbackSurface: Equatable, Sendable {
+    case notice
+    case settingsPanel
+}
+
+extension LibraryDeletionOrigin {
+    var feedbackSurface: LibraryDeletionFeedbackSurface {
+        switch self {
+        case .timeline, .library: return .notice
+        case .storage: return .settingsPanel
+        }
+    }
 }
 
 struct LibraryDeletionRequest: Sendable {

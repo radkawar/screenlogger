@@ -29,30 +29,23 @@ extension AppModel {
         else { return }
         statusMessage = "Freeing space..."
         storageMaintenanceState = .running(.compaction)
-        // Compaction is CPU/IO heavy - never block MainActor / Settings UI.
-        Task.detached(priority: .utility) {
+        Task(priority: .utility) {
             do {
-                let n = try VideoCompactionService().compactIfNeeded(store: store)
-                await MainActor.run {
-                    self.statusMessage = n > 0 ? "Compressed older captures" : "Nothing to compress yet"
-                }
+                let n = try await VideoCompactionService().compact(store: store)
+                self.statusMessage = n > 0 ? "Compressed older captures" : "Nothing to compress yet"
                 await self.refreshData()
-                await MainActor.run {
-                    self.refreshLibrarySize()
-                    self.refreshStorageCleanupPreflight()
-                    // Keep restore disabled until every old-Store read in this
-                    // operation has completed, not merely its mutation.
-                    self.storageMaintenanceState =
-                        n > 0
-                        ? .success(.compacted(imageCount: n))
-                        : .success(.nothingToCompact)
-                }
+                self.refreshLibrarySize()
+                self.refreshStorageCleanupPreflight()
+                // Keep restore disabled until every old-Store read in this
+                // operation has completed, not merely its mutation.
+                self.storageMaintenanceState =
+                    n > 0
+                    ? .success(.compacted(imageCount: n))
+                    : .success(.nothingToCompact)
             } catch {
-                await MainActor.run {
-                    self.writeBootstrapLog("storage compaction failed: \(error)")
-                    self.statusMessage = "Ready"
-                    self.storageMaintenanceState = .failure(.compactionFailed)
-                }
+                self.writeBootstrapLog("storage compaction failed: \(error)")
+                self.statusMessage = "Ready"
+                self.storageMaintenanceState = .failure(.compactionFailed)
             }
         }
     }

@@ -77,7 +77,8 @@ extension AppModel {
     var librarySearchPagePresentation: LibrarySearchPagePresentation {
         LibrarySearchPagePresentation(
             visibleCount: searchResults.count,
-            isTruncated: librarySearchResultsAreTruncated
+            isTruncated: librarySearchResultsAreTruncated,
+            hasNextPage: librarySearchNextCursor != nil
         )
     }
 
@@ -476,7 +477,8 @@ extension AppModel {
             domain: searchDomainFilter,
             fromTimestampMs: bounds.fromTimestampMs,
             toTimestampMs: bounds.toTimestampMs,
-            content: searchContent
+            content: searchContent,
+            sort: searchSort
         )
         guard Self.hasConstraint(results) else { return nil }
         return results
@@ -761,6 +763,14 @@ extension AppModel {
     func setSearchContent(_ content: LibrarySearchContent) {
         guard searchContent != content else { return }
         searchContent = content
+        librarySearchFilterDidChange()
+    }
+
+    /// Ranked results are a single bounded page, so any cursor from a previous
+    /// chronological page is discarded by `librarySearchFilterDidChange`.
+    func setSearchSort(_ sort: LibrarySearchSort) {
+        guard searchSort != sort else { return }
+        searchSort = sort
         librarySearchFilterDidChange()
     }
 

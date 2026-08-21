@@ -49,15 +49,23 @@ extension HistoryPane {
     }
 
     private var timelineControlBar: some View {
-        ViewThatFits(in: .horizontal) {
-            expandedTimelineControlBar
+        // ViewThatFits builds both candidates on every pass, so the segment scan
+        // is answered once here instead of once per candidate.
+        let segmentAvailability =
+            model.showSegmentNavigation
+            ? segmentNavigationAvailability
+            : (previous: false, next: false)
+        return ViewThatFits(in: .horizontal) {
+            expandedTimelineControlBar(segmentAvailability: segmentAvailability)
                 .fixedSize(horizontal: true, vertical: false)
-            compactTimelineControlBar
+            compactTimelineControlBar(segmentAvailability: segmentAvailability)
                 .fixedSize(horizontal: true, vertical: false)
         }
     }
 
-    private var expandedTimelineControlBar: some View {
+    private func expandedTimelineControlBar(
+        segmentAvailability: (previous: Bool, next: Bool)
+    ) -> some View {
         HStack(spacing: 6) {
             Button {
                 model.stopReplay()
@@ -108,7 +116,6 @@ extension HistoryPane {
             .accessibilityIdentifier("timeline.playback.next")
 
             if model.showSegmentNavigation {
-                let segmentAvailability = segmentNavigationAvailability
                 controlDivider
 
                 Button {
@@ -293,7 +300,9 @@ extension HistoryPane {
 
     /// At compact widths, keep playback immediate and move less-frequent
     /// inspection tools into one predictable overflow menu.
-    private var compactTimelineControlBar: some View {
+    private func compactTimelineControlBar(
+        segmentAvailability: (previous: Bool, next: Bool)
+    ) -> some View {
         HStack(spacing: 6) {
             Button {
                 model.stopReplay()
@@ -347,14 +356,13 @@ extension HistoryPane {
 
             Menu {
                 if model.showSegmentNavigation {
-                    let availability = segmentNavigationAvailability
                     Button {
                         model.stopReplay()
                         model.stepSegment(by: -1)
                     } label: {
                         Label("Previous Activity", systemImage: "backward.end.fill")
                     }
-                    .disabled(!availability.previous)
+                    .disabled(!segmentAvailability.previous)
                     .accessibilityIdentifier("timeline.segment.previous")
 
                     Button {
@@ -363,7 +371,7 @@ extension HistoryPane {
                     } label: {
                         Label("Next Activity", systemImage: "forward.end.fill")
                     }
-                    .disabled(!availability.next)
+                    .disabled(!segmentAvailability.next)
                     .accessibilityIdentifier("timeline.segment.next")
                 }
 
@@ -546,8 +554,20 @@ extension HistoryPane {
         return formatter
     }()
 
+    /// Both directions from one pass over the recorded days. Asking the model
+    /// per button rebuilt the whole day set twice on every body pass.
+    private var timelineDayNavigationAvailability: (previous: Bool, next: Bool) {
+        guard let current = model.selectedTimelineDay else { return (false, false) }
+        let days = model.timelineAvailableDays
+        return (
+            days.contains(where: { $0 < current }),
+            days.contains(where: { $0 > current })
+        )
+    }
+
     private var timelineDayNavigation: some View {
-        HStack(spacing: 4) {
+        let dayAvailability = timelineDayNavigationAvailability
+        return HStack(spacing: 4) {
             Button {
                 Task { await model.navigateTimelineDay(by: -1) }
             } label: {
@@ -555,7 +575,7 @@ extension HistoryPane {
                     .labelStyle(.iconOnly)
                     .frame(width: 28, height: 28)
             }
-            .disabled(!model.canNavigateTimelineDay(by: -1))
+            .disabled(!dayAvailability.previous)
             .help("Previous recorded day")
             .accessibilityIdentifier("timeline.day.previous")
 
@@ -584,7 +604,7 @@ extension HistoryPane {
                     .labelStyle(.iconOnly)
                     .frame(width: 28, height: 28)
             }
-            .disabled(!model.canNavigateTimelineDay(by: 1))
+            .disabled(!dayAvailability.next)
             .help("Next recorded day")
             .accessibilityIdentifier("timeline.day.next")
         }

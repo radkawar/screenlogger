@@ -9,6 +9,23 @@ public enum LibrarySearchContent: String, Codable, CaseIterable, Sendable {
     case transcripts
 }
 
+/// Ordering for one Library query.
+///
+/// `recent` is the chronological order the Library has always used, and is the
+/// only order that supports keyset pagination through an unbounded history.
+/// `relevance` ranks by FTS5 bm25 so a rare term surfaces its best match rather
+/// than merely its newest one. Ranked results cannot use a timestamp cursor, so
+/// that mode returns a single bounded page; relevance past the first couple of
+/// hundred rows carries little information anyway.
+public enum LibrarySearchSort: String, CaseIterable, Equatable, Sendable {
+    case relevance
+    case recent
+
+    /// Upper bound on a ranked page. Ranking requires scoring every match, so
+    /// this also caps the work a single relevance query can cost.
+    public static let relevanceResultCap = 200
+}
+
 /// Constraints for one Library query.
 ///
 /// Every non-nil field is applied by SQLite before ordering and limiting the
@@ -26,6 +43,7 @@ public struct LibrarySearchQuery: Equatable, Sendable {
     public var toTimestampMs: Int64?
     public var content: LibrarySearchContent
     public var literalText: Bool
+    public var sort: LibrarySearchSort
 
     public init(
         text: String = "",
@@ -36,8 +54,10 @@ public struct LibrarySearchQuery: Equatable, Sendable {
         fromTimestampMs: Int64? = nil,
         toTimestampMs: Int64? = nil,
         content: LibrarySearchContent = .all,
-        literalText: Bool = false
+        literalText: Bool = false,
+        sort: LibrarySearchSort = .relevance
     ) {
+        self.sort = sort
         self.text = text
         self.appFilter = appFilter
         self.siteFilter = siteFilter
@@ -135,22 +155,30 @@ extension Store {
         after cursor: LibrarySearchCursor? = nil
     ) throws -> LibrarySearchPage {
         try ScreenlogPerformanceSignposts.measure(.warmLibrarySearch) {
-            let visibleLimit = min(
-                LibrarySearchPage.maximumVisibleResults,
-                max(1, requestedLimit)
-            )
+            // A ranked page is bounded and has no successor: a timestamp cursor
+            // cannot express a position in bm25 order. Truncation is still
+            // reported truthfully so the count does not claim to be complete.
+            // Relevance only exists for an FTS query. Filter-only searches use
+            // chronological keyset pagination even when the UI's selected sort
+            // remains Relevance, because there is no text score to rank.
+            let ranking = query.sort == .relevance && !Self.ftsMatch(for: query).isEmpty
+            let ceiling =
+                ranking
+                ? LibrarySearchSort.relevanceResultCap
+                : LibrarySearchPage.maximumVisibleResults
+            let visibleLimit = min(ceiling, max(1, requestedLimit))
             let rows = try executeLibrarySearch(
                 query: query,
                 limit: visibleLimit + 1,
-                maximumLimit: LibrarySearchPage.maximumVisibleResults + 1,
-                after: cursor
+                maximumLimit: ceiling + 1,
+                after: ranking ? nil : cursor
             )
             let visibleResults = Array(rows.prefix(visibleLimit))
             let isTruncated = rows.count > visibleLimit
             return LibrarySearchPage(
                 results: visibleResults,
                 isTruncated: isTruncated,
-                nextCursor: isTruncated
+                nextCursor: isTruncated && !ranking
                     ? visibleResults.last.map {
                         LibrarySearchCursor(
                             timestampMs: $0.timestampMs,
@@ -169,10 +197,7 @@ extension Store {
         after cursor: LibrarySearchCursor? = nil
     ) throws -> [FTSResult] {
         let trimmedText = query.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let match =
-            query.literalText
-            ? Self.ftsLiteralMatchExpression(from: query.text)
-            : Self.ftsMatchExpression(from: query.text)
+        let match = Self.ftsMatch(for: query)
         guard trimmedText.isEmpty || !match.isEmpty else { return [] }
         let appFilter = Self.nonemptySearchFilter(query.appFilter)?.lowercased()
         let siteFilter: String? = {
@@ -234,18 +259,31 @@ extension Store {
         let sql: String
         if usesFTS {
             let constrainedWhere = whereSQL.isEmpty ? "" : " AND \(whereSQL)"
+            // bm25 returns a more negative score for a better match, so ascending
+            // order is best-first. Ranking cannot use the timestamp keyset, so a
+            // ranked query is served as one bounded page (see LibrarySearchSort).
+            let ranking = query.sort == .relevance
+            // Scoring every candidate is only worth paying for when the score
+            // is what orders the page. A constant keeps the UNION ALL shape.
+            let screenTextScore = ranking ? "bm25(ocr_fts)" : "0"
+            let transcriptScore = ranking ? "bm25(transcript_fts)" : "0"
+            let withinMomentOrder =
+                ranking
+                ? "rank_score ASC, (transcript_id IS NOT NULL) DESC, frame_id DESC"
+                : "(transcript_id IS NOT NULL) DESC, frame_id DESC, transcript_id DESC"
+            let momentOrder =
+                ranking ? "rank_score ASC, timestamp_ms DESC" : "timestamp_ms DESC, frame_id DESC"
+            let outerOrder =
+                ranking ? "m.rank_score ASC, f.timestamp DESC" : "f.timestamp DESC, f.id DESC"
             let screenTextCandidates = """
                 SELECT
                     f.id AS frame_id,
                     f.timestamp AS timestamp_ms,
-                    snippet(ocr_fts, 0, '[', ']', '...', 16) AS snippet_foreground,
-                    snippet(ocr_fts, 1, '[', ']', '...', 16) AS snippet_background,
-                    snippet(ocr_fts, 2, '[', ']', '...', 16) AS snippet_title,
-                    NULL AS snippet_transcript,
                     NULL AS transcript_id,
                     NULL AS transcript_source,
                     NULL AS transcript_start,
-                    NULL AS transcript_end
+                    NULL AS transcript_end,
+                    \(screenTextScore) AS rank_score
                 FROM ocr_fts
                 JOIN frame f ON f.id = ocr_fts.rowid
                 LEFT JOIN segment s ON s.id = f.segment
@@ -257,14 +295,11 @@ extension Store {
                 SELECT
                     f.id AS frame_id,
                     f.timestamp AS timestamp_ms,
-                    NULL AS snippet_foreground,
-                    NULL AS snippet_background,
-                    NULL AS snippet_title,
-                    snippet(transcript_fts, 0, '[', ']', '...', 16) AS snippet_transcript,
                     ts.id AS transcript_id,
                     ts.source AS transcript_source,
                     ts.start_timestamp AS transcript_start,
-                    ts.end_timestamp AS transcript_end
+                    ts.end_timestamp AS transcript_end,
+                    \(transcriptScore) AS rank_score
                 FROM transcript_fts
                 JOIN transcript_segment ts ON ts.id = transcript_fts.rowid
                 JOIN frame f ON f.id = ts.frame_id
@@ -282,6 +317,44 @@ extension Store {
                 case .transcripts:
                     transcriptCandidates
                 }
+            // Snippets are resolved for the surviving page only. Computing them
+            // inside the candidate CTE makes cost linear in total matches rather
+            // than page size, which is 15x slower on a common term.
+            let screenTextSnippets =
+                query.content == .transcripts
+                ? """
+                    NULL,
+                    NULL,
+                    NULL,
+                """
+                : """
+                    CASE WHEN m.transcript_id IS NULL THEN (
+                        SELECT snippet(ocr_fts, 0, char(31), char(30), '...', 16)
+                        FROM ocr_fts
+                        WHERE ocr_fts.rowid = m.frame_id AND ocr_fts MATCH ?
+                    ) END,
+                    CASE WHEN m.transcript_id IS NULL THEN (
+                        SELECT snippet(ocr_fts, 1, char(31), char(30), '...', 16)
+                        FROM ocr_fts
+                        WHERE ocr_fts.rowid = m.frame_id AND ocr_fts MATCH ?
+                    ) END,
+                    CASE WHEN m.transcript_id IS NULL THEN (
+                        SELECT snippet(ocr_fts, 2, char(31), char(30), '...', 16)
+                        FROM ocr_fts
+                        WHERE ocr_fts.rowid = m.frame_id AND ocr_fts MATCH ?
+                    ) END,
+                """
+            let transcriptSnippet =
+                query.content == .screenText
+                ? "                    NULL,"
+                : """
+                    CASE WHEN m.transcript_id IS NOT NULL THEN (
+                        SELECT snippet(transcript_fts, 0, char(31), char(30), '...', 16)
+                        FROM transcript_fts
+                        WHERE transcript_fts.rowid = m.transcript_id
+                          AND transcript_fts MATCH ?
+                    ) END,
+                """
             sql = """
                 WITH candidate_matches AS (
                     \(candidates)
@@ -289,13 +362,13 @@ extension Store {
                     SELECT *,
                         ROW_NUMBER() OVER (
                             PARTITION BY timestamp_ms
-                            ORDER BY (transcript_id IS NOT NULL) DESC, frame_id DESC, transcript_id DESC
+                            ORDER BY \(withinMomentOrder)
                         ) AS moment_rank
                     FROM candidate_matches
                 ), matching_moments AS (
                     SELECT * FROM ranked_matches
                     WHERE moment_rank = 1
-                    ORDER BY timestamp_ms DESC, frame_id DESC
+                    ORDER BY \(momentOrder)
                     LIMIT ?
                 )
                 SELECT
@@ -305,10 +378,8 @@ extension Store {
                     a.bundle_id,
                     a.display_name,
                     d.normalized_domain,
-                    m.snippet_foreground,
-                    m.snippet_background,
-                    m.snippet_title,
-                    m.snippet_transcript,
+                \(screenTextSnippets)
+                \(transcriptSnippet)
                     f.image_path,
                     CASE WHEN v.status = 0 THEN f.video ELSE NULL END,
                     m.transcript_id,
@@ -321,7 +392,7 @@ extension Store {
                 LEFT JOIN application a ON a.id = s.application
                 LEFT JOIN domain d ON d.id = s.domain
                 LEFT JOIN video v ON v.id = f.video
-                ORDER BY f.timestamp DESC, f.id DESC
+                ORDER BY \(outerOrder)
                 """
         } else if query.content == .transcripts {
             sql = """
@@ -447,6 +518,21 @@ extension Store {
             bindConstraints()
         }
         SQLiteBind.int(stmt, bind, limit)
+        bind += 1
+        if usesFTS {
+            // Trailing binds for the page-scoped snippet subqueries, in SQL text
+            // order: three screen-text columns, then the transcript column.
+            if query.content != .transcripts {
+                for _ in 0..<3 {
+                    SQLiteBind.text(stmt, bind, match)
+                    bind += 1
+                }
+            }
+            if query.content != .screenText {
+                SQLiteBind.text(stmt, bind, match)
+                bind += 1
+            }
+        }
         var results: [FTSResult] = []
         var stepResult = sqlite3_step(stmt)
         while stepResult == SQLITE_ROW {
@@ -489,6 +575,12 @@ extension Store {
         return results
     }
 
+    private static func ftsMatch(for query: LibrarySearchQuery) -> String {
+        query.literalText
+            ? ftsLiteralMatchExpression(from: query.text)
+            : ftsMatchExpression(from: query.text)
+    }
+
     private static func nonemptySearchFilter(_ value: String?) -> String? {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -502,10 +594,10 @@ extension Store {
             .replacingOccurrences(of: "_", with: "\\_")
     }
 
-    /// Pick the FTS5 snippet column that actually contains match markers (`[...]`).
+    /// Pick the FTS5 snippet column that actually contains a match marker.
     static func preferredFTSSnippet(foreground: String?, background: String?, title: String?) -> String? {
         let candidates = [foreground, background, title]
-        if let marked = candidates.first(where: { ($0 ?? "").contains("[") }) {
+        if let marked = candidates.first(where: { ($0 ?? "").contains("\u{1F}") }) {
             return marked
         }
         return candidates.first(where: { !($0 ?? "").isEmpty }) ?? nil
@@ -523,8 +615,17 @@ extension Store {
         // Cap token count to keep queries cheap.
         let limited = Array(tokens.prefix(12))
         guard !limited.isEmpty else { return "" }
+        // A trailing separator means the last word is finished; otherwise the
+        // caller is still typing it, so match it as a prefix. Without this a
+        // live query reads "No matches" until the final character is entered.
+        let stillTyping =
+            raw.unicodeScalars.last.map { !separators.contains($0) } ?? false
+        var terms = limited
+        if stillTyping, let last = terms.last, last.count >= 2 {
+            terms[terms.count - 1] = "\(last)*"
+        }
         // AND is default FTS5; join explicitly for clarity.
-        return limited.joined(separator: " ")
+        return terms.joined(separator: " ")
     }
 
     /// Exact tokenizer-term sequence for punctuation-heavy identifiers such as

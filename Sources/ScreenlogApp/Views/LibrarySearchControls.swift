@@ -320,3 +320,39 @@ struct SearchDatePickerPopover: View {
         }
     }
 }
+
+/// Chooses between ranked and chronological results.
+///
+/// Relevance is the default because a Library search is usually a question
+/// about something specific rather than a request for the newest activity.
+/// Recency remains available, and is the only order that pages through an
+/// unbounded history, so it stays a peer rather than a hidden fallback.
+struct LibrarySearchSortPicker: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        Picker("Sort", selection: sortBinding) {
+            ForEach(LibrarySearchSort.allCases, id: \.self) { sort in
+                Text(Self.label(for: sort)).tag(sort)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .accessibilityIdentifier("library.search.sort")
+        .accessibilityLabel("Sort results")
+    }
+
+    private var sortBinding: Binding<LibrarySearchSort> {
+        Binding(
+            get: { model.searchSort },
+            set: { model.setSearchSort($0) }
+        )
+    }
+
+    static func label(for sort: LibrarySearchSort) -> String {
+        switch sort {
+        case .relevance: return "Relevance"
+        case .recent: return "Recent"
+        }
+    }
+}

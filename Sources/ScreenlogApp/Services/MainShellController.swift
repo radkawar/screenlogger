@@ -336,7 +336,7 @@ final class MainShellController: NSObject, NSWindowDelegate, NSToolbarDelegate {
 
     private func updateLibraryButton() {
         guard let libraryButton, let model else { return }
-        let returnsToSearch = model.timelineNavigationOrigin == .libraryResult
+        let returnsToSearch = model.timelineNavigationOrigin.returnsToLibrary
         let title = returnsToSearch ? "Back to Library" : "Library"
         libraryButton.title = title
         libraryButton.image = NSImage(
@@ -357,7 +357,7 @@ final class MainShellController: NSObject, NSWindowDelegate, NSToolbarDelegate {
 
     @objc private func showLibrary(_ sender: Any?) {
         guard let model else { return }
-        if model.timelineNavigationOrigin == .libraryResult {
+        if model.timelineNavigationOrigin.returnsToLibrary {
             model.returnToLibrary()
         } else {
             model.openSearchWindow()

@@ -88,10 +88,10 @@ struct StorageLibraryToolsCard: View {
 
             Label(
                 model.automaticMaintenanceDeferredForPower
-                    ? "Automatic compression is waiting for power. Compress Now runs immediately."
-                    : "Automatic compression waits while this Mac is running on battery.",
+                    ? "Automatic compression is paused while this Mac conserves energy. Compress Now runs immediately."
+                    : "Automatic compression waits on battery by default.",
                 systemImage: model.automaticMaintenanceDeferredForPower
-                    ? "battery.25percent" : "bolt.fill"
+                    ? "leaf.fill" : "bolt.fill"
             )
             .font(.caption)
             .foregroundStyle(model.automaticMaintenanceDeferredForPower ? .orange : .secondary)

@@ -18,6 +18,13 @@ private let log = Logger(subsystem: "dev.screenlog", category: "compaction")
 /// 2. Split runs on large timestamp gaps - never stitch unrelated timeslices into one video.
 /// 3. Only mark/delete frames that were **actually** successfully encoded.
 /// 4. On encode failure: leave frames untouched, remove incomplete video, continue next run.
+///
+/// Concurrency: encoding is a blocking AVAssetWriter pipeline that can run for
+/// minutes. It must never occupy a Swift concurrency cooperative thread, and it
+/// must not hold the database mutation lock while it works, because live
+/// capture takes that same lock for every stored frame. Async callers use
+/// `compact(store:)`, which runs the pass on a dedicated serial queue; the
+/// database lock is taken only for the short load and commit steps.
 public final class VideoCompactionService: @unchecked Sendable {
     /// Minimum unfinalized stills before a compaction pass starts.
     public var minBatchSize: Int = 30
@@ -33,35 +40,58 @@ public final class VideoCompactionService: @unchecked Sendable {
     /// Max wall time to wait for `isReadyForMoreMediaData` per frame.
     public var readyTimeout: TimeInterval = 10
 
-    private let lock = NSLock()
-    private var inProgress = false
+    /// One compaction pass at a time for the whole process. Every call site
+    /// builds its own service instance, so an instance flag could never keep
+    /// the background maintenance pass and a user-initiated pass off the same
+    /// unfinalized frames. Compaction no longer holds the database mutation
+    /// lock end to end, so this gate is what serializes passes.
+    private static let passGate = CompactionPassGate()
+
+    /// Encoding blocks its thread for as long as the pass runs. Async callers
+    /// are moved here so no cooperative thread is parked on AVFoundation.
+    private static let passQueue = DispatchQueue(
+        label: "dev.screenlog.compaction",
+        qos: .utility
+    )
 
     public init() {}
 
-    /// Compact eligible unfinalized stills. Returns number of frames successfully compacted.
+    /// Compact eligible unfinalized stills without occupying the caller's
+    /// executor. Preferred entry point from any Swift concurrency context.
     @discardableResult
-    public func compactIfNeeded(store: Store) throws -> Int {
-        try store.withExclusiveMaintenance {
-            try compactExclusively(store: store)
+    public func compact(store: Store) async throws -> Int {
+        try await withCheckedThrowingContinuation { continuation in
+            Self.passQueue.async { [self] in
+                do {
+                    continuation.resume(returning: try compactIfNeeded(store: store))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
         }
     }
 
-    private func compactExclusively(store: Store) throws -> Int {
-        lock.lock()
-        if inProgress {
-            lock.unlock()
+    /// Compact eligible unfinalized stills. Returns number of frames successfully compacted.
+    ///
+    /// Blocking: this runs the whole encode on the calling thread. Call it only
+    /// from a thread you own (a dispatch queue, the CLI, or a test). From an
+    /// async context use `compact(store:)` instead.
+    @discardableResult
+    public func compactIfNeeded(store: Store) throws -> Int {
+        guard Self.passGate.begin() else {
             log.info("Compact already in progress, skipping")
             return 0
         }
-        inProgress = true
-        lock.unlock()
-        defer {
-            lock.lock()
-            inProgress = false
-            lock.unlock()
-        }
+        defer { Self.passGate.end() }
+        return try compactExclusively(store: store)
+    }
 
-        let unfinalized = try loadUnfinalized(store: store)
+    private func compactExclusively(store: Store) throws -> Int {
+        // Short critical section: reading the candidate rows excludes writers,
+        // encoding them does not.
+        let unfinalized = try store.withExclusiveMaintenance {
+            try loadUnfinalized(store: store)
+        }
         guard unfinalized.count >= minBatchSize else {
             log.debug(
                 "compaction skipped: unfinalized=\(unfinalized.count) < minBatchSize=\(self.minBatchSize)"
@@ -335,6 +365,30 @@ public final class VideoCompactionService: @unchecked Sendable {
 
         do {
             try store.db.transaction {
+                // Encoding deliberately runs outside the mutation lock. Before
+                // publishing the video, require every encoded frame to still
+                // own the exact still that supplied its pixels. Linking only a
+                // surviving subset would leave pixels from a concurrently
+                // deleted moment embedded in the shared video file.
+                let validate = try store.db.prepare(
+                    """
+                    SELECT 1
+                    FROM frame
+                    WHERE id = ? AND video IS NULL AND image_path = ?
+                    LIMIT 1
+                    """
+                )
+                defer { sqlite3_finalize(validate) }
+                for frame in encoded {
+                    sqlite3_reset(validate)
+                    sqlite3_clear_bindings(validate)
+                    SQLiteBind.int64(validate, 1, frame.id)
+                    SQLiteBind.text(validate, 2, frame.path)
+                    guard sqlite3_step(validate) == SQLITE_ROW else {
+                        throw CompactionCandidateSetChanged()
+                    }
+                }
+
                 let ins = try store.db.prepare(
                     """
                     INSERT INTO video(height, width, path, num_frames, size_bytes, status)
@@ -368,8 +422,19 @@ public final class VideoCompactionService: @unchecked Sendable {
                     if sqlite3_step(upd) != SQLITE_DONE {
                         throw CompactionError.db("UPDATE frame \(frame.id) failed")
                     }
+                    guard store.db.changes() == 1 else {
+                        throw CompactionCandidateSetChanged()
+                    }
                 }
             }
+        } catch is CompactionCandidateSetChanged {
+            // A reviewed deletion or retention pass won the race. Discard the
+            // entire video because it contains pixels from the old candidate
+            // set, even if some rows still exist. A later pass can safely
+            // compact the remaining stills.
+            try? FileManager.default.removeItem(at: finalURL)
+            log.info("compaction candidate set changed during encode; discarded output")
+            return 0
         } catch {
             // DB failed after encode: remove video file so we don't orphan pixels without metadata.
             // Stills remain on disk and rows stay unfinalized.
@@ -377,7 +442,7 @@ public final class VideoCompactionService: @unchecked Sendable {
             throw error
         }
 
-        // Delete stills only after a successful DB commit of the video linkage.
+        // Delete stills only after every encoded row committed its video link.
         for frame in encoded {
             try? FileManager.default.removeItem(atPath: frame.path)
         }
@@ -430,7 +495,9 @@ public final class VideoCompactionService: @unchecked Sendable {
                 continue
             }
 
-            // Wait until the writer can accept more samples (bounded).
+            // Wait until the writer can accept more samples (bounded). This
+            // parks the calling thread, which is why every entry point runs on
+            // a dedicated queue rather than a cooperative pool thread.
             let deadline = Date().addingTimeInterval(readyTimeout)
             while !input.isReadyForMoreMediaData {
                 if Date() > deadline {
@@ -467,6 +534,8 @@ public final class VideoCompactionService: @unchecked Sendable {
         }
 
         input.markAsFinished()
+        // AVFoundation finishes on its own queue. Waiting here is safe for the
+        // same reason as the readiness loop above: this thread is ours.
         let sem = DispatchSemaphore(value: 0)
         writer.finishWriting { sem.signal() }
         let finishWait = sem.wait(timeout: .now() + 120)
@@ -630,6 +699,33 @@ public final class VideoCompactionService: @unchecked Sendable {
         ctx.interpolationQuality = .high
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         return pb
+    }
+}
+
+private struct CompactionCandidateSetChanged: Error {}
+
+// MARK: - Pass serialization
+
+/// Process-wide "one compaction pass at a time" gate. Skipping is deliberate:
+/// a second pass has nothing useful to do while the first one owns the current
+/// unfinalized frames, and blocking a caller for the length of an encode would
+/// be worse than reporting that there was nothing to compact.
+final class CompactionPassGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isRunning = false
+
+    func begin() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if isRunning { return false }
+        isRunning = true
+        return true
+    }
+
+    func end() {
+        lock.lock()
+        isRunning = false
+        lock.unlock()
     }
 }
 

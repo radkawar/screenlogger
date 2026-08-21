@@ -109,7 +109,6 @@ struct AssistantHandoffSheet: View {
         if launchError != nil {
             height += dynamicTypeSize.isAccessibilitySize ? 52 : 34
         }
-
         return min(height, dynamicTypeSize.isAccessibilitySize ? 620 : 520)
     }
 

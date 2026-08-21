@@ -40,6 +40,102 @@ public enum ScreenloggerCapturePrivacy {
     }
 }
 
+/// Serializes whole capture cycles.
+///
+/// Actor isolation is not mutual exclusion across suspension points. A capture
+/// cycle awaits ScreenCaptureKit, Vision, and HEIC encoding, and the actor is
+/// free to run other work at every one of those points, so a manual "Capture
+/// Now" can start a second cycle in the middle of the loop's cycle. Two live
+/// cycles share `DifferentialOCRService` state and the per-display "last stored
+/// still" cache, and interleaving them can store one frame's pixels with
+/// another frame's recognized text. Cycles therefore run one at a time.
+///
+/// `release()` is synchronous so callers can put it in `defer` and never leak
+/// the gate on a thrown capture error.
+final class CaptureCycleGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isBusy = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    /// Suspends until no other cycle holds the gate, then takes it.
+    func acquire() async throws {
+        try Task.checkCancellation()
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if isBusy {
+                waiters.append(continuation)
+                lock.unlock()
+            } else {
+                isBusy = true
+                lock.unlock()
+                continuation.resume()
+            }
+        }
+        do {
+            try Task.checkCancellation()
+        } catch {
+            // Ownership has already transferred to this waiter. Hand it on
+            // before propagating cancellation so a stopped loop cannot strand
+            // Capture Now, or vice versa.
+            release()
+            throw error
+        }
+    }
+
+    func release() {
+        lock.lock()
+        let next = waiters.isEmpty ? nil : waiters.removeFirst()
+        if next == nil { isBusy = false }
+        lock.unlock()
+        // Ownership passes directly to one waiter, avoiding a wake-up race.
+        next?.resume()
+    }
+}
+
+/// Background maintenance for the capture loop.
+///
+/// Compaction and retention are synchronous, blocking pipelines that run for
+/// minutes. They must not run on the capture actor (capture would be dead for
+/// the whole pass) and must not park a Swift concurrency cooperative thread, so
+/// the pass is handed to a dedicated serial queue and the caller only suspends.
+enum CaptureMaintenanceRunner {
+    private static let queue = DispatchQueue(
+        label: "dev.screenlog.capture-maintenance",
+        qos: .background
+    )
+
+    static func run(
+        store: Store,
+        retentionDays: Int,
+        storageCapMB: Int64,
+        runCompact: Bool,
+        runRetention: Bool
+    ) async {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                do {
+                    if runCompact {
+                        let compactor = VideoCompactionService()
+                        compactor.minBatchSize = 20
+                        let n = try compactor.compactIfNeeded(store: store)
+                        if n > 0 { log.info("auto-compacted \(n) frames") }
+                    }
+                    if runRetention {
+                        let policy = RetentionPolicy(
+                            retentionDays: retentionDays,
+                            storageCapMB: storageCapMB
+                        )
+                        _ = try RetentionService(policy: policy).run(store: store)
+                    }
+                } catch {
+                    log.error("maintenance failed: \(error.localizedDescription)")
+                }
+                continuation.resume()
+            }
+        }
+    }
+}
+
 // MARK: - Off-MainActor capture pipeline
 
 /// Heavy capture work: ScreenCaptureKit stills, Vision OCR, HEIC encode, AX, SQLite writes.
@@ -67,6 +163,9 @@ private actor CapturePipeline {
     var displayMode: CaptureDisplayMode = .active
     private var fastRecognition = false
     private var lastStoredByDisplay: [UInt32: StoredDisplayStill] = [:]
+    /// Keeps a manual capture from interleaving with the loop's cycle. See
+    /// `CaptureCycleGate` for why actor isolation alone is not enough.
+    private let cycleGate = CaptureCycleGate()
 
     private struct StoredDisplayStill: Sendable {
         var encoded: EncodedStill
@@ -170,6 +269,18 @@ private actor CapturePipeline {
     func captureAndStore(
         store: Store,
         energy: CaptureEnergyProfile? = nil
+    ) async throws -> CycleOutcome {
+        // One cycle at a time: differential OCR state and the per-display last
+        // stored still are read and written across suspension points.
+        try await cycleGate.acquire()
+        defer { cycleGate.release() }
+        try Task.checkCancellation()
+        return try await runCaptureCycle(store: store, energy: energy)
+    }
+
+    private func runCaptureCycle(
+        store: Store,
+        energy: CaptureEnergyProfile?
     ) async throws -> CycleOutcome {
         if let energy {
             applyEnergyProfile(energy)
@@ -502,32 +613,6 @@ private actor CapturePipeline {
         }
         return ScreenloggerCapturePrivacy.includingScreenlogger(in: bundleIDs)
     }
-
-    func runMaintenance(
-        store: Store,
-        retentionDays: Int,
-        storageCapMB: Int64,
-        runCompact: Bool = true,
-        runRetention: Bool = true
-    ) async {
-        do {
-            if runCompact {
-                let compactor = VideoCompactionService()
-                compactor.minBatchSize = 20
-                let n = try compactor.compactIfNeeded(store: store)
-                if n > 0 { log.info("auto-compacted \(n) frames") }
-            }
-            if runRetention {
-                let policy = RetentionPolicy(
-                    retentionDays: retentionDays,
-                    storageCapMB: storageCapMB
-                )
-                _ = try RetentionService(policy: policy).run(store: store)
-            }
-        } catch {
-            log.error("maintenance failed: \(error.localizedDescription)")
-        }
-    }
 }
 
 // MARK: - UI-facing engine
@@ -549,8 +634,13 @@ public final class RecordingEngine: ObservableObject {
     @Published public private(set) var pauseReason: CapturePauseReason?
     @Published public private(set) var audioTranscriptionStatus: AudioTranscriptionStatus = .off
     /// True when an automatic compression/retention pass is due but is waiting
-    /// for external power. User-initiated maintenance remains available.
+    /// for external power, a cooler machine, or Low Power Mode to end.
+    /// User-initiated maintenance remains available.
     @Published public private(set) var automaticMaintenanceDeferredForPower = false
+    /// Non-nil while capture is deliberately running cheaper than configured.
+    /// Capture never stops for an energy reason, so this is a status, not a
+    /// pause: see `CapturePauseReason` for the states that stop storing frames.
+    @Published public private(set) var energySaverReason: CaptureEnergySaverReason?
 
     public var intervalSeconds: TimeInterval = 2.0
     public private(set) var maxDimension: Int = 2_880
@@ -843,6 +933,7 @@ public final class RecordingEngine: ObservableObject {
         pausedForDisk = false
         pausedForInactivity = false
         pauseReason = nil
+        energySaverReason = nil
         log.info("recording stopped")
         return !isRecording
     }
@@ -872,6 +963,7 @@ public final class RecordingEngine: ObservableObject {
         pausedForDisk = false
         pausedForInactivity = false
         pauseReason = nil
+        energySaverReason = nil
         log.info("recording quiesced for Library replacement")
     }
 
@@ -991,6 +1083,11 @@ public final class RecordingEngine: ObservableObject {
                     // A privacy pause is intentional and remains visible until
                     // the next cycle can save a frame.
                 }
+            } catch is CancellationError {
+                // Stop and Library replacement intentionally cancel a queued
+                // or active cycle. Do not turn that lifecycle event into a
+                // capture failure after the UI has moved to Capture Off.
+                break
             } catch CaptureError.excluded {
                 consecutiveFailures = 0
                 lastError = nil
@@ -1023,10 +1120,26 @@ public final class RecordingEngine: ObservableObject {
         return cachedPowerSource
     }
 
+    /// Single funnel for every energy decision, so the published status can
+    /// never disagree with the interval and profile actually in use.
+    private func currentPowerConditions() -> CapturePowerConditions {
+        let conditions = CapturePowerConditions.current(powerSource: currentPowerSource())
+        let reason = CaptureEnergySaverReason.reason(for: conditions)
+        if reason != energySaverReason {
+            energySaverReason = reason
+            if let reason {
+                log.info("capture energy saver active: \(reason.rawValue, privacy: .public)")
+            } else {
+                log.info("capture energy saver cleared")
+            }
+        }
+        return conditions
+    }
+
     private func currentCaptureInterval() -> TimeInterval {
         CapturePowerPolicy.captureInterval(
             configured: intervalSeconds,
-            powerSource: currentPowerSource()
+            conditions: currentPowerConditions()
         )
     }
 
@@ -1035,7 +1148,7 @@ public final class RecordingEngine: ObservableObject {
             configuredMaxDimension: maxDimension,
             stillQuality: stillQuality,
             captureAXTree: captureAXTree,
-            powerSource: currentPowerSource()
+            conditions: currentPowerConditions()
         )
     }
 
@@ -1058,14 +1171,18 @@ public final class RecordingEngine: ObservableObject {
                 continue
             }
             if MaintenancePowerPolicy.shouldDeferAutomaticWork(
-                powerSource: SystemPowerSource.current(),
+                conditions: CapturePowerConditions.current(
+                    powerSource: SystemPowerSource.current()
+                ),
                 deferOnBattery: deferAutomaticMaintenanceOnBattery
             ) {
                 automaticMaintenanceDeferredForPower = true
                 continue
             }
             automaticMaintenanceDeferredForPower = false
-            await pipeline.runMaintenance(
+            // Off the capture actor and off the cooperative pool: a pass can
+            // encode hundreds of stills and must never stall capture.
+            await CaptureMaintenanceRunner.run(
                 store: store,
                 retentionDays: days,
                 storageCapMB: cap,

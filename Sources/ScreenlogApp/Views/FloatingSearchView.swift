@@ -30,6 +30,19 @@ struct FloatingSearchView: View {
                     .padding(.top, 8)
             }
 
+            // Actions taken here, such as deleting a found moment, previously
+            // confirmed only into a status string no view rendered. The notice
+            // channel is shared with the Timeline window; the type keeps its
+            // original name.
+            if let notice = model.timelineNotice {
+                TimelineNoticeView(
+                    notice: notice,
+                    onDismiss: { model.dismissTimelineNotice() }
+                )
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+            }
+
             SearchPane(focusRequest: focusResultsRequest)
                 .padding(.horizontal, 16)
                 .padding(.top, 12)

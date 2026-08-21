@@ -93,6 +93,7 @@ final class AppModel: ObservableObject {
     /// Unified by default; people can narrow a search to visible text or
     /// finalized on-device transcripts without changing their query.
     @Published var searchContent: LibrarySearchContent = .all
+    @Published var searchSort: LibrarySearchSort = .relevance
     /// Recent free-text queries for empty-state chips.
     @Published var recentSearchQueries: [String] = []
     /// Last parsed operator query (for chips / highlight tokens).
@@ -155,6 +156,7 @@ final class AppModel: ObservableObject {
     @Published var capturePauseReason: CapturePauseReason?
     @Published var audioTranscriptionStatus: AudioTranscriptionStatus = .off
     @Published var automaticMaintenanceDeferredForPower = false
+    @Published var captureEnergySaverReason: CaptureEnergySaverReason?
     /// User-requested pause end time (menu: 'Pause Recording for 1 Hour'). Nil when not paused.
     @Published var recordingPausedUntil: Date? = nil
     var pauseResumeTask: Task<Void, Never>?
@@ -958,6 +960,15 @@ final class AppModel: ObservableObject {
             .sink { [weak self] value in
                 Task { @MainActor [weak self] in
                     self?.automaticMaintenanceDeferredForPower = value
+                }
+            }
+            .store(in: &engineCancellables)
+
+        engine.$energySaverReason
+            .removeDuplicates()
+            .sink { [weak self] value in
+                Task { @MainActor [weak self] in
+                    self?.captureEnergySaverReason = value
                 }
             }
             .store(in: &engineCancellables)

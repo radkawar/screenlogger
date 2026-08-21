@@ -1,11 +1,16 @@
 import Foundation
 import ScreenlogCore
 
-/// Why Timeline is currently being presented. Only a result handoff owns a
-/// one-shot return path to the preserved Library query.
+/// Why Timeline is currently being presented.
 enum TimelineNavigationOrigin: Sendable, Equatable {
     case direct
     case libraryResult
+    case librarySession
+
+    /// Library handoffs preserve that window and expose the native Back route.
+    var returnsToLibrary: Bool {
+        self != .direct
+    }
 }
 
 /// A recoverable failure owned by the Timeline experience.

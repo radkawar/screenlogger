@@ -576,6 +576,9 @@ extension AppModel {
         stopReplay()
         searchTask?.cancel()
         searchDebounceTask?.cancel()
+        if !searchSessionScoped {
+            selectedSessionIndex = nil
+        }
         SearchWindowController.shared.hide()
         shellSearchMode = false
         // Highlight matching OCR on stage (Live Text style).
@@ -594,9 +597,9 @@ extension AppModel {
         }
     }
 
-    /// Return to the preserved Library query after inspecting a result.
+    /// Return to the preserved Library workspace after inspecting a result or session.
     func returnToLibrary() {
-        guard timelineNavigationOrigin == .libraryResult else { return }
+        guard timelineNavigationOrigin.returnsToLibrary else { return }
         stopReplay()
         timelineNavigationOrigin = .direct
         shellSearchMode = true

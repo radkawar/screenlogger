@@ -169,6 +169,114 @@ final class StoreFTSTests: XCTestCase {
         XCTAssertEqual(operatorOnly.map(\.frameID), [targetID])
     }
 
+    func testRelevanceSortSurfacesBestMatchAheadOfNewerNoise() throws {
+        let token = "relevance\(String(UUID().uuidString.prefix(8)).replacingOccurrences(of: "-", with: ""))"
+        // Short and squarely on topic: bm25 should prefer it.
+        let targetID = try store.insertSeedFrame(
+            timestampMs: 1_500_000_000_000,
+            foreground: "\(token)",
+            bundleID: "com.apple.Safari",
+            displayName: "Safari",
+            domain: "docs.example.com"
+        )
+        for index in 0..<90 {
+            _ = try store.insertSeedFrame(
+                timestampMs: 2_000_000_000_000 + Int64(index),
+                foreground: "newer global \(token) result \(index) with a great deal of unrelated padding text",
+                bundleID: "com.example.Chat",
+                displayName: "Chat",
+                domain: "chat.example.net"
+            )
+        }
+
+        let ranked = try store.searchLibrary(
+            query: LibrarySearchQuery(text: token, sort: .relevance),
+            limit: 10
+        )
+        XCTAssertEqual(ranked.first?.frameID, targetID)
+
+        let chronological = try store.searchLibrary(
+            query: LibrarySearchQuery(text: token, sort: .recent),
+            limit: 10
+        )
+        XCTAssertNotEqual(chronological.first?.frameID, targetID)
+    }
+
+    func testSearchSnippetUsesMarkersThatDoNotConsumeCapturedBrackets() throws {
+        let token = "marker\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+        _ = try store.insertSeedFrame(
+            timestampMs: 1_500_000_000_000,
+            foreground: "array [\(token)] value"
+        )
+
+        let result = try XCTUnwrap(
+            store.searchLibrary(query: LibrarySearchQuery(text: token), limit: 1).first
+        )
+        let snippet = try XCTUnwrap(result.snippet)
+        XCTAssertTrue(snippet.contains("["))
+        XCTAssertTrue(snippet.contains("]"))
+        XCTAssertTrue(snippet.contains("\u{1F}"))
+        XCTAssertTrue(snippet.contains("\u{1E}"))
+    }
+
+    func testRelevancePageIsBoundedAndOffersNoCursor() throws {
+        let token = "ranked\(String(UUID().uuidString.prefix(8)).replacingOccurrences(of: "-", with: ""))"
+        for index in 0..<40 {
+            _ = try store.insertSeedFrame(
+                timestampMs: 2_000_000_000_000 + Int64(index),
+                foreground: "\(token) entry \(index)",
+                bundleID: "com.example.Chat",
+                displayName: "Chat",
+                domain: "chat.example.net"
+            )
+        }
+
+        let ranked = try store.searchLibraryPage(
+            query: LibrarySearchQuery(text: token, sort: .relevance),
+            visibleLimit: 10
+        )
+        XCTAssertEqual(ranked.results.count, 10)
+        XCTAssertTrue(ranked.isTruncated)
+        // Ranked order cannot be expressed by a timestamp keyset.
+        XCTAssertNil(ranked.nextCursor)
+
+        let chronological = try store.searchLibraryPage(
+            query: LibrarySearchQuery(text: token, sort: .recent),
+            visibleLimit: 10
+        )
+        XCTAssertTrue(chronological.isTruncated)
+        XCTAssertNotNil(chronological.nextCursor)
+    }
+
+    func testFilterOnlySearchKeepsChronologicalPaginationWithRelevanceSelected() throws {
+        for index in 0..<25 {
+            _ = try store.insertSeedFrame(
+                timestampMs: 2_100_000_000_000 + Int64(index),
+                foreground: "filter only entry \(index)",
+                bundleID: "com.example.Filtered",
+                displayName: "Filtered"
+            )
+        }
+
+        let query = LibrarySearchQuery(
+            appBundleID: "com.example.Filtered",
+            sort: .relevance
+        )
+        let first = try store.searchLibraryPage(query: query, visibleLimit: 10)
+        XCTAssertEqual(first.results.count, 10)
+        XCTAssertTrue(first.isTruncated)
+        let cursor = try XCTUnwrap(first.nextCursor)
+
+        let second = try store.searchLibraryPage(
+            query: query,
+            visibleLimit: 10,
+            after: cursor
+        )
+        XCTAssertEqual(second.results.count, 10)
+        XCTAssertNotEqual(first.results.map(\.frameID), second.results.map(\.frameID))
+        XCTAssertNotNil(second.nextCursor)
+    }
+
     func testConstrainedSearchFiltersBeforeLimit() throws {
         let token = "constrained\(String(UUID().uuidString.prefix(8)).replacingOccurrences(of: "-", with: ""))"
         let targetID = try store.insertSeedFrame(
@@ -189,7 +297,12 @@ final class StoreFTSTests: XCTestCase {
             )
         }
 
-        let global = try store.ftsSearch(query: token, limit: 80)
+        // Chronological order is what drops the oldest match past the limit;
+        // relevance deliberately keeps it, which the ranking tests cover.
+        let global = try store.searchLibrary(
+            query: LibrarySearchQuery(text: token, sort: .recent),
+            limit: 80
+        )
         XCTAssertEqual(global.count, 80)
         XCTAssertFalse(global.contains(where: { $0.frameID == targetID }))
 
@@ -197,7 +310,8 @@ final class StoreFTSTests: XCTestCase {
             query: LibrarySearchQuery(
                 text: token,
                 appFilter: "com.apple.Safari",
-                siteFilter: "example.com"
+                siteFilter: "example.com",
+                sort: .recent
             ),
             limit: 10
         )
@@ -220,14 +334,14 @@ final class StoreFTSTests: XCTestCase {
         }
 
         let page = try store.searchLibraryPage(
-            query: LibrarySearchQuery(text: token),
+            query: LibrarySearchQuery(text: token, sort: .recent),
             visibleLimit: 500
         )
         XCTAssertEqual(page.results.count, 500)
         XCTAssertTrue(page.isTruncated)
 
         let ordinarySearch = try store.searchLibrary(
-            query: LibrarySearchQuery(text: token),
+            query: LibrarySearchQuery(text: token, sort: .recent),
             limit: 501
         )
         XCTAssertEqual(ordinarySearch.count, 500)
@@ -243,7 +357,7 @@ final class StoreFTSTests: XCTestCase {
         }
 
         let first = try store.searchLibraryPage(
-            query: LibrarySearchQuery(text: token),
+            query: LibrarySearchQuery(text: token, sort: .recent),
             visibleLimit: 80
         )
         XCTAssertEqual(first.results.count, 80)
@@ -258,13 +372,13 @@ final class StoreFTSTests: XCTestCase {
             foreground: "\(token) captured later"
         )
         let second = try store.searchLibraryPage(
-            query: LibrarySearchQuery(text: token),
+            query: LibrarySearchQuery(text: token, sort: .recent),
             visibleLimit: 80,
             after: firstCursor
         )
         let secondCursor = try XCTUnwrap(second.nextCursor)
         let third = try store.searchLibraryPage(
-            query: LibrarySearchQuery(text: token),
+            query: LibrarySearchQuery(text: token, sort: .recent),
             visibleLimit: 80,
             after: secondCursor
         )
@@ -308,14 +422,14 @@ final class StoreFTSTests: XCTestCase {
         )
 
         let first = try store.searchLibraryPage(
-            query: LibrarySearchQuery(text: token),
+            query: LibrarySearchQuery(text: token, sort: .recent),
             visibleLimit: 1
         )
         XCTAssertEqual(first.results.map(\.frameID), [selectedDisplayID])
         XCTAssertTrue(first.isTruncated)
 
         let second = try store.searchLibraryPage(
-            query: LibrarySearchQuery(text: token),
+            query: LibrarySearchQuery(text: token, sort: .recent),
             visibleLimit: 1,
             after: try XCTUnwrap(first.nextCursor)
         )
@@ -780,6 +894,61 @@ final class StoreFTSTests: XCTestCase {
         XCTAssertEqual(still.source, "video", "must extract from compacted video, not still path")
         XCTAssertFalse(still.data.isEmpty)
         XCTAssertTrue(["heic", "jpg", "jpeg"].contains(still.fileExtension.lowercased()))
+    }
+
+    func testCompactionDiscardsVideoWhenCandidateSetChangesBeforeCommit() throws {
+        let base = Int64(1_711_000_000_000)
+        var ids: [Int64] = []
+        var paths: [String] = []
+        for index in 0..<2 {
+            let png = try Self.makeSolidPNG(width: 64, height: 64, gray: UInt8(80 + index))
+            let path = tempRoot.appendingPathComponent("changed-candidate-\(index).png").path
+            try png.write(to: URL(fileURLWithPath: path))
+            paths.append(path)
+            ids.append(
+                try store.insertSeedFrame(
+                    timestampMs: base + Int64(index) * 2_000,
+                    foreground: "candidate-\(index)",
+                    imagePath: path,
+                    width: 64,
+                    height: 64
+                )
+            )
+        }
+
+        // Simulate a candidate changing after validation but before linkage.
+        // The trigger mutation is rolled back with the abandoned video insert.
+        try store.db.exec(
+            """
+            CREATE TEMP TRIGGER change_compaction_candidate
+            BEFORE INSERT ON video
+            BEGIN
+                UPDATE frame SET image_path = NULL WHERE id = \(ids[0]);
+            END;
+            """
+        )
+
+        let service = VideoCompactionService()
+        service.minBatchSize = 2
+        service.minRunSize = 2
+        XCTAssertEqual(try service.compactIfNeeded(store: store), 0)
+
+        for (id, path) in zip(ids, paths) {
+            let frame = try XCTUnwrap(try store.frame(id: id))
+            XCTAssertEqual(frame.imagePath, path)
+            XCTAssertNil(frame.videoID)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: path))
+        }
+        let videoCount = try store.db.prepare("SELECT COUNT(*) FROM video")
+        defer { sqlite3_finalize(videoCount) }
+        XCTAssertEqual(sqlite3_step(videoCount), SQLITE_ROW)
+        XCTAssertEqual(SQLiteColumn.int64(videoCount, 0), 0)
+        XCTAssertTrue(
+            (try FileManager.default.contentsOfDirectory(
+                at: ScreenlogPaths.videosDirectory(root: store.root),
+                includingPropertiesForKeys: nil
+            )).isEmpty
+        )
     }
 
     func testListApplicationsAndDomains() throws {

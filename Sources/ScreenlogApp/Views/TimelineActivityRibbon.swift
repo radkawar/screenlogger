@@ -4,7 +4,29 @@ import SwiftUI
 extension HistoryPane {
     /// Activity ribbon with proportional source bands and persistent time orientation.
     var segmentTrack: some View {
-        let frames = model.timelineMomentFrames
+        TimelineActivityRibbon(scaleStep: $timelineScaleStep)
+    }
+}
+
+/// Activity ribbon with proportional source bands and persistent time orientation.
+///
+/// Hover and scrub state live here instead of on `HistoryPane` so pointer motion
+/// over the ribbon redraws the ribbon alone rather than the stage and both
+/// control bars above it. The frame list and the activity model are memoized for
+/// the same reason: neither answer can change while only the pointer moves.
+struct TimelineActivityRibbon: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Binding var scaleStep: Int
+    @State private var scrubWindow: TimelineWindow?
+    @State private var hoveredFrame: TimelineFrame?
+    @State private var cache = TimelineRibbonCache()
+
+    var body: some View {
+        let fingerprint = TimelineRibbonCache.fingerprint(model.timeline)
+        let frames = cache.momentFrames(fingerprint: fingerprint) {
+            model.timelineMomentFrames
+        }
         return GeometryReader { geo in
             let w = max(geo.size.width, 1)
             let scopeStart = model.selectedSession?.startMs ?? frames.first?.timestampMs
@@ -12,7 +34,7 @@ extension HistoryPane {
             let liveWindow = Self.timelineWindow(
                 frames: frames,
                 selectedTimestampMs: model.selectedTimelineFrame?.timestampMs,
-                scaleStep: timelineScaleStep,
+                scaleStep: scaleStep,
                 scopeStartMs: scopeStart,
                 scopeEndMs: scopeEnd
             )
@@ -20,14 +42,14 @@ extension HistoryPane {
             // selection changes on every drag update; allowing that selection
             // to recenter the window would move the time mapping under the
             // pointer until the gesture ends.
-            let window = timelineScrubWindow ?? liveWindow
-            let activity = TimelineActivityPresentation(
-                chronologicalFrames: frames,
+            let window = scrubWindow ?? liveWindow
+            let activity = cache.activity(
+                frames: frames,
+                fingerprint: fingerprint,
                 visibleStartMs: window.startMs,
                 visibleEndMs: window.endMs,
                 expectedCaptureIntervalMs: Int64((model.intervalSeconds * 1_000).rounded())
             )
-            let hoveredFrame = frames.first(where: { $0.id == hoveredTimelineFrameID })
             let contextFrame = hoveredFrame ?? model.selectedTimelineFrame
             VStack(spacing: 4) {
                 timelineRibbonHeader(
@@ -172,13 +194,13 @@ extension HistoryPane {
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
-                            let scrubWindow = timelineScrubWindow ?? window
-                            if timelineScrubWindow == nil {
-                                timelineScrubWindow = scrubWindow
+                            let activeWindow = scrubWindow ?? window
+                            if scrubWindow == nil {
+                                scrubWindow = activeWindow
                             }
                             let target = Self.timelineTimestamp(
                                 x: value.location.x,
-                                in: scrubWindow,
+                                in: activeWindow,
                                 width: w
                             )
                             guard Self.loadedRangeContains(target, frames: frames),
@@ -188,10 +210,10 @@ extension HistoryPane {
                             model.selectTimelineFrame(id: selection.frameID)
                         }
                         .onEnded { value in
-                            let scrubWindow = timelineScrubWindow ?? window
+                            let activeWindow = scrubWindow ?? window
                             let target = Self.timelineTimestamp(
                                 x: value.location.x,
-                                in: scrubWindow,
+                                in: activeWindow,
                                 width: w
                             )
                             if Self.loadedRangeContains(target, frames: frames),
@@ -207,7 +229,7 @@ extension HistoryPane {
                                     )
                                 }
                             }
-                            timelineScrubWindow = nil
+                            scrubWindow = nil
                         }
                 )
                 .onContinuousHover { phase in
@@ -219,9 +241,10 @@ extension HistoryPane {
                         // A gap has no source identity. Keep the header on the
                         // selected moment instead of attributing empty time to
                         // whichever boundary happened to be closest.
-                        hoveredTimelineFrameID = selection?.crossedGap == true ? nil : selection?.frameID
+                        let hoveredID = selection?.crossedGap == true ? nil : selection?.frameID
+                        updateHoveredFrame(id: hoveredID, in: frames)
                     case .ended:
-                        hoveredTimelineFrameID = nil
+                        hoveredFrame = nil
                     }
                 }
 
@@ -246,6 +269,11 @@ extension HistoryPane {
             }
         }
         .frame(height: 76)
+        // The pointer can rest still while a session page loads. Drop the
+        // remembered moment rather than describing rows that are gone.
+        .onChange(of: fingerprint) { _, _ in
+            hoveredFrame = nil
+        }
         .background {
             TimelineHorizontalScrollMonitor { direction in
                 model.stopReplay()
@@ -355,15 +383,15 @@ extension HistoryPane {
         )
         let visibleLabel = Self.timelineSpanLabel(
             window.durationMs,
-            isFull: timelineScaleStep == 0
+            isFull: scaleStep == 0
         )
 
         return Menu {
             ForEach(options) { option in
                 Button {
-                    timelineScaleStep = option.step
+                    scaleStep = option.step
                 } label: {
-                    if option.step == timelineScaleStep {
+                    if option.step == scaleStep {
                         Label(
                             Self.timelineSpanLabel(
                                 option.durationMs,
@@ -400,7 +428,7 @@ extension HistoryPane {
         .accessibilityValue(
             Self.timelineSpanAccessibilityLabel(
                 window.durationMs,
-                isFull: timelineScaleStep == 0
+                isFull: scaleStep == 0
             )
         )
         .accessibilityHint("Choose how much time is visible in the activity ribbon")
@@ -582,6 +610,100 @@ extension HistoryPane {
         // category. Source identity remains available through the icon and
         // hover/VoiceOver context without assigning every app a random hue.
         model.accentSwiftUIColor
+    }
+
+    /// Resolve the moment under the pointer when it actually changes. Pointer
+    /// motion delivers a continuous stream of positions that mostly land on the
+    /// moment already shown, so the list scan stays out of the redraw path.
+    private func updateHoveredFrame(id: Int64?, in frames: [TimelineFrame]) {
+        guard let id else {
+            if hoveredFrame != nil { hoveredFrame = nil }
+            return
+        }
+        guard hoveredFrame?.id != id else { return }
+        hoveredFrame = frames.first(where: { $0.id == id })
+    }
+
+    private var controlStrokeOpacity: Double {
+        colorSchemeContrast == .increased ? 0.48 : 0.22
+    }
+
+    private var primaryTimelineTextOpacity: Double {
+        colorSchemeContrast == .increased ? 1 : 0.82
+    }
+
+    private var secondaryTextOpacity: Double {
+        colorSchemeContrast == .increased ? 0.92 : 0.72
+    }
+
+    private var trackBackgroundOpacity: Double {
+        colorSchemeContrast == .increased ? 0.28 : 0.16
+    }
+}
+
+/// Memoized ribbon inputs.
+///
+/// Both the representative frame list and the activity model are derived from
+/// the loaded Timeline rows and the visible window. Rebuilding them on every
+/// body pass meant hundreds of value copies and per-frame source identities for
+/// each hover, scrub, and replay tick, so they are recomputed only when the
+/// rows or the window actually change.
+@MainActor
+final class TimelineRibbonCache {
+    private struct ActivityKey: Equatable {
+        let fingerprint: UInt64
+        let visibleStartMs: Int64
+        let visibleEndMs: Int64
+        let expectedCaptureIntervalMs: Int64
+    }
+
+    private var framesFingerprint: UInt64?
+    private var frames: [TimelineFrame] = []
+    private var activityKey: ActivityKey?
+    private var activityPresentation: TimelineActivityPresentation?
+
+    /// FNV-1a over the identity and capture time of every loaded row. An integer
+    /// sweep costs a small fraction of the work it protects, and it notices row
+    /// changes that a count-and-endpoints comparison would miss.
+    static func fingerprint(_ rows: [TimelineFrame]) -> UInt64 {
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for row in rows {
+            hash = (hash ^ UInt64(bitPattern: row.id)) &* 1_099_511_628_211
+            hash = (hash ^ UInt64(bitPattern: row.timestampMs)) &* 1_099_511_628_211
+        }
+        return hash
+    }
+
+    func momentFrames(fingerprint: UInt64, build: () -> [TimelineFrame]) -> [TimelineFrame] {
+        if framesFingerprint == fingerprint { return frames }
+        framesFingerprint = fingerprint
+        frames = build()
+        return frames
+    }
+
+    func activity(
+        frames: [TimelineFrame],
+        fingerprint: UInt64,
+        visibleStartMs: Int64,
+        visibleEndMs: Int64,
+        expectedCaptureIntervalMs: Int64
+    ) -> TimelineActivityPresentation {
+        let requested = ActivityKey(
+            fingerprint: fingerprint,
+            visibleStartMs: visibleStartMs,
+            visibleEndMs: visibleEndMs,
+            expectedCaptureIntervalMs: expectedCaptureIntervalMs
+        )
+        if activityKey == requested, let activityPresentation { return activityPresentation }
+        let built = TimelineActivityPresentation(
+            chronologicalFrames: frames,
+            visibleStartMs: visibleStartMs,
+            visibleEndMs: visibleEndMs,
+            expectedCaptureIntervalMs: expectedCaptureIntervalMs
+        )
+        activityKey = requested
+        activityPresentation = built
+        return built
     }
 }
 

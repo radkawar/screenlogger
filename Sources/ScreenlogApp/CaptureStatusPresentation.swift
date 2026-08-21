@@ -18,11 +18,32 @@ struct CaptureStatusInput: Equatable, Sendable {
     let isRecording: Bool
     let timedPauseUntil: Date?
     let pauseReason: CapturePauseReason?
+    let energySaverReason: CaptureEnergySaverReason?
 
     /// Transitional mirror of RecordingEngine.pausedForDisk. The resolver
     /// normalizes it into `.lowDiskSpace` so every consumer sees one state.
     let pausedForDisk: Bool
     let captureIssue: CaptureIssue?
+
+    init(
+        library: LibraryState,
+        permissions: PermissionsSnapshot,
+        isRecording: Bool,
+        timedPauseUntil: Date?,
+        pauseReason: CapturePauseReason?,
+        energySaverReason: CaptureEnergySaverReason? = nil,
+        pausedForDisk: Bool,
+        captureIssue: CaptureIssue?
+    ) {
+        self.library = library
+        self.permissions = permissions
+        self.isRecording = isRecording
+        self.timedPauseUntil = timedPauseUntil
+        self.pauseReason = pauseReason
+        self.energySaverReason = energySaverReason
+        self.pausedForDisk = pausedForDisk
+        self.captureIssue = captureIssue
+    }
 }
 
 enum CaptureStatusPhase: Equatable, Sendable {
@@ -35,6 +56,7 @@ enum CaptureStatusPhase: Equatable, Sendable {
     case lowDiskSpace
     case websiteAddressUnavailable
     case automaticPause(CapturePauseReason)
+    case energySaving(CaptureEnergySaverReason)
     case on
     case off
 }
@@ -174,7 +196,7 @@ enum CaptureStatusToolbarResolver {
             return presentation(title: "Capture Unavailable", symbolName: "record.circle")
         case .timedPause, .lowDiskSpace, .websiteAddressUnavailable, .automaticPause:
             return presentation(title: "Capture Paused", symbolName: "pause.fill")
-        case .on:
+        case .energySaving, .on:
             return presentation(title: "Capture On", symbolName: "record.circle.fill")
         case .setupRequired, .captureFailed, .off:
             return presentation(title: "Capture Off", symbolName: "record.circle")
@@ -401,6 +423,24 @@ enum CaptureStatusResolver {
             )
         }
 
+        if input.isRecording, let reason = input.energySaverReason {
+            return presentation(
+                phase: .energySaving(reason),
+                scope: .capture,
+                headline: reason.statusTitle,
+                compactLabel: energySaverCompactLabel(reason),
+                detail: reason.userDescription,
+                compactDetail: "Capture stays on with reduced energy use",
+                symbolName: reason.systemImageName,
+                tone: .neutral,
+                primaryAction: nil,
+                actionLabel: nil,
+                actionHint: nil,
+                inspectionDestination: .capture,
+                controls: baseControls
+            )
+        }
+
         if input.isRecording {
             return presentation(
                 phase: .on,
@@ -515,6 +555,16 @@ enum CaptureStatusResolver {
         case .permissionRequired: return "Finish Permissions Setup"
         case .browserAddressUnavailable: return "Review website protection"
         case .lowDiskSpace: return "Free up storage to resume"
+        }
+    }
+
+    private static func energySaverCompactLabel(
+        _ reason: CaptureEnergySaverReason
+    ) -> String {
+        switch reason {
+        case .battery: return "Battery Saver"
+        case .lowPowerMode: return "Low Power Mode"
+        case .thermalPressure: return "Cooling Down"
         }
     }
 

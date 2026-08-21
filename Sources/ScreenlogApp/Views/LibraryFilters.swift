@@ -44,7 +44,13 @@ struct LibraryFilterPanel: View {
     }
 
     private var filterContent: some View {
-        ScrollView {
+        // Every facet list walks the whole scoped hit set, and the operator
+        // parse walks the query. Reading each one once per pass keeps a panel
+        // redraw off four full passes over the results and a duplicate parse.
+        let domainChips = Array(model.searchResultDomainChips.prefix(8))
+        let appChips = Array(model.searchResultAppChips.prefix(9))
+        let parsedQuery = SearchOperatorParser.parse(model.searchQuery)
+        return ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 8) {
                     Image(systemName: "line.3.horizontal.decrease.circle")
@@ -60,6 +66,10 @@ struct LibraryFilterPanel: View {
                             .foregroundStyle(model.accentSwiftUIColor)
                             .accessibilityIdentifier("library.filters.clear")
                     }
+                }
+
+                filterSection("Sort") {
+                    LibrarySearchSortPicker()
                 }
 
                 filterSection("Content") {
@@ -92,7 +102,7 @@ struct LibraryFilterPanel: View {
                             }
                             .accessibilityIdentifier("library.filter.time.\(tf.rawValue)")
                         }
-                        filterRow(selected: exactDateFilterIsActive) {
+                        filterRow(selected: parsedQuery.dayStartMs != nil) {
                             if let onChooseDate {
                                 onChooseDate()
                             } else {
@@ -125,10 +135,10 @@ struct LibraryFilterPanel: View {
                     }
                 }
 
-                if !model.searchResultDomainChips.isEmpty {
+                if !domainChips.isEmpty {
                     filterSection("Websites") {
                         VStack(alignment: .leading, spacing: 2) {
-                            ForEach(model.searchResultDomainChips.prefix(8), id: \.domain) { chipInfo in
+                            ForEach(domainChips, id: \.domain) { chipInfo in
                                 filterRow(selected: model.searchDomainFilter == chipInfo.domain) {
                                     model.setSearchDomainFilter(chipInfo.domain)
                                 } label: {
@@ -142,10 +152,10 @@ struct LibraryFilterPanel: View {
                     }
                 }
 
-                if !model.searchResultAppChips.isEmpty {
+                if !appChips.isEmpty {
                     filterSection("Applications") {
                         VStack(alignment: .leading, spacing: 2) {
-                            ForEach(model.searchResultAppChips.prefix(9), id: \.bundleID) { chipInfo in
+                            ForEach(appChips, id: \.bundleID) { chipInfo in
                                 filterRow(selected: model.searchAppFilter == chipInfo.bundleID) {
                                     model.setSearchAppFilter(chipInfo.bundleID)
                                 } label: {
@@ -178,10 +188,6 @@ struct LibraryFilterPanel: View {
             Label(label, systemImage: systemImage)
         }
         .accessibilityIdentifier("library.filter.content.\(content.rawValue)")
-    }
-
-    private var exactDateFilterIsActive: Bool {
-        SearchOperatorParser.parse(model.searchQuery).dayStartMs != nil
     }
 
     private func datePickerPresentation(
