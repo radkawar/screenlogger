@@ -15,20 +15,21 @@ If the app is not running you will get a connection error - open Screenlogger.ap
 
 ### Search & query
 
-- `screenlog search <QUERY> [--content all|screen|transcripts] [--limit N] [--json]` - search screen text and transcripts together by default; use `--content screen` for visible text only or `--content transcripts` for spoken content only. Supports the same `app:`, `site:`, `date:`, `since:`, and `before:` refinements as the Library.
+- `screenlog search <QUERY> [--content all|screen|transcripts] [--literal] [--dedupe-seconds N] [--limit N] [--json]` - search screen text and transcripts together by default. Supports `app:`, `site:`, `date:`, `since:`, and `before:`. `--literal` keeps adjacent tokenizer terms together; it is useful for punctuation-heavy versions but is not a byte-for-byte substring search. `--dedupe-seconds` is only a nearby repetition heuristic.
 - `screenlog query fts <QUERY> [--limit N] [--json]` - same search as `search` (lower-level alias)
-- `screenlog query frame --id N | --at <iso-or-epoch> [--show-ocr]` - frame metadata; `--show-ocr` adds OCR text
+- `screenlog query frame --id N | --ids N,N,N | --at <iso-or-epoch> [--show-ocr] [--max-ocr-chars N] [--json]` - inspect one or several frames without shell loops; OCR is opt-in and bounded
+- `screenlog query context --id N [--before N] [--after N] [--show-ocr] [--max-ocr-chars N] [--json]` - inspect adjacent captured moments around a lead
 - `screenlog query image --at ... | --id N [--out path] [--base64] [--json]` - export the screenshot (also available as top-level `screenlog image ...`)
-- `screenlog query sample [--limit N] [--min-seg-len N]` - representative frames across activity segments
+- `screenlog query sample [--since DATE|30d] [--before DATE] [--order oldest|newest] [--cursor DATE] [--limit N] [--min-seg-len N] [--show-ocr] [--max-ocr-chars N] [--json]` - bounded, evenly distributed segment samples; page using the emitted cursor
+- `screenlog recent [--limit N] [--show-ocr] [--max-ocr-chars N] [--json]` - inspect the newest captured moments without sampling the full Library
 - `screenlog query ocrboxes --id N` - OCR boxes with pixel coordinates for a frame
 - `screenlog query axtree --id N` - captured macOS accessibility tree for the frame (only if Accessibility was trusted when recording)
 
 ### Usage & inventory
 
-- `screenlog usage time` - approximate total recorded screen time (from frame count)
-- `screenlog usage top-applications [--limit N]` - rank apps by captured frames / time
-- `screenlog usage top-domains [--limit N]` - rank web domains by captured frames / time
-- `screenlog usage sessions [--gap MIN]` - continuous recording blocks split at gaps (default gap: 5 minutes)
+- `screenlog digest --since 30d --before DATE --json` - coverage, capture span, active days, apps, domains, sessions, and bounded evidence for assistant synthesis
+- `screenlog usage coverage [--since DATE|30d] [--before DATE] [--gap MIN] [--json]` - observed range, active days, sessions, and threshold-defined breaks
+- `screenlog usage time|top-applications|top-domains|sessions [--since DATE|30d] [--before DATE] [...]` - every usage command accepts the same half-open date bounds
 - `screenlog list applications` - recorded apps (bundle ID + display name)
 - `screenlog list domains` - recorded web domains
 
@@ -67,7 +68,7 @@ Treat `select_target` and `install_or_open_assistant` as external prerequisites,
 not as permission to run a Screenlogger install or force-replace anything.
 For `review_targets`, follow each non-ready target's own remediation record.
 
-Timestamps (`--at`): ISO-8601 in the machine's local timezone (e.g. `2026-01-15T09:30` or `2026-01-15T09:30:45`), or epoch seconds / milliseconds.
+Timestamps (`--at`, `--since`, `--before`): ISO-8601 in the machine's local timezone (e.g. `2026-01-15T09:30` or `2026-01-15T09:30:45`), or epoch seconds / milliseconds. Activity bounds also accept durations before now such as `30d`, `12h`, and `2w`.
 
 Output is compact by default; pass `--json` where supported for structured output.
 
@@ -76,25 +77,24 @@ Output is compact by default; pass `--json` where supported for structured outpu
 - Frames are screenshots of the whole interface the user was looking at. OCR is a strong but sometimes noisy signal - if something feels off, it might be misread letters or messy reading order.
 - A result with `transcriptSource` set came from optional on-device transcription. `microphone` is the user's input; `computer` is audio played by the Mac. Transcript text can contain recognition mistakes, so confirm important claims with nearby results and context.
 - Content visible in a frame was not necessarily *created* at capture time - look for embedded timestamps (message times, file dates) or infer timing from surrounding activity.
-- Frames are recorded on a regular interval (roughly ~2 seconds when recording) and sorted chronologically. Use individual frames for facts; use samples and sessions to reconstruct workflows.
-- More recent frames tend to have more up-to-date information.
+- Capture cadence varies with settings, power state, and unchanged-screen heartbeats. Moment counts are not seconds. Capture span is session wall-clock span, not active attention or project time.
+- Sessions count synchronized timestamps, not physical displays. App and domain shares can overlap when several displays are captured and indicate exposure, not exclusive intent.
 - Empty or missing fields mean unknown (e.g. no domain when the focused app was not a browser, or no AX tree when Accessibility was off).
 
 ## Search strategy
 
-1. Sanity-check the bridge: `screenlog doctor` or `screenlog ping` (app must be running).
-2. Find relevant recording blocks: `screenlog usage sessions --gap <MIN>`.
-3. Pick the right tool:
-   - Overview of general activity: `screenlog usage top-applications` / `top-domains` / `time`
-   - Understand a workflow: `screenlog query sample`
-   - Find specific moments: `screenlog search "..."` (or `query fts`); refine the query when needed
-   - Confirm leads: `screenlog query frame --id <ID> --show-ocr`, then `query image` / `query axtree` if useful
-4. Reflect: accuracy vs efficiency, evidence quality, completeness; refine queries if necessary.
+1. Resolve the requested local-time window. Treat "last month" as the previous calendar month and "past month" as rolling 30 days; otherwise state the exact half-open `[since, before)` range.
+2. Run `screenlog doctor`, then compare unbounded and bounded `screenlog usage coverage --json`. State the observed intersection, active days, session breaks, and missing history before narrating.
+3. Pull one bounded baseline with `screenlog digest --since ... --before ... --json`. Treat apps and domains as overlapping screen exposure, not intent or exact time.
+4. Sample across the interval with bounded `query sample`, allocating additional pages to different days or sessions. Do not rely on one global sample for a long range.
+5. Form candidate workstreams from repeated repository, domain, title, OCR, and transcript clues. Confirm each major claim with at least two non-adjacent observations, preferably across sessions or days, using `query frame --ids ...` and `query context`.
+6. Use search to test candidate labels or find anchors. Never estimate project time or importance from search-hit counts; adjacent captures bias frequency.
+7. Report observed coverage, inferred workstreams with confidence, passive or ambiguous content, and missing history separately.
 
 ## Tips
 
 - Prefer `screenlog search` over saying "FTS" to the user - the user sees results, not engine names. (`query fts` is the same search.)
-- Output can get large: choose gap values, limits, and time bounds deliberately. `--gap 10` surfaces short breaks; larger gaps merge more activity into fewer sessions.
+- Output can get large: use date bounds, `--max-ocr-chars`, batches, and sample cursors. Lower session gap thresholds reveal shorter breaks; higher thresholds merge more activity.
 - Start with a small `--limit` and widen only if needed.
 - Refine in one query when possible: `screenlog search 'invoice app:Safari site:example.com since:2026-07-01' --json`.
 - For meeting or presentation speech, start with `screenlog search 'roadmap' --content transcripts --json`. For words visibly shown on screen, use `--content screen`. Omit `--content` when either kind of evidence is useful.
@@ -102,7 +102,7 @@ Output is compact by default; pass `--json` where supported for structured outpu
 
 ## Guardrails for the output
 
-- Do NOT guess. Ground answers on explicit evidence from search/frame/image results. Be transparent if data is not found.
+- Do NOT guess. A frame grounds visible state, not authorship or intent. Confirm OCR, transcript, and user-action claims with surrounding or repeated evidence and be transparent when history is missing.
 - Hide technical internals from the user (no SQLite/FTS5/XPC jargon unless they ask).
 - Avoid dumping huge OCR blobs unless needed; prefer targeted search + a few frame confirmations.
 - Never start or stop capture, capture once, compact, or apply retention unless the user specifically requested that action. Read-only history access remains the normal assistant mode.

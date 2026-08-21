@@ -22,14 +22,26 @@ struct SearchPane: View {
                 LibraryStartupRecoveryView(issue: issue, surface: .library)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                workspace(
-                    compactFilters: compactFilters,
-                    persistentInspector: persistentInspector
-                )
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier(
-                    compactFilters ? "library.workspace.compact" : "library.workspace.expanded"
-                )
+                VStack(spacing: 10) {
+                    LibraryContentModeBar(
+                        selection: $model.libraryWorkspaceNavigation.contentMode
+                    )
+
+                    if model.libraryWorkspaceNavigation.contentMode == .sessions {
+                        LibrarySessionsView()
+                    } else {
+                        workspace(
+                            compactFilters: compactFilters,
+                            persistentInspector: persistentInspector
+                        )
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier(
+                            compactFilters
+                                ? "library.workspace.compact"
+                                : "library.workspace.expanded"
+                        )
+                    }
+                }
             }
         }
         .onAppear {
@@ -42,6 +54,7 @@ struct SearchPane: View {
             reconcileSelection(with: frameIDs)
         }
         .onChange(of: focusRequest) { _, _ in
+            model.libraryWorkspaceNavigation.contentMode = .search
             guard !model.filteredSearchResults.isEmpty else { return }
             if model.libraryWorkspaceNavigation.selectedResultID == nil {
                 model.libraryWorkspaceNavigation.selectResult(
@@ -49,6 +62,12 @@ struct SearchPane: View {
                 )
             }
             resultsFocused = true
+        }
+        .onChange(of: model.searchQuery) { oldValue, newValue in
+            guard oldValue != newValue,
+                !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return }
+            model.libraryWorkspaceNavigation.contentMode = .search
         }
         .onChange(of: model.shellSearchMode) { _, libraryIsActive in
             if libraryIsActive {

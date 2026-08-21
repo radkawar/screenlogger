@@ -130,6 +130,35 @@ extension Store {
         return rows
     }
 
+    /// Newest captured moments with one representative display per timestamp.
+    /// This is intentionally separate from `recentFrames`, whose physical-frame
+    /// behavior is used by the Timeline bootstrap.
+    public func recentMomentFrames(limit: Int = 20) throws -> [FrameRow] {
+        let sql = """
+            WITH moment_ids AS (
+                SELECT MIN(id) AS id, timestamp
+                FROM frame
+                GROUP BY timestamp
+                ORDER BY timestamp DESC
+                LIMIT ?
+            )
+            SELECT f.id, f.timestamp, f.image_path, f.width, f.height, f.foreground, f.background, f.title,
+                   f.segment, f.video, f.video_index, f.is_inactive, f.ax_root_hash,
+                   f.capture_display_x, f.capture_display_y, f.capture_display_width, f.capture_display_height
+            FROM frame f
+            JOIN moment_ids m ON m.id = f.id
+            ORDER BY f.timestamp DESC
+            """
+        let stmt = try db.prepare(sql)
+        defer { sqlite3_finalize(stmt) }
+        SQLiteBind.int(stmt, 1, limit)
+        var rows: [FrameRow] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            rows.append(Self.frameRow(from: stmt))
+        }
+        return try enrichingActivityContext(rows)
+    }
+
     /// Indexed frame time-range scan (`idx_frame_timestamp`).
     /// Inclusive lower bound, exclusive upper bound: `[startMs, endMs)`.
     public func frames(
@@ -328,31 +357,181 @@ extension Store {
         )
     }
 
-    public func sampleFrames(limit: Int = 50, minSegLen: Int = 1) throws -> [FrameRow] {
-        // One representative frame per segment (earliest in segment) with enough frames.
+    public func sampleFrames(
+        limit: Int = 50,
+        minSegLen: Int = 1,
+        fromTimestampMs: Int64? = nil,
+        toTimestampMs: Int64? = nil,
+        order: ActivitySortOrder = .oldest
+    ) throws -> [FrameRow] {
+        // Choose the midpoint representative from evenly distributed segment
+        // buckets so a bounded month does not return only its earliest work.
+        var constraints = ["f2.segment IS NOT NULL"]
+        if fromTimestampMs != nil { constraints.append("f2.timestamp >= ?") }
+        if toTimestampMs != nil { constraints.append("f2.timestamp < ?") }
+        let direction = order == .oldest ? "ASC" : "DESC"
         let sql = """
+            WITH distinct_segment_moments AS (
+                SELECT f2.segment, f2.timestamp, MIN(f2.id) AS id
+                FROM frame f2
+                WHERE \(constraints.joined(separator: " AND "))
+                GROUP BY f2.segment, f2.timestamp
+            ), segment_moments AS (
+                SELECT
+                    id,
+                    timestamp,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY segment ORDER BY timestamp ASC, id ASC
+                    ) AS segment_rank,
+                    COUNT(*) OVER (PARTITION BY segment) AS segment_count
+                FROM distinct_segment_moments
+            ), representatives AS (
+                SELECT id, timestamp
+                FROM segment_moments
+                WHERE segment_rank = 1 AND segment_count >= ?
+            ), bucketed AS (
+                SELECT
+                    id,
+                    timestamp,
+                    NTILE(?) OVER (ORDER BY timestamp ASC) AS sample_bucket
+                FROM representatives
+            ), ranked AS (
+                SELECT
+                    id,
+                    sample_bucket,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY sample_bucket ORDER BY timestamp ASC
+                    ) AS bucket_rank,
+                    COUNT(*) OVER (PARTITION BY sample_bucket) AS bucket_count
+                FROM bucketed
+            )
             SELECT f.id, f.timestamp, f.image_path, f.width, f.height, f.foreground, f.background, f.title,
                    f.segment, f.video, f.video_index, f.is_inactive, f.ax_root_hash,
                    f.capture_display_x, f.capture_display_y, f.capture_display_width, f.capture_display_height
             FROM frame f
-            WHERE f.id IN (
-                SELECT MIN(f2.id)
-                FROM frame f2
-                WHERE f2.segment IS NOT NULL
-                GROUP BY f2.segment
-                HAVING COUNT(*) >= ?
-            )
-            ORDER BY f.timestamp ASC
-            LIMIT ?
+            JOIN ranked r ON r.id = f.id
+            WHERE r.bucket_rank = (r.bucket_count + 1) / 2
+            ORDER BY f.timestamp \(direction)
             """
         let stmt = try db.prepare(sql)
         defer { sqlite3_finalize(stmt) }
-        SQLiteBind.int(stmt, 1, minSegLen)
-        SQLiteBind.int(stmt, 2, limit)
+        var bind: Int32 = 1
+        if let fromTimestampMs {
+            SQLiteBind.int64(stmt, bind, fromTimestampMs)
+            bind += 1
+        }
+        if let toTimestampMs {
+            SQLiteBind.int64(stmt, bind, toTimestampMs)
+            bind += 1
+        }
+        SQLiteBind.int(stmt, bind, minSegLen)
+        bind += 1
+        SQLiteBind.int(stmt, bind, limit)
         var rows: [FrameRow] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
             rows.append(Self.frameRow(from: stmt))
         }
-        return rows
+        return try enrichingActivityContext(rows)
+    }
+
+    /// Fetch several explicitly requested frames in caller order.
+    public func frames(ids: [Int64]) throws -> [FrameRow] {
+        let uniqueIDs = Array(ids.filter { $0 > 0 }.prefix(100))
+        guard !uniqueIDs.isEmpty else { return [] }
+        let placeholders = Array(repeating: "?", count: uniqueIDs.count).joined(separator: ",")
+        let sql = """
+            SELECT id, timestamp, image_path, width, height, foreground, background, title,
+                   segment, video, video_index, is_inactive, ax_root_hash,
+                   capture_display_x, capture_display_y, capture_display_width, capture_display_height
+            FROM frame
+            WHERE id IN (\(placeholders))
+            """
+        let stmt = try db.prepare(sql)
+        defer { sqlite3_finalize(stmt) }
+        for (offset, id) in uniqueIDs.enumerated() {
+            SQLiteBind.int64(stmt, Int32(offset + 1), id)
+        }
+        var byID: [Int64: FrameRow] = [:]
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let row = Self.frameRow(from: stmt)
+            byID[row.id] = row
+        }
+        return try enrichingActivityContext(uniqueIDs.compactMap { byID[$0] })
+    }
+
+    /// One representative display for adjacent captured moments around a frame.
+    public func frameContext(frameID: Int64, before: Int, after: Int) throws -> [FrameRow] {
+        guard let target = try frame(id: frameID) else { return [] }
+
+        func adjacent(comparison: String, direction: String, limit: Int) throws -> [FrameRow] {
+            guard limit > 0 else { return [] }
+            let sql = """
+                WITH moment_ids AS (
+                    SELECT MIN(id) AS id, timestamp
+                    FROM frame
+                    WHERE timestamp \(comparison) ?
+                    GROUP BY timestamp
+                    ORDER BY timestamp \(direction)
+                    LIMIT ?
+                )
+                SELECT f.id, f.timestamp, f.image_path, f.width, f.height, f.foreground, f.background, f.title,
+                       f.segment, f.video, f.video_index, f.is_inactive, f.ax_root_hash,
+                       f.capture_display_x, f.capture_display_y, f.capture_display_width, f.capture_display_height
+                FROM frame f
+                JOIN moment_ids m ON m.id = f.id
+                ORDER BY f.timestamp ASC
+                """
+            let stmt = try db.prepare(sql)
+            defer { sqlite3_finalize(stmt) }
+            SQLiteBind.int64(stmt, 1, target.timestampMs)
+            SQLiteBind.int(stmt, 2, limit)
+            var rows: [FrameRow] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                rows.append(Self.frameRow(from: stmt))
+            }
+            return rows
+        }
+
+        return try enrichingActivityContext(
+            adjacent(comparison: "<", direction: "DESC", limit: before)
+                + [target]
+                + adjacent(comparison: ">", direction: "ASC", limit: after)
+        )
+    }
+
+    private func enrichingActivityContext(_ rows: [FrameRow]) throws -> [FrameRow] {
+        guard !rows.isEmpty else { return [] }
+        let ids = Array(Set(rows.map(\.id)))
+        let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ",")
+        let sql = """
+            SELECT f.id, a.bundle_id, a.display_name, d.normalized_domain
+            FROM frame f
+            LEFT JOIN segment s ON s.id = f.segment
+            LEFT JOIN application a ON a.id = s.application
+            LEFT JOIN domain d ON d.id = s.domain
+            WHERE f.id IN (\(placeholders))
+            """
+        let stmt = try db.prepare(sql)
+        defer { sqlite3_finalize(stmt) }
+        for (offset, id) in ids.enumerated() {
+            SQLiteBind.int64(stmt, Int32(offset + 1), id)
+        }
+        var context: [Int64: (String?, String?, String?)] = [:]
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            context[SQLiteColumn.int64(stmt, 0)] = (
+                SQLiteColumn.text(stmt, 1),
+                SQLiteColumn.text(stmt, 2),
+                SQLiteColumn.text(stmt, 3)
+            )
+        }
+        return rows.map { original in
+            var row = original
+            if let values = context[row.id] {
+                row.bundleID = values.0
+                row.displayName = values.1
+                row.domain = values.2
+            }
+            return row
+        }
     }
 }

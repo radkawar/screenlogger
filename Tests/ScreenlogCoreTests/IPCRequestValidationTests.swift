@@ -60,4 +60,45 @@ final class IPCRequestValidationTests: XCTestCase {
         let request = try JSONDecoder().decode(IPCRequest.self, from: payload)
         XCTAssertEqual(request.cmd, .unsupported)
     }
+
+    func testProtocolTwoProtectsBoundedLiteralBatchAndContextSemantics() throws {
+        XCTAssertThrowsError(
+            try IPCRequest(cmd: .stats, fromTimestampMs: 1).validate()
+        )
+        XCTAssertThrowsError(
+            try IPCRequest(cmd: .fts, query: "0.1.13", literalSearch: true).validate()
+        )
+        XCTAssertNoThrow(
+            try IPCRequest(
+                cmd: .fts,
+                protocolMinimumVersion: 2,
+                query: "0.1.13",
+                literalSearch: true
+            ).validate()
+        )
+        XCTAssertNoThrow(
+            try IPCRequest(
+                cmd: .frames,
+                protocolMinimumVersion: 2,
+                frameIDs: [1, 2, 3]
+            ).validate()
+        )
+        XCTAssertThrowsError(try IPCRequest(cmd: .recent, limit: 20).validate())
+        XCTAssertNoThrow(
+            try IPCRequest(
+                cmd: .recent,
+                protocolMinimumVersion: 2,
+                limit: 20
+            ).validate()
+        )
+        XCTAssertThrowsError(
+            try IPCRequest(
+                cmd: .context,
+                protocolMinimumVersion: 2,
+                frameID: 1,
+                contextBeforeCount: 0,
+                contextAfterCount: 0
+            ).validate()
+        )
+    }
 }

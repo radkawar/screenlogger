@@ -491,4 +491,130 @@ final class StoreQueryTests: XCTestCase {
         let min1 = try store.sampleFrames(limit: 50, minSegLen: 1)
         XCTAssertEqual(min1.count, 2)
     }
+
+    func testBoundedUsageAndSamplingApplyTheSameHalfOpenRange() throws {
+        _ = try store.insertSeedFrame(
+            timestampMs: 1_000,
+            foreground: "early",
+            bundleID: "dev.early",
+            displayName: "Early",
+            domain: "early.example"
+        )
+        _ = try store.insertSeedFrame(
+            timestampMs: 2_000,
+            foreground: "inside",
+            bundleID: "dev.inside",
+            displayName: "Inside",
+            domain: "inside.example"
+        )
+        _ = try store.insertSeedFrame(
+            timestampMs: 3_000,
+            foreground: "upper bound",
+            bundleID: "dev.after",
+            displayName: "After",
+            domain: "after.example"
+        )
+
+        let stats = try store.stats(fromTimestampMs: 1_500, toTimestampMs: 3_000)
+        XCTAssertEqual(stats.momentCount, 1)
+        XCTAssertEqual(stats.minTimestampMs, 2_000)
+        XCTAssertEqual(stats.maxTimestampMs, 2_000)
+        XCTAssertEqual(
+            try store.topApplications(
+                limit: 10,
+                fromTimestampMs: 1_500,
+                toTimestampMs: 3_000
+            ).map(\.identifier),
+            ["dev.inside"]
+        )
+        XCTAssertEqual(
+            try store.topDomains(
+                limit: 10,
+                fromTimestampMs: 1_500,
+                toTimestampMs: 3_000
+            ).map(\.identifier),
+            ["inside.example"]
+        )
+        XCTAssertEqual(
+            try store.sessions(
+                fromTimestampMs: 1_500,
+                toTimestampMs: 3_000
+            ).map(\.startMs),
+            [2_000]
+        )
+        XCTAssertEqual(
+            try store.sampleFrames(
+                limit: 10,
+                fromTimestampMs: 1_500,
+                toTimestampMs: 3_000
+            ).map(\.timestampMs),
+            [2_000]
+        )
+    }
+
+    func testSamplingDistributesRepresentativesAcrossTheRequestedRange() throws {
+        for index in 1...12 {
+            _ = try store.insertSeedFrame(
+                timestampMs: Int64(index * 1_000),
+                foreground: "work \(index)",
+                bundleID: "dev.sample.\(index)",
+                displayName: "Sample \(index)"
+            )
+        }
+
+        let samples = try store.sampleFrames(limit: 3, order: .oldest)
+        XCTAssertEqual(samples.count, 3)
+        XCTAssertLessThan(samples[0].timestampMs, 5_000)
+        XCTAssertTrue((5_000...8_000).contains(samples[1].timestampMs))
+        XCTAssertGreaterThan(samples[2].timestampMs, 8_000)
+        XCTAssertEqual(
+            try store.sampleFrames(limit: 3, order: .newest).map(\.id),
+            samples.reversed().map(\.id)
+        )
+    }
+
+    func testBatchAndContextPreserveRequestedIdentityWithoutDuplicatingDisplays() throws {
+        let first = try store.insertSeedFrame(
+            timestampMs: 1_000,
+            foreground: "first",
+            bundleID: "dev.first",
+            displayName: "First",
+            domain: "first.example"
+        )
+        let centerMain = try store.insertSeedFrame(timestampMs: 2_000, foreground: "center main")
+        _ = try store.insertSeedFrame(timestampMs: 2_000, foreground: "center secondary")
+        let last = try store.insertSeedFrame(timestampMs: 3_000, foreground: "last")
+
+        let batch = try store.frames(ids: [last, first, last])
+        XCTAssertEqual(batch.map(\.id), [last, first, last])
+        XCTAssertEqual(batch[1].bundleID, "dev.first")
+        XCTAssertEqual(batch[1].displayName, "First")
+        XCTAssertEqual(batch[1].domain, "first.example")
+        let context = try store.frameContext(frameID: centerMain, before: 1, after: 1)
+        XCTAssertEqual(context.map(\.timestampMs), [1_000, 2_000, 3_000])
+        XCTAssertEqual(context[1].id, centerMain)
+    }
+
+    func testLiteralSearchKeepsPunctuationTokensAdjacentAndStructuredOperatorsWork() throws {
+        let exact = try store.insertSeedFrame(
+            timestampMs: 1_000,
+            foreground: "Screenlogger release 0.1.13",
+            bundleID: "dev.release",
+            displayName: "Release"
+        )
+        _ = try store.insertSeedFrame(
+            timestampMs: 2_000,
+            foreground: "Screenlogger release 0 candidate 1 build 13",
+            bundleID: "dev.other",
+            displayName: "Other"
+        )
+
+        XCTAssertEqual(
+            try store.searchLibrary(
+                query: "0.1.13 app:Release",
+                literalText: true
+            ).map(\.frameID),
+            [exact]
+        )
+    }
 }

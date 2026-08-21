@@ -4,56 +4,242 @@ import ScreenlogCore
 extension ScreenlogCLIMain {
     // MARK: - search / query
 
+    static let searchHelp = """
+        Usage:
+          screenlog search <QUERY> [--content all|screen|transcripts]
+                           [--literal] [--dedupe-seconds N] [--limit N] [--json]
+
+        QUERY supports app:, site:, date:, since:, and before: operators.
+        --literal keeps punctuation-heavy terms such as 0.1.13 adjacent.
+
+        Example:
+          screenlog search 'release app:Safari since:7d' --dedupe-seconds 30 --json
+        """
+
+    static let queryHelp = """
+        Usage:
+          screenlog query frame --id N | --ids N,N,N | --at DATE
+                                [--show-ocr] [--max-ocr-chars N] [--json]
+          screenlog query context --id N [--before N] [--after N]
+                                  [--show-ocr] [--max-ocr-chars N] [--json]
+          screenlog query sample [--since DATE|30d] [--before DATE]
+                                 [--order oldest|newest] [--cursor DATE]
+                                 [--limit N] [--min-seg-len N]
+                                 [--show-ocr] [--max-ocr-chars N] [--json]
+          screenlog query fts <QUERY> [search options]
+          screenlog query image|ocrboxes|axtree ...
+        """
+
+    static let recentHelp = """
+        Usage: screenlog recent [--limit N] [--show-ocr]
+                                [--max-ocr-chars N] [--json]
+
+        Returns the newest captured moments with one representative display per moment.
+        Example: screenlog recent --limit 20 --show-ocr --max-ocr-chars 500 --json
+        """
+
+    static func queryHelp(for subcommand: String?) -> String {
+        switch subcommand {
+        case "frame":
+            return """
+                Usage: screenlog query frame --id N | --ids N,N,N | --at DATE
+                                             [--show-ocr] [--max-ocr-chars N] [--json]
+
+                Example: screenlog query frame --ids 123,456 --show-ocr --max-ocr-chars 1000 --json
+                """
+        case "context":
+            return """
+                Usage: screenlog query context --id N [--before N] [--after N]
+                                               [--show-ocr] [--max-ocr-chars N] [--json]
+
+                Example: screenlog query context --id 456 --before 3 --after 3 --show-ocr --json
+                """
+        case "sample":
+            return """
+                Usage: screenlog query sample [--since DATE|30d] [--before DATE]
+                                              [--order oldest|newest] [--cursor DATE]
+                                              [--limit N] [--min-seg-len N]
+                                              [--show-ocr] [--max-ocr-chars N] [--json]
+
+                Results are distributed across the requested range. Use nextCursorMs to page.
+                Example: screenlog query sample --since 7d --limit 40 --show-ocr --json
+                """
+        case "fts":
+            return searchHelp.replacingOccurrences(of: "screenlog search", with: "screenlog query fts")
+        case "image":
+            return "Usage: screenlog query image --id N | --at DATE [--out PATH] [--base64] [--json]"
+        case "ocrboxes":
+            return "Usage: screenlog query ocrboxes --id N"
+        case "axtree":
+            return "Usage: screenlog query axtree --id N"
+        default:
+            return queryHelp
+        }
+    }
+
     /// `screenlog search "query"` - structured Library search over the app bridge.
     static func search(_ args: [String], client: ScreenlogXPCClient) throws {
+        if args.contains(where: isHelpArgument) {
+            print(searchHelp)
+            return
+        }
         let q =
             try stringFlag(args, name: "--query")
-            ?? positionalArguments(args, valueFlags: ["--query", "--limit", "--content"]).first
+            ?? positionalArguments(
+                args,
+                valueFlags: ["--query", "--limit", "--content", "--dedupe-seconds"]
+            ).first
             ?? ""
         let limit = try intFlag(args, name: "--limit", allowed: 1...500) ?? 50
         let content = try searchContentFlag(args)
         let json = args.contains("--json")
-        try printFTS(query: q, limit: limit, content: content, json: json, client: client)
+        let dedupeSeconds = try intFlag(args, name: "--dedupe-seconds", allowed: 0...3600) ?? 0
+        try printFTS(
+            query: q,
+            limit: limit,
+            content: content,
+            literal: args.contains("--literal"),
+            dedupeSeconds: dedupeSeconds,
+            json: json,
+            client: client
+        )
     }
 
     static func query(_ args: [String], client: ScreenlogXPCClient) throws {
         guard let sub = args.first else {
-            throw CLIError.usage("query fts|frame|sample|ocrboxes|axtree|image")
+            print(queryHelp)
+            return
+        }
+        if isHelpArgument(sub) {
+            print(queryHelp)
+            return
         }
         let rest = Array(args.dropFirst())
+        if rest.contains(where: isHelpArgument) {
+            print(queryHelp(for: sub))
+            return
+        }
         switch sub {
         case "fts":
             let q =
                 try stringFlag(rest, name: "--query")
-                ?? positionalArguments(rest, valueFlags: ["--query", "--limit", "--content"]).first
+                ?? positionalArguments(
+                    rest,
+                    valueFlags: ["--query", "--limit", "--content", "--dedupe-seconds"]
+                ).first
                 ?? ""
             let limit = try intFlag(rest, name: "--limit", allowed: 1...500) ?? 50
             let content = try searchContentFlag(rest)
             let json = rest.contains("--json")
-            try printFTS(query: q, limit: limit, content: content, json: json, client: client)
+            let dedupeSeconds = try intFlag(rest, name: "--dedupe-seconds", allowed: 0...3600) ?? 0
+            try printFTS(
+                query: q,
+                limit: limit,
+                content: content,
+                literal: rest.contains("--literal"),
+                dedupeSeconds: dedupeSeconds,
+                json: json,
+                client: client
+            )
         case "frame":
-            if let at = try stringFlag(rest, name: "--at") {
+            let maximumOCRCharacters = try maximumOCRCharacters(rest)
+            let frames: [FrameRow]
+            if let ids = try stringFlag(rest, name: "--ids") {
+                frames = try client.frames(ids: commaSeparatedIDs(ids, maximumCount: 100))
+            } else if let at = try stringFlag(rest, name: "--at") {
                 let ms = try parseTimestampMs(at)
-                let f = try client.frameAt(timestampMs: ms)
-                printFrame(f, showOCR: rest.contains("--show-ocr"))
+                frames = [try client.frameAt(timestampMs: ms)]
             } else {
                 guard
                     let id = try int64Flag(rest, name: "--id", allowed: 1...Int64.max)
-                        ?? positionalArguments(rest, valueFlags: ["--id", "--at"]).compactMap({ Int64($0) }).first,
+                        ?? positionalArguments(
+                            rest,
+                            valueFlags: ["--id", "--ids", "--at", "--max-ocr-chars"]
+                        ).compactMap({ Int64($0) }).first,
                     id > 0
                 else {
-                    throw CLIError.usage("query frame --id N | --at <iso-or-epoch> [--show-ocr]")
+                    throw CLIError.usage(
+                        "query frame --id N | --ids N,N,N | --at DATE [--show-ocr] [--max-ocr-chars N] [--json]"
+                    )
                 }
-                let f = try client.frame(id: id)
-                printFrame(f, showOCR: rest.contains("--show-ocr"))
+                frames = [try client.frame(id: id)]
             }
+            try printFrames(
+                frames,
+                maximumOCRCharacters: maximumOCRCharacters,
+                json: rest.contains("--json")
+            )
+        case "context":
+            guard let id = try int64Flag(rest, name: "--id", allowed: 1...Int64.max) else {
+                throw CLIError.usage("query context --id N [--before N] [--after N]")
+            }
+            let before = try intFlag(rest, name: "--before", allowed: 0...50) ?? 3
+            let after = try intFlag(rest, name: "--after", allowed: 0...50) ?? 3
+            guard before + after > 0 else {
+                throw CLIError.message("--before and --after cannot both be zero")
+            }
+            try printFrames(
+                try client.context(frameID: id, before: before, after: after),
+                maximumOCRCharacters: try maximumOCRCharacters(rest),
+                json: rest.contains("--json")
+            )
         case "image":
             try image(rest, client: client)
         case "sample":
             let limit = try intFlag(rest, name: "--limit", allowed: 1...500) ?? 50
             let minSeg = try intFlag(rest, name: "--min-seg-len", allowed: 1...10_000) ?? 1
-            for f in try client.sample(limit: limit, minSegLen: minSeg) {
-                print("#\(f.id)\t\(f.timestampMs)\tseg=\(f.segmentID ?? -1)\t\(f.title ?? "")")
+            var bounds = try activityBounds(rest)
+            let order = try sampleOrder(rest)
+            if let cursor = try stringFlag(rest, name: "--cursor").map(parseTimestampMs) {
+                switch order {
+                case .oldest:
+                    guard cursor < Int64.max else {
+                        throw CLIError.message("--cursor is outside the supported range")
+                    }
+                    bounds.sinceMs = max(bounds.sinceMs ?? .min, cursor + 1)
+                case .newest:
+                    bounds.beforeMs = min(bounds.beforeMs ?? .max, cursor)
+                }
+            }
+            let frames = try client.sample(
+                limit: limit,
+                minSegLen: minSeg,
+                fromTimestampMs: bounds.sinceMs,
+                toTimestampMs: bounds.beforeMs,
+                order: order
+            )
+            let maximumOCRCharacters = try maximumOCRCharacters(rest)
+            if rest.contains("--json") {
+                print(
+                    try CLIOutputFormat.json(
+                        CLIFramePageDocument(
+                            frames: frames.map {
+                                CLIFrameDocument(
+                                    frame: $0,
+                                    maximumOCRCharacters: maximumOCRCharacters
+                                )
+                            },
+                            nextCursorMs: frames.last?.timestampMs
+                        )
+                    )
+                )
+            } else {
+                for frame in frames {
+                    let document = CLIFrameDocument(
+                        frame: frame,
+                        maximumOCRCharacters: maximumOCRCharacters
+                    )
+                    print(
+                        "#\(frame.id)\t\(CLIOutputFormat.localISO(frame.timestampMs))"
+                            + "\tseg=\(frame.segmentID ?? -1)\t\(frame.title ?? "")"
+                    )
+                    if let ocr = document.ocr {
+                        print("  OCR\(document.ocrTruncated ? " (truncated)" : ""): \(ocr)")
+                    }
+                }
+                if let cursor = frames.last?.timestampMs {
+                    FileHandle.standardError.write(Data("next_cursor: \(cursor)\n".utf8))
+                }
             }
         case "ocrboxes":
             guard let id = try int64Flag(rest, name: "--id", allowed: 1...Int64.max) else {
@@ -72,10 +258,25 @@ extension ScreenlogCLIMain {
         }
     }
 
+    static func recent(_ args: [String], client: ScreenlogXPCClient) throws {
+        if args.contains(where: isHelpArgument) {
+            print(recentHelp)
+            return
+        }
+        let limit = try intFlag(args, name: "--limit", allowed: 1...500) ?? 20
+        try printFrames(
+            client.recent(limit: limit),
+            maximumOCRCharacters: try maximumOCRCharacters(args),
+            json: args.contains("--json")
+        )
+    }
+
     static func printFTS(
         query: String,
         limit: Int,
         content: LibrarySearchContent,
+        literal: Bool,
+        dedupeSeconds: Int,
         json: Bool,
         client: ScreenlogXPCClient
     ) throws {
@@ -88,14 +289,24 @@ extension ScreenlogCLIMain {
         guard normalized.utf8.count <= 4_096 else {
             throw CLIError.message("query exceeds 4096 bytes")
         }
-        let results = try client.fts(query: normalized, limit: limit, content: content)
+        let fetchLimit = dedupeSeconds > 0 ? min(500, max(limit, limit * 3)) : limit
+        let rawResults = try client.fts(
+            query: normalized,
+            limit: fetchLimit,
+            content: content,
+            literal: literal
+        )
+        let results = Array(
+            deduplicatedSearchResults(rawResults, withinSeconds: dedupeSeconds).prefix(limit)
+        )
         if json {
-            let enc = JSONEncoder()
-            enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-            print(String(data: try enc.encode(results), encoding: .utf8)!)
+            print(try CLIOutputFormat.json(results.map(CLISearchResultDocument.init)))
         } else {
             for r in results {
-                print("#\(r.frameID)\t\(r.timestampMs)\t\(r.bundleID ?? "-")\t\(r.snippet ?? r.title ?? "")")
+                print(
+                    "#\(r.frameID)\t\(CLIOutputFormat.localISO(r.timestampMs))"
+                        + "\t\(r.bundleID ?? "-")\t\(r.snippet ?? r.title ?? "")"
+                )
             }
             if results.isEmpty {
                 FileHandle.standardError.write(Data("no matches\n".utf8))
@@ -116,18 +327,74 @@ extension ScreenlogCLIMain {
         }
     }
 
-    static func printFrame(_ f: FrameRow, showOCR: Bool) {
-        print("id: \(f.id)")
-        print("timestamp_ms: \(f.timestampMs)")
-        print("title: \(f.title ?? "")")
-        print("image_path: \(f.imagePath ?? "")")
-        print("video_id: \(f.videoID.map(String.init) ?? "")")
-        print("video_index: \(f.videoIndex.map(String.init) ?? "")")
-        print("size: \(f.width ?? 0)x\(f.height ?? 0)")
-        if showOCR {
-            print("--- OCR ---")
-            print(f.foreground ?? "")
+    static func printFrames(
+        _ frames: [FrameRow],
+        maximumOCRCharacters: Int,
+        json: Bool
+    ) throws {
+        let documents = frames.map {
+            CLIFrameDocument(frame: $0, maximumOCRCharacters: maximumOCRCharacters)
         }
+        if json {
+            print(try CLIOutputFormat.json(documents))
+            return
+        }
+        for (index, document) in documents.enumerated() {
+            if index > 0 { print("") }
+            print("id: \(document.id)")
+            print("timestamp: \(document.timestamp)")
+            print("timestamp_ms: \(document.timestampMs)")
+            print("title: \(document.title ?? "")")
+            print("segment_id: \(document.segmentID.map(String.init) ?? "")")
+            print("size: \(document.width ?? 0)x\(document.height ?? 0)")
+            if let ocr = document.ocr {
+                print("--- OCR\(document.ocrTruncated ? " (truncated)" : "") ---")
+                print(ocr)
+            }
+        }
+    }
+
+    private static func maximumOCRCharacters(_ args: [String]) throws -> Int {
+        guard args.contains("--show-ocr") else { return 0 }
+        return try intFlag(args, name: "--max-ocr-chars", allowed: 1...20_000) ?? 2_000
+    }
+
+    private static func sampleOrder(_ args: [String]) throws -> ActivitySortOrder {
+        guard let raw = try stringFlag(args, name: "--order")?.lowercased() else {
+            return .oldest
+        }
+        guard let order = ActivitySortOrder(rawValue: raw) else {
+            throw CLIError.message("--order must be oldest or newest")
+        }
+        return order
+    }
+
+    private static func deduplicatedSearchResults(
+        _ results: [FTSResult],
+        withinSeconds: Int
+    ) -> [FTSResult] {
+        guard withinSeconds > 0 else { return results }
+        let threshold = Int64(withinSeconds) * 1000
+        var kept: [FTSResult] = []
+        for result in results {
+            let duplicate =
+                kept.last.map {
+                    abs($0.timestampMs - result.timestampMs) <= threshold
+                        && $0.bundleID == result.bundleID
+                        && $0.domain == result.domain
+                        && searchResultFingerprint($0) == searchResultFingerprint(result)
+                } ?? false
+            if !duplicate { kept.append(result) }
+        }
+        return kept
+    }
+
+    private static func searchResultFingerprint(_ result: FTSResult) -> String {
+        (result.snippet ?? result.title ?? "")
+            .lowercased()
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .prefix(16)
+            .joined(separator: " ")
     }
 
     // MARK: - image

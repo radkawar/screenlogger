@@ -61,6 +61,7 @@ let package = Package(
             exclude: [],
             sources: [
                 "CLIActivityCommands.swift",
+                "CLIActivityDocuments.swift",
                 "CLIArgumentParsing.swift",
                 "CLIEntry.swift",
                 "CLIMonitoringCommands.swift",
@@ -70,7 +71,7 @@ let package = Package(
             ],
             resources: [
                 // Bundled for `screenlog skill install` (also under repo Resources/skill/)
-                .copy("skill"),
+                .copy("skill")
             ]
         ),
         .executableTarget(

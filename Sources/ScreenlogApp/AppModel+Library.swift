@@ -168,6 +168,11 @@ extension AppModel {
         let isSearchSessionScoped = searchSessionScoped
         pinnedSessionIDs = sessionPinStore.pinnedIDs()
         sessions = sessionPinStore.sortedSessions(rows)
+        if let selectedStartMs = libraryWorkspaceNavigation.selectedSessionStartMs,
+            !sessions.contains(where: { $0.startMs == selectedStartMs })
+        {
+            libraryWorkspaceNavigation.selectedSessionStartMs = sessions.first?.startMs
+        }
         guard let selectedStartMs else { return }
 
         selectedSessionIndex = sessions.firstIndex(where: { $0.startMs == selectedStartMs })
@@ -240,6 +245,17 @@ extension AppModel {
             timelineLoadState = .failed
             timelineIssue = issue
         }
+    }
+
+    /// Open a session selected from Library while preserving the native Back
+    /// to Library handoff used by individual search results.
+    func openLibrarySession(_ session: SessionRow) {
+        stopReplay()
+        SearchWindowController.shared.hide()
+        shellSearchMode = false
+        timelineLoadState = .loading
+        openMainShell(origin: .libraryResult)
+        Task { await loadSession(session) }
     }
 
     /// Replaces the loaded detail window while retaining the selected session.

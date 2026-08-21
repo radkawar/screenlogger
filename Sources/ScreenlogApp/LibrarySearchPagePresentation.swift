@@ -39,6 +39,20 @@ enum LibrarySearchState: Equatable, Sendable {
     }
 }
 
+enum LibraryContentMode: String, CaseIterable, Identifiable, Sendable {
+    case search
+    case sessions
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .search: return "Search"
+        case .sessions: return "Sessions"
+        }
+    }
+}
+
 /// Durable presentation state for the Library results workspace.
 ///
 /// Query criteria already live on `AppModel`; keeping the remaining navigation
@@ -49,6 +63,8 @@ struct LibraryWorkspaceNavigationState: Equatable, Sendable {
     var resultViewportAnchorID: Int64?
     var compactPreviewPresented = false
     var inspectorPanePresented = true
+    var contentMode = LibraryContentMode.search
+    var selectedSessionStartMs: Int64?
 
     mutating func selectResult(_ frameID: Int64?) {
         selectedResultID = frameID

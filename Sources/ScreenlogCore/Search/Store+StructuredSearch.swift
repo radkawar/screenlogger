@@ -7,7 +7,12 @@ extension Store {
     /// Keeping this at the Store boundary gives the app, socket bridge, XPC,
     /// CLI, and assistant integrations one result contract instead of subtly
     /// different query behavior.
-    public func searchLibrary(query rawQuery: String, limit requestedLimit: Int = 50) throws -> [FTSResult] {
+    public func searchLibrary(
+        query rawQuery: String,
+        limit requestedLimit: Int = 50,
+        content: LibrarySearchContent = .all,
+        literalText: Bool = false
+    ) throws -> [FTSResult] {
         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return [] }
 
@@ -28,7 +33,9 @@ extension Store {
                 appFilter: parsed.appFilter,
                 siteFilter: parsed.siteFilter,
                 fromTimestampMs: bounds.fromTimestampMs,
-                toTimestampMs: bounds.toTimestampMs
+                toTimestampMs: bounds.toTimestampMs,
+                content: content,
+                literalText: literalText
             ),
             limit: limit
         )

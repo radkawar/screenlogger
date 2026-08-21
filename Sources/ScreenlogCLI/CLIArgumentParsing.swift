@@ -110,12 +110,77 @@ extension ScreenlogCLIMain {
         return values
     }
 
+    struct ActivityBounds: Equatable {
+        var sinceMs: Int64?
+        var beforeMs: Int64?
+
+        var isBounded: Bool { sinceMs != nil || beforeMs != nil }
+    }
+
+    static func activityBounds(_ args: [String], now: Date = Date()) throws -> ActivityBounds {
+        let since = try stringFlag(args, name: "--since").map {
+            try parseActivityBound($0, now: now)
+        }
+        let before = try stringFlag(args, name: "--before").map {
+            try parseActivityBound($0, now: now)
+        }
+        if let since, let before, since >= before {
+            throw CLIError.message("--since must be earlier than --before")
+        }
+        return ActivityBounds(sinceMs: since, beforeMs: before)
+    }
+
+    /// Parse a timestamp or a duration before `now` such as `30d`, `12h`, or `45m`.
+    static func parseActivityBound(_ raw: String, now: Date = Date()) throws -> Int64 {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if value == "now" {
+            return Int64(now.timeIntervalSince1970 * 1000)
+        }
+        if let unit = value.last, ["d", "h", "m", "w"].contains(unit),
+            let amount = Double(value.dropLast()), amount.isFinite, amount >= 0
+        {
+            let secondsPerUnit: Double =
+                switch unit {
+                case "m": 60
+                case "h": 60 * 60
+                case "d": 24 * 60 * 60
+                case "w": 7 * 24 * 60 * 60
+                default: 1
+                }
+            let milliseconds = (now.timeIntervalSince1970 - amount * secondsPerUnit) * 1000
+            guard milliseconds.isFinite,
+                milliseconds >= Double(Int64.min),
+                milliseconds <= Double(Int64.max)
+            else {
+                throw CLIError.message("activity bound is outside the supported date range")
+            }
+            return Int64(milliseconds)
+        }
+        return try parseTimestampMs(raw)
+    }
+
+    static func commaSeparatedIDs(_ raw: String, maximumCount: Int = 100) throws -> [Int64] {
+        let values = raw.split(separator: ",", omittingEmptySubsequences: false)
+        guard !values.isEmpty, values.count <= maximumCount else {
+            throw CLIError.message("--ids must contain between 1 and \(maximumCount) frame ids")
+        }
+        var seen: Set<Int64> = []
+        var ids: [Int64] = []
+        for value in values {
+            guard let id = Int64(value.trimmingCharacters(in: .whitespaces)), id > 0 else {
+                throw CLIError.message("--ids must contain positive comma-separated frame ids")
+            }
+            if seen.insert(id).inserted { ids.append(id) }
+        }
+        return ids
+    }
+
     /// Parse ISO-8601, epoch seconds, or epoch milliseconds into ms since 1970.
     static func parseTimestampMs(_ raw: String) throws -> Int64 {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if let n = Int64(trimmed) {
             // Heuristic: 10-digit / smaller to seconds; 13-digit to ms.
-            if abs(n) < 100_000_000_000 {  // < ~year 5138 in seconds
+            if n > -100_000_000_000, n < 100_000_000_000 {  // < ~year 5138 in seconds
                 return n * 1000
             }
             return n

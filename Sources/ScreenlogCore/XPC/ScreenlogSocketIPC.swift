@@ -19,7 +19,10 @@ public enum IPCCommand: String, Codable, CaseIterable, Hashable, Sendable {
     case topDomains
     case sessions
     case sample
+    case recent
     case frame
+    case frames
+    case context
     case frameAt
     case ocrBoxes
     case listApplications
@@ -64,7 +67,7 @@ extension IPCCommand {
         switch self {
         case .ping, .status, .stats, .permissions:
             return .inspectStatus
-        case .fts, .topApplications, .topDomains, .sessions, .sample, .frame,
+        case .fts, .topApplications, .topDomains, .sessions, .sample, .recent, .frame, .frames, .context,
             .frameAt, .ocrBoxes, .listApplications, .listDomains, .axTree:
             return .readLibrary
         case .extractImage:
@@ -125,7 +128,8 @@ public struct LocalToolAccessPolicy: Sendable {
 /// every request so a rolling app/CLI upgrade either selects a shared version or fails explicitly.
 public enum ScreenlogIPCProtocol {
     public static let minimumSupportedVersion = 1
-    public static let maximumSupportedVersion = 1
+    public static let maximumSupportedVersion = 2
+    public static let boundedActivityVersion = 2
 
     static func negotiatedVersion(
         peerMinimum: Int, peerMaximum: Int, serverMinimum: Int = minimumSupportedVersion, serverMaximum: Int = maximumSupportedVersion
@@ -145,11 +149,18 @@ public struct IPCRequest: Codable, Sendable {
     public var clientVersion: String?
     public var query: String?
     public var searchContent: LibrarySearchContent?
+    public var literalSearch: Bool?
     public var limit: Int?
     public var minSegLen: Int?
     public var gapMinutes: Int?
     public var frameID: Int64?
+    public var frameIDs: [Int64]?
     public var timestampMs: Int64?
+    public var fromTimestampMs: Int64?
+    public var toTimestampMs: Int64?
+    public var sortOrder: ActivitySortOrder?
+    public var contextBeforeCount: Int?
+    public var contextAfterCount: Int?
     public var outPath: String?
     public var preferBase64: Bool?
 
@@ -158,7 +169,16 @@ public struct IPCRequest: Codable, Sendable {
         protocolMaximumVersion: Int? = ScreenlogIPCProtocol.maximumSupportedVersion, clientVersion: String? = ScreenlogCore.version,
         query: String? = nil,
         searchContent: LibrarySearchContent? = nil,
-        limit: Int? = nil, minSegLen: Int? = nil, gapMinutes: Int? = nil, frameID: Int64? = nil, timestampMs: Int64? = nil,
+        literalSearch: Bool? = nil,
+        limit: Int? = nil, minSegLen: Int? = nil, gapMinutes: Int? = nil,
+        frameID: Int64? = nil,
+        frameIDs: [Int64]? = nil,
+        timestampMs: Int64? = nil,
+        fromTimestampMs: Int64? = nil,
+        toTimestampMs: Int64? = nil,
+        sortOrder: ActivitySortOrder? = nil,
+        contextBeforeCount: Int? = nil,
+        contextAfterCount: Int? = nil,
         outPath: String? = nil,
         preferBase64: Bool? = nil
     ) {
@@ -169,11 +189,18 @@ public struct IPCRequest: Codable, Sendable {
         self.clientVersion = clientVersion
         self.query = query
         self.searchContent = searchContent
+        self.literalSearch = literalSearch
         self.limit = limit
         self.minSegLen = minSegLen
         self.gapMinutes = gapMinutes
         self.frameID = frameID
+        self.frameIDs = frameIDs
         self.timestampMs = timestampMs
+        self.fromTimestampMs = fromTimestampMs
+        self.toTimestampMs = toTimestampMs
+        self.sortOrder = sortOrder
+        self.contextBeforeCount = contextBeforeCount
+        self.contextAfterCount = contextAfterCount
         self.outPath = outPath
         self.preferBase64 = preferBase64
     }
@@ -222,7 +249,7 @@ extension IPCRequest {
         }
 
         switch cmd {
-        case .fts, .topApplications, .topDomains, .sample:
+        case .fts, .topApplications, .topDomains, .sample, .recent:
             if let limit, !IPCRequestLimits.resultLimit.contains(limit) {
                 throw IPCRequestValidationError.invalid("limit must be between 1 and 500")
             }
@@ -236,9 +263,36 @@ extension IPCRequest {
             throw IPCRequestValidationError.invalid("session gap must be between 1 and 10080 minutes")
         }
 
+        if let fromTimestampMs, let toTimestampMs, fromTimestampMs >= toTimestampMs {
+            throw IPCRequestValidationError.invalid("activity time range must have since before before")
+        }
+        if fromTimestampMs != nil || toTimestampMs != nil || sortOrder != nil
+            || literalSearch == true
+            || cmd == .frames || cmd == .context || cmd == .recent
+        {
+            guard (protocolMinimumVersion ?? 0) >= ScreenlogIPCProtocol.boundedActivityVersion else {
+                throw IPCRequestValidationError.invalid("this request requires IPC protocol 2")
+            }
+        }
+
         switch cmd {
         case .frame, .ocrBoxes, .axTree:
             guard let frameID, frameID > 0 else { throw IPCRequestValidationError.invalid("a positive frame id is required") }
+        case .frames:
+            guard let frameIDs, !frameIDs.isEmpty, frameIDs.count <= 100,
+                frameIDs.allSatisfy({ $0 > 0 })
+            else {
+                throw IPCRequestValidationError.invalid("between 1 and 100 positive frame ids are required")
+            }
+        case .context:
+            guard let frameID, frameID > 0 else {
+                throw IPCRequestValidationError.invalid("a positive frame id is required")
+            }
+            let before = contextBeforeCount ?? 3
+            let after = contextAfterCount ?? 3
+            guard (0...50).contains(before), (0...50).contains(after), before + after > 0 else {
+                throw IPCRequestValidationError.invalid("context bounds must be between 0 and 50")
+            }
         case .extractImage:
             let hasFrameID = (frameID ?? 0) > 0
             guard hasFrameID || timestampMs != nil else {
@@ -607,39 +661,116 @@ public final class ScreenlogSocketHost: @unchecked Sendable {
                     guard let store else { return .fail(id: req.id, "store unavailable") }
                     let data = try JSONEncoder().encode(
                         try store.searchLibrary(
-                            query: LibrarySearchQuery(
-                                text: req.query ?? "",
-                                content: req.searchContent ?? .all
-                            ),
-                            limit: req.limit ?? 50
+                            query: req.query ?? "",
+                            limit: req.limit ?? 50,
+                            content: req.searchContent ?? .all,
+                            literalText: req.literalSearch == true
                         )
                     )
                     return .ok(id: req.id, data: data)
                 case .stats:
                     guard let store else { return .fail(id: req.id, "store unavailable") }
-                    return .ok(id: req.id, data: try JSONEncoder().encode(try store.stats()))
+                    return .ok(
+                        id: req.id,
+                        data: try JSONEncoder().encode(
+                            try store.stats(
+                                fromTimestampMs: req.fromTimestampMs,
+                                toTimestampMs: req.toTimestampMs
+                            )
+                        )
+                    )
                 case .topApplications:
                     guard let store else { return .fail(id: req.id, "store unavailable") }
-                    return .ok(id: req.id, data: try JSONEncoder().encode(try store.topApplications(limit: req.limit ?? 20)))
+                    return .ok(
+                        id: req.id,
+                        data: try JSONEncoder().encode(
+                            try store.topApplications(
+                                limit: req.limit ?? 20,
+                                fromTimestampMs: req.fromTimestampMs,
+                                toTimestampMs: req.toTimestampMs
+                            )
+                        )
+                    )
                 case .topDomains:
                     guard let store else { return .fail(id: req.id, "store unavailable") }
-                    return .ok(id: req.id, data: try JSONEncoder().encode(try store.topDomains(limit: req.limit ?? 20)))
+                    return .ok(
+                        id: req.id,
+                        data: try JSONEncoder().encode(
+                            try store.topDomains(
+                                limit: req.limit ?? 20,
+                                fromTimestampMs: req.fromTimestampMs,
+                                toTimestampMs: req.toTimestampMs
+                            )
+                        )
+                    )
                 case .sessions:
                     guard let store else { return .fail(id: req.id, "store unavailable") }
                     let gap = Int64(max(1, req.gapMinutes ?? 5)) * 60_000
-                    return .ok(id: req.id, data: try JSONEncoder().encode(try store.sessions(gapMs: gap)))
+                    return .ok(
+                        id: req.id,
+                        data: try JSONEncoder().encode(
+                            try store.sessions(
+                                gapMs: gap,
+                                fromTimestampMs: req.fromTimestampMs,
+                                toTimestampMs: req.toTimestampMs
+                            )
+                        )
+                    )
                 case .sample:
                     guard let store else { return .fail(id: req.id, "store unavailable") }
                     return .ok(
                         id: req.id,
-                        data: try JSONEncoder().encode(try store.sampleFrames(limit: req.limit ?? 50, minSegLen: req.minSegLen ?? 1)))
+                        data: try JSONEncoder().encode(
+                            try store.sampleFrames(
+                                limit: req.limit ?? 50,
+                                minSegLen: req.minSegLen ?? 1,
+                                fromTimestampMs: req.fromTimestampMs,
+                                toTimestampMs: req.toTimestampMs,
+                                order: req.sortOrder ?? .oldest
+                            )
+                        )
+                    )
+                case .recent:
+                    guard let store else { return .fail(id: req.id, "store unavailable") }
+                    return .ok(
+                        id: req.id,
+                        data: try JSONEncoder().encode(
+                            try store.recentMomentFrames(limit: req.limit ?? 20)
+                        )
+                    )
                 case .frame:
                     guard let store else { return .fail(id: req.id, "store unavailable") }
-                    guard let fid = req.frameID, let f = try store.frame(id: fid) else { return .fail(id: req.id, "not found") }
+                    guard let fid = req.frameID, let f = try store.frames(ids: [fid]).first else {
+                        return .fail(id: req.id, "not found")
+                    }
                     return .ok(id: req.id, data: try JSONEncoder().encode(f))
+                case .frames:
+                    guard let store else { return .fail(id: req.id, "store unavailable") }
+                    return .ok(
+                        id: req.id,
+                        data: try JSONEncoder().encode(try store.frames(ids: req.frameIDs ?? []))
+                    )
+                case .context:
+                    guard let store else { return .fail(id: req.id, "store unavailable") }
+                    guard let frameID = req.frameID else {
+                        return .fail(id: req.id, "frameID required")
+                    }
+                    return .ok(
+                        id: req.id,
+                        data: try JSONEncoder().encode(
+                            try store.frameContext(
+                                frameID: frameID,
+                                before: req.contextBeforeCount ?? 3,
+                                after: req.contextAfterCount ?? 3
+                            )
+                        )
+                    )
                 case .frameAt:
                     guard let store else { return .fail(id: req.id, "store unavailable") }
-                    guard let ts = req.timestampMs, let f = try store.frameNearest(timestampMs: ts) else {
+                    guard let ts = req.timestampMs,
+                        let nearest = try store.frameNearest(timestampMs: ts),
+                        let f = try store.frames(ids: [nearest.id]).first
+                    else {
                         return .fail(id: req.id, "not found")
                     }
                     return .ok(id: req.id, data: try JSONEncoder().encode(f))

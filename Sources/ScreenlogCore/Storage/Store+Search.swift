@@ -25,6 +25,7 @@ public struct LibrarySearchQuery: Equatable, Sendable {
     public var fromTimestampMs: Int64?
     public var toTimestampMs: Int64?
     public var content: LibrarySearchContent
+    public var literalText: Bool
 
     public init(
         text: String = "",
@@ -34,7 +35,8 @@ public struct LibrarySearchQuery: Equatable, Sendable {
         domain: String? = nil,
         fromTimestampMs: Int64? = nil,
         toTimestampMs: Int64? = nil,
-        content: LibrarySearchContent = .all
+        content: LibrarySearchContent = .all,
+        literalText: Bool = false
     ) {
         self.text = text
         self.appFilter = appFilter
@@ -44,6 +46,7 @@ public struct LibrarySearchQuery: Equatable, Sendable {
         self.fromTimestampMs = fromTimestampMs
         self.toTimestampMs = toTimestampMs
         self.content = content
+        self.literalText = literalText
     }
 }
 
@@ -166,7 +169,10 @@ extension Store {
         after cursor: LibrarySearchCursor? = nil
     ) throws -> [FTSResult] {
         let trimmedText = query.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let match = Self.ftsMatchExpression(from: query.text)
+        let match =
+            query.literalText
+            ? Self.ftsLiteralMatchExpression(from: query.text)
+            : Self.ftsMatchExpression(from: query.text)
         guard trimmedText.isEmpty || !match.isEmpty else { return [] }
         let appFilter = Self.nonemptySearchFilter(query.appFilter)?.lowercased()
         let siteFilter: String? = {
@@ -519,6 +525,17 @@ extension Store {
         guard !limited.isEmpty else { return "" }
         // AND is default FTS5; join explicitly for clarity.
         return limited.joined(separator: " ")
+    }
+
+    /// Exact tokenizer-term sequence for punctuation-heavy identifiers such as
+    /// versions and issue numbers. FTS5 still uses its configured tokenizer;
+    /// quoting makes the resulting terms adjacent and ordered.
+    public static func ftsLiteralMatchExpression(from raw: String) -> String {
+        let separators = CharacterSet.alphanumerics.inverted
+        let tokens = raw.components(separatedBy: separators).filter { !$0.isEmpty }
+        let limited = Array(tokens.prefix(24))
+        guard !limited.isEmpty else { return "" }
+        return "\"\(limited.joined(separator: " "))\""
     }
 
 }

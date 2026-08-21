@@ -86,6 +86,35 @@ final class CrossWindowNavigationUITests: XCTestCase {
         )
     }
 
+    func testLibrarySessionsBrowseAllMomentsAndOpenInTimeline() throws {
+        let app = try launch(route: "--open-library")
+        let mode = assertElement("library.content-mode", in: app)
+        let sessionsMode = mode.descendants(matching: .any).matching(
+            NSPredicate(format: "label == %@", "Sessions")
+        ).firstMatch
+        XCTAssertTrue(
+            sessionsMode.waitForExistence(timeout: Self.timeout),
+            "Library should expose Sessions as a first-class workspace."
+        )
+
+        sessionsMode.click()
+        assertElement("library.sessions", in: app)
+        let rows = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "library.session.")
+        )
+        let firstSession = rows.firstMatch
+        XCTAssertTrue(
+            firstSession.waitForExistence(timeout: Self.timeout),
+            "The Sessions workspace should list seeded recording sessions."
+        )
+
+        firstSession.doubleClick()
+        assertWindow("Timeline", in: app)
+        assertElement("navigation.timeline.back-to-search", in: app).click()
+        assertWindow("Library", in: app)
+        assertElement("library.sessions", in: app)
+    }
+
     func testStructuredSearchShowsAnOperatorOnceAndKeepsTermsEditable() throws {
         let app = try launch(route: "--open-library")
         let search = assertElement("library.search.field", in: app)

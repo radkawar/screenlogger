@@ -57,6 +57,21 @@ final class LibrarySearchPagePresentationTests: XCTestCase {
         XCTAssertEqual(state.resultViewportAnchorID, 42)
     }
 
+    func testLibraryWorkspaceStartsInSearchAndKeepsSessionNavigationSeparate() {
+        var state = LibraryWorkspaceNavigationState()
+
+        XCTAssertEqual(state.contentMode, .search)
+        XCTAssertNil(state.selectedSessionStartMs)
+
+        state.contentMode = .sessions
+        state.selectedSessionStartMs = 1_234
+        state.selectResult(42)
+
+        XCTAssertEqual(state.contentMode, .sessions)
+        XCTAssertEqual(state.selectedSessionStartMs, 1_234)
+        XCTAssertEqual(state.selectedResultID, 42)
+    }
+
     func testLibraryWorkspaceKeepsExactSelectionAcrossAStableResultSet() {
         var state = LibraryWorkspaceNavigationState()
         state.selectResult(6)

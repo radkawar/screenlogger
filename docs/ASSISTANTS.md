@@ -41,6 +41,26 @@ Terminal-based assistants launch in Apple Terminal through macOS Automation.
 Each target receives an isolated working directory so
 project pickers and unrelated repository context do not intercept the request.
 
+## Activity reconstruction
+
+The bundled skill now starts broad questions such as "what did I do last month?"
+with a coverage check and one date-bounded digest. It then samples across the
+requested interval and batch-checks supporting moments instead of issuing one
+command per frame or treating adjacent search hits as time spent.
+
+Useful direct commands include:
+
+```sh
+screenlog usage coverage --since 30d --json
+screenlog digest --since 30d --json
+screenlog query frame --ids 123,456,789 --show-ocr --max-ocr-chars 1000 --json
+screenlog query context --id 456 --before 3 --after 3 --show-ocr --json
+```
+
+All usage commands and sampling accept the same half-open `--since` and
+`--before` bounds. Application and domain totals describe captured exposure;
+they are not exclusive attention or project-time measurements.
+
 ## Privacy boundary
 
 Screenlogger sends the assistant a request to search the local Library. The

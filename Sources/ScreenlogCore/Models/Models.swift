@@ -75,6 +75,10 @@ public struct FrameRow: Sendable, Equatable, Codable {
     public var foreground: String?
     public var background: String?
     public var title: String?
+    /// Application and domain context are populated for assistant evidence queries.
+    public var bundleID: String?
+    public var displayName: String?
+    public var domain: String?
     public var segmentID: Int64?
     public var videoID: Int64?
     public var videoIndex: Int?
@@ -98,6 +102,9 @@ public struct FrameRow: Sendable, Equatable, Codable {
         foreground: String? = nil,
         background: String? = nil,
         title: String? = nil,
+        bundleID: String? = nil,
+        displayName: String? = nil,
+        domain: String? = nil,
         segmentID: Int64? = nil,
         videoID: Int64? = nil,
         videoIndex: Int? = nil,
@@ -113,6 +120,9 @@ public struct FrameRow: Sendable, Equatable, Codable {
         self.foreground = foreground
         self.background = background
         self.title = title
+        self.bundleID = bundleID
+        self.displayName = displayName
+        self.domain = domain
         self.segmentID = segmentID
         self.videoID = videoID
         self.videoIndex = videoIndex
@@ -429,6 +439,12 @@ public struct UsageTopItem: Sendable, Equatable, Codable {
     }
 }
 
+/// Stable ordering for bounded activity samples returned to local tools.
+public enum ActivitySortOrder: String, Codable, CaseIterable, Sendable {
+    case oldest
+    case newest
+}
+
 public struct SessionRow: Sendable, Equatable, Codable, Identifiable {
     public var startMs: Int64
     public var endMs: Int64
@@ -465,6 +481,10 @@ public struct SessionRow: Sendable, Equatable, Codable, Identifiable {
     public var pinKey: String { SessionPinning.pinKey(startMs: startMs, endMs: endMs) }
 
     public var durationMs: Int64 { max(0, endMs - startMs) }
+
+    /// Synchronized capture moments in this session. `frameCount` remains the
+    /// encoded compatibility field for older CLI and app builds.
+    public var momentCount: Int64 { frameCount }
 
     public var appLabel: String {
         if let primaryDisplayName, !primaryDisplayName.isEmpty { return primaryDisplayName }

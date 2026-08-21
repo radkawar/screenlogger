@@ -8,6 +8,7 @@ final class IPCSocketContractTests: XCTestCase {
     private var preferences: UserDefaults!
     private var preferenceSuiteName: String!
     private var host: ScreenlogSocketHost!
+    private var store: Store!
 
     override func setUpWithError() throws {
         try super.setUpWithError()
@@ -16,7 +17,8 @@ final class IPCSocketContractTests: XCTestCase {
         preferences = try XCTUnwrap(UserDefaults(suiteName: preferenceSuiteName))
         preferences.removePersistentDomain(forName: preferenceSuiteName)
         host = ScreenlogSocketHost(preferences: preferences)
-        try host.start(store: Store(root: root), root: root)
+        store = try Store(root: root)
+        try host.start(store: store, root: root)
     }
 
     override func tearDownWithError() throws {
@@ -24,6 +26,7 @@ final class IPCSocketContractTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
         preferences.removePersistentDomain(forName: preferenceSuiteName)
         host = nil
+        store = nil
         root = nil
         preferences = nil
         preferenceSuiteName = nil
@@ -43,6 +46,40 @@ final class IPCSocketContractTests: XCTestCase {
         let payload = try XCTUnwrap(response.data)
         let stats = try JSONDecoder().decode(RecordingStats.self, from: payload)
         XCTAssertEqual(stats.totalFrames, 0)
+    }
+
+    func testProtocolTwoActivityBatchAndContextCommandsRoundTrip() throws {
+        let first = try store.insertSeedFrame(
+            timestampMs: 1_000,
+            foreground: "release 0.1.13",
+            bundleID: "dev.first"
+        )
+        let second = try store.insertSeedFrame(
+            timestampMs: 2_000,
+            foreground: "middle",
+            bundleID: "dev.middle"
+        )
+        let third = try store.insertSeedFrame(
+            timestampMs: 3_000,
+            foreground: "last",
+            bundleID: "dev.last"
+        )
+        let client = ScreenlogXPCClient(root: root)
+
+        XCTAssertEqual(
+            try client.stats(fromTimestampMs: 1_500, toTimestampMs: 3_000).momentCount,
+            1
+        )
+        XCTAssertEqual(try client.frames(ids: [third, first]).map(\.id), [third, first])
+        XCTAssertEqual(
+            try client.context(frameID: second, before: 1, after: 1).map(\.id),
+            [first, second, third]
+        )
+        XCTAssertEqual(
+            try client.fts(query: "0.1.13", literal: true).map(\.frameID),
+            [first]
+        )
+        XCTAssertEqual(try client.recent(limit: 2).map(\.id), [third, second])
     }
 
     func testNewerCLIThanAppFailsWithExplicitCompatibilityError() throws {

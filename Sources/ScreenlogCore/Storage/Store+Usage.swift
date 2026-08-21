@@ -4,8 +4,11 @@ import SQLite3
 extension Store {
     // MARK: - Usage
 
-    public func stats() throws -> RecordingStats {
-        let stmt = try db.prepare(
+    public func stats(
+        fromTimestampMs: Int64? = nil,
+        toTimestampMs: Int64? = nil
+    ) throws -> RecordingStats {
+        var sql =
             """
             SELECT
                 COUNT(*),
@@ -16,8 +19,22 @@ extension Store {
                 COUNT(DISTINCT CASE WHEN image_path IS NOT NULL THEN timestamp END)
             FROM frame
             """
-        )
+        var constraints: [String] = []
+        if fromTimestampMs != nil { constraints.append("timestamp >= ?") }
+        if toTimestampMs != nil { constraints.append("timestamp < ?") }
+        if !constraints.isEmpty {
+            sql += " WHERE " + constraints.joined(separator: " AND ")
+        }
+        let stmt = try db.prepare(sql)
         defer { sqlite3_finalize(stmt) }
+        var bind: Int32 = 1
+        if let fromTimestampMs {
+            SQLiteBind.int64(stmt, bind, fromTimestampMs)
+            bind += 1
+        }
+        if let toTimestampMs {
+            SQLiteBind.int64(stmt, bind, toTimestampMs)
+        }
         guard sqlite3_step(stmt) == SQLITE_ROW else {
             return RecordingStats(totalFrames: 0, minTimestampMs: nil, maxTimestampMs: nil, unfinalizedFrames: 0)
         }
@@ -31,19 +48,38 @@ extension Store {
         )
     }
 
-    public func topApplications(limit: Int = 20) throws -> [UsageTopItem] {
-        let sql = """
+    public func topApplications(
+        limit: Int = 20,
+        fromTimestampMs: Int64? = nil,
+        toTimestampMs: Int64? = nil
+    ) throws -> [UsageTopItem] {
+        var sql = """
             SELECT a.bundle_id, a.display_name, COUNT(DISTINCT f.timestamp) AS fc
             FROM frame f
             JOIN segment s ON s.id = f.segment
             JOIN application a ON a.id = s.application
-            GROUP BY a.bundle_id
+            WHERE 1 = 1
+            """
+        if fromTimestampMs != nil { sql += " AND f.timestamp >= ?" }
+        if toTimestampMs != nil { sql += " AND f.timestamp < ?" }
+        sql += """
+
+            GROUP BY a.bundle_id, a.display_name
             ORDER BY fc DESC
             LIMIT ?
             """
         let stmt = try db.prepare(sql)
         defer { sqlite3_finalize(stmt) }
-        SQLiteBind.int(stmt, 1, limit)
+        var bind: Int32 = 1
+        if let fromTimestampMs {
+            SQLiteBind.int64(stmt, bind, fromTimestampMs)
+            bind += 1
+        }
+        if let toTimestampMs {
+            SQLiteBind.int64(stmt, bind, toTimestampMs)
+            bind += 1
+        }
+        SQLiteBind.int(stmt, bind, limit)
         var items: [UsageTopItem] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
             items.append(
@@ -57,19 +93,38 @@ extension Store {
         return items
     }
 
-    public func topDomains(limit: Int = 20) throws -> [UsageTopItem] {
-        let sql = """
+    public func topDomains(
+        limit: Int = 20,
+        fromTimestampMs: Int64? = nil,
+        toTimestampMs: Int64? = nil
+    ) throws -> [UsageTopItem] {
+        var sql = """
             SELECT d.normalized_domain, d.common_name, COUNT(DISTINCT f.timestamp) AS fc
             FROM frame f
             JOIN segment s ON s.id = f.segment
             JOIN domain d ON d.id = s.domain
-            GROUP BY d.id
+            WHERE 1 = 1
+            """
+        if fromTimestampMs != nil { sql += " AND f.timestamp >= ?" }
+        if toTimestampMs != nil { sql += " AND f.timestamp < ?" }
+        sql += """
+
+            GROUP BY d.id, d.normalized_domain, d.common_name
             ORDER BY fc DESC
             LIMIT ?
             """
         let stmt = try db.prepare(sql)
         defer { sqlite3_finalize(stmt) }
-        SQLiteBind.int(stmt, 1, limit)
+        var bind: Int32 = 1
+        if let fromTimestampMs {
+            SQLiteBind.int64(stmt, bind, fromTimestampMs)
+            bind += 1
+        }
+        if let toTimestampMs {
+            SQLiteBind.int64(stmt, bind, toTimestampMs)
+            bind += 1
+        }
+        SQLiteBind.int(stmt, bind, limit)
         var items: [UsageTopItem] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
             items.append(
@@ -85,11 +140,22 @@ extension Store {
 
     /// Sessions = contiguous recording blocks split when gap >= gapMs.
     /// Enriched with primary app (first frame join) and optional still preview path.
-    public func sessions(gapMs: Int64 = 5 * 60 * 1000) throws -> [SessionRow] {
+    public func sessions(
+        gapMs: Int64 = 5 * 60 * 1000,
+        fromTimestampMs: Int64? = nil,
+        toTimestampMs: Int64? = nil
+    ) throws -> [SessionRow] {
+        var momentConstraints: [String] = []
+        if fromTimestampMs != nil { momentConstraints.append("timestamp >= ?") }
+        if toTimestampMs != nil { momentConstraints.append("timestamp < ?") }
+        let momentWhere =
+            momentConstraints.isEmpty
+            ? ""
+            : " WHERE " + momentConstraints.joined(separator: " AND ")
         let sql = """
             WITH moments AS (
                 SELECT DISTINCT timestamp
-                FROM frame
+                FROM frame\(momentWhere)
             ),
             ordered AS (
                 SELECT
@@ -148,7 +214,16 @@ extension Store {
             """
         let stmt = try db.prepare(sql)
         defer { sqlite3_finalize(stmt) }
-        SQLiteBind.int64(stmt, 1, gapMs)
+        var bind: Int32 = 1
+        if let fromTimestampMs {
+            SQLiteBind.int64(stmt, bind, fromTimestampMs)
+            bind += 1
+        }
+        if let toTimestampMs {
+            SQLiteBind.int64(stmt, bind, toTimestampMs)
+            bind += 1
+        }
+        SQLiteBind.int64(stmt, bind, gapMs)
         var rows: [SessionRow] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
             rows.append(

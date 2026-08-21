@@ -43,42 +43,158 @@ public final class ScreenlogXPCClient: NSObject, ScreenlogClientProtocol {
     public func fts(
         query: String,
         limit: Int = 50,
-        content: LibrarySearchContent = .all
+        content: LibrarySearchContent = .all,
+        literal: Bool = false
     ) throws -> [FTSResult] {
-        try decode(
+        let parsed = SearchOperatorParser.parse(query)
+        let usesStructuredOperators =
+            parsed.appFilter != nil || parsed.siteFilter != nil
+            || parsed.dayStartMs != nil || parsed.sinceMs != nil || parsed.beforeMs != nil
+        return try decode(
             socket.call(
                 IPCRequest(
                     cmd: .fts,
+                    protocolMinimumVersion: literal || usesStructuredOperators
+                        ? ScreenlogIPCProtocol.boundedActivityVersion
+                        : ScreenlogIPCProtocol.minimumSupportedVersion,
                     query: query,
                     searchContent: content,
+                    literalSearch: literal,
                     limit: limit
                 )
             ).data
         )
     }
 
-    public func stats() throws -> RecordingStats {
-        try decode(socket.call(IPCRequest(cmd: .stats)).data)
+    public func stats(
+        fromTimestampMs: Int64? = nil,
+        toTimestampMs: Int64? = nil
+    ) throws -> RecordingStats {
+        try decode(
+            socket.call(
+                boundedActivityRequest(
+                    cmd: .stats,
+                    fromTimestampMs: fromTimestampMs,
+                    toTimestampMs: toTimestampMs
+                )
+            ).data
+        )
     }
 
-    public func topApplications(limit: Int = 20) throws -> [UsageTopItem] {
-        try decode(socket.call(IPCRequest(cmd: .topApplications, limit: limit)).data)
+    public func topApplications(
+        limit: Int = 20,
+        fromTimestampMs: Int64? = nil,
+        toTimestampMs: Int64? = nil
+    ) throws -> [UsageTopItem] {
+        try decode(
+            socket.call(
+                boundedActivityRequest(
+                    cmd: .topApplications,
+                    limit: limit,
+                    fromTimestampMs: fromTimestampMs,
+                    toTimestampMs: toTimestampMs
+                )
+            ).data
+        )
     }
 
-    public func topDomains(limit: Int = 20) throws -> [UsageTopItem] {
-        try decode(socket.call(IPCRequest(cmd: .topDomains, limit: limit)).data)
+    public func topDomains(
+        limit: Int = 20,
+        fromTimestampMs: Int64? = nil,
+        toTimestampMs: Int64? = nil
+    ) throws -> [UsageTopItem] {
+        try decode(
+            socket.call(
+                boundedActivityRequest(
+                    cmd: .topDomains,
+                    limit: limit,
+                    fromTimestampMs: fromTimestampMs,
+                    toTimestampMs: toTimestampMs
+                )
+            ).data
+        )
     }
 
-    public func sessions(gapMinutes: Int = 5) throws -> [SessionRow] {
-        try decode(socket.call(IPCRequest(cmd: .sessions, gapMinutes: gapMinutes)).data)
+    public func sessions(
+        gapMinutes: Int = 5,
+        fromTimestampMs: Int64? = nil,
+        toTimestampMs: Int64? = nil
+    ) throws -> [SessionRow] {
+        try decode(
+            socket.call(
+                boundedActivityRequest(
+                    cmd: .sessions,
+                    gapMinutes: gapMinutes,
+                    fromTimestampMs: fromTimestampMs,
+                    toTimestampMs: toTimestampMs
+                )
+            ).data
+        )
     }
 
-    public func sample(limit: Int = 50, minSegLen: Int = 1) throws -> [FrameRow] {
-        try decode(socket.call(IPCRequest(cmd: .sample, limit: limit, minSegLen: minSegLen)).data)
+    public func sample(
+        limit: Int = 50,
+        minSegLen: Int = 1,
+        fromTimestampMs: Int64? = nil,
+        toTimestampMs: Int64? = nil,
+        order: ActivitySortOrder = .oldest
+    ) throws -> [FrameRow] {
+        try decode(
+            socket.call(
+                boundedActivityRequest(
+                    cmd: .sample,
+                    limit: limit,
+                    minSegLen: minSegLen,
+                    fromTimestampMs: fromTimestampMs,
+                    toTimestampMs: toTimestampMs,
+                    sortOrder: order
+                )
+            ).data
+        )
+    }
+
+    public func recent(limit: Int = 20) throws -> [FrameRow] {
+        try decode(
+            socket.call(
+                IPCRequest(
+                    cmd: .recent,
+                    protocolMinimumVersion: ScreenlogIPCProtocol.boundedActivityVersion,
+                    limit: limit
+                )
+            ).data
+        )
     }
 
     public func frame(id: Int64) throws -> FrameRow {
         try decode(socket.call(IPCRequest(cmd: .frame, frameID: id)).data)
+    }
+
+    public func frames(ids: [Int64]) throws -> [FrameRow] {
+        try decode(
+            socket.call(
+                IPCRequest(
+                    cmd: .frames,
+                    protocolMinimumVersion: ScreenlogIPCProtocol.boundedActivityVersion,
+                    frameIDs: ids
+                )
+            ).data
+        )
+    }
+
+    public func context(frameID: Int64, before: Int = 3, after: Int = 3) throws
+        -> [FrameRow]
+    {
+        try decode(
+            socket.call(
+                IPCRequest(
+                    cmd: .context,
+                    protocolMinimumVersion: ScreenlogIPCProtocol.boundedActivityVersion,
+                    frameID: frameID,
+                    contextBeforeCount: before,
+                    contextAfterCount: after
+                )
+            ).data
+        )
     }
 
     public func frameAt(timestampMs: Int64) throws -> FrameRow {
@@ -155,6 +271,31 @@ public final class ScreenlogXPCClient: NSObject, ScreenlogClientProtocol {
     private func require<T>(_ value: T?) throws -> T {
         guard let value else { throw XPCClientError.empty }
         return value
+    }
+
+    private func boundedActivityRequest(
+        cmd: IPCCommand,
+        limit: Int? = nil,
+        minSegLen: Int? = nil,
+        gapMinutes: Int? = nil,
+        fromTimestampMs: Int64? = nil,
+        toTimestampMs: Int64? = nil,
+        sortOrder: ActivitySortOrder? = nil
+    ) -> IPCRequest {
+        let usesExtendedContract =
+            fromTimestampMs != nil || toTimestampMs != nil || sortOrder != nil
+        return IPCRequest(
+            cmd: cmd,
+            protocolMinimumVersion: usesExtendedContract
+                ? ScreenlogIPCProtocol.boundedActivityVersion
+                : ScreenlogIPCProtocol.minimumSupportedVersion,
+            limit: limit,
+            minSegLen: minSegLen,
+            gapMinutes: gapMinutes,
+            fromTimestampMs: fromTimestampMs,
+            toTimestampMs: toTimestampMs,
+            sortOrder: sortOrder
+        )
     }
 }
 

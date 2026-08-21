@@ -26,6 +26,7 @@ navigation. Capture and search stay on your Mac.
 - Optionally capture every connected display as one synchronized moment.
 - Optionally transcribe microphone and computer audio on device on macOS 26.
 - Move between Library results and their surrounding Timeline context.
+- Browse every recording session from one Library view.
 - Pause capture at any time and exclude applications or websites.
 - Keep the Library on this Mac with retention, compaction, backup, and restore.
 - Search from Terminal with the `screenlog` command.
@@ -83,7 +84,8 @@ Install the Terminal command from Screenlogger Settings, then keep the app open:
 ```sh
 screenlog doctor
 screenlog search "design review"
-screenlog usage top-applications
+screenlog digest --since 30d --json
+screenlog recent --limit 20
 screenlog --help
 ```
 

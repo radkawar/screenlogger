@@ -44,6 +44,13 @@ enum ScreenlogCLIMain {
         }
         let sub = Array(rest.dropFirst())
 
+        // Help must be resolved before any client call. In particular,
+        // `compact --help` and `retention --help` must never perform work.
+        if sub.contains(where: isHelpArgument), cmd != "skill", cmd != "install-skill" {
+            print(helpText(for: cmd, subcommand: sub.first))
+            return
+        }
+
         // Assistant skill lifecycle is pure filesystem work - no app / XPC required.
         if cmd == "skill" || cmd == "install-skill" {
             let skillArguments = cmd == "install-skill" ? ["install"] + sub : sub
@@ -61,6 +68,10 @@ enum ScreenlogCLIMain {
         switch cmd {
         case "search":
             try search(sub, client: client)
+        case "digest", "overview":
+            try digest(sub, client: client)
+        case "recent":
+            try recent(sub, client: client)
         case "query":
             try query(sub, client: client)
         case "image":
@@ -99,9 +110,11 @@ enum ScreenlogCLIMain {
 
         Commands:
           search <QUERY> [--content all|screen|transcripts] [--limit N] [--json]
-          usage time|top-applications|top-domains|sessions
+          digest [--since 30d] [--before DATE] [--json]
+          recent [--limit N] [--show-ocr] [--max-ocr-chars N] [--json]
+          usage time|coverage|top-applications|top-domains|sessions
           list applications|domains
-          query frame|image|axtree|sample|ocrboxes|fts ...
+          query frame|context|image|axtree|sample|ocrboxes|fts ...
           record start|stop|once
           stats | status [--json] | doctor [--json] | ping
           skill install|status [--json]|upgrade|remove [claude|cursor|codex|grok|openclaw|all]
@@ -111,5 +124,29 @@ enum ScreenlogCLIMain {
         `skill` and `install-skill` do not require the app. All other commands do.
         Search combines screen text and transcripts by default.
         Search operators: app:, site:, date:, since:, before:.
+        Run any command with --help for authoritative flags and examples.
         """
+
+    static func helpText(for command: String, subcommand: String?) -> String {
+        switch command {
+        case "search": return searchHelp
+        case "digest", "overview": return digestHelp
+        case "recent": return recentHelp
+        case "usage":
+            return usageHelp(for: subcommand)
+        case "query":
+            return queryHelp(for: subcommand)
+        case "image":
+            return "Usage: screenlog image --id N | --at DATE [--out PATH] [--base64] [--json]"
+        case "status": return "Usage: screenlog status [--json]"
+        case "stats": return "Usage: screenlog stats"
+        case "doctor": return "Usage: screenlog doctor [--json]"
+        case "ping": return "Usage: screenlog ping"
+        case "list": return "Usage: screenlog list applications|domains"
+        case "record": return "Usage: screenlog record start|stop|once"
+        case "compact": return "Usage: screenlog compact"
+        case "retention": return "Usage: screenlog retention"
+        default: return helpText
+        }
+    }
 }
