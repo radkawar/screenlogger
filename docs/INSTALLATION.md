@@ -8,7 +8,7 @@ Screenlogger requires macOS 14 or later.
 2. Verify the checksum if desired:
 
    ```sh
-   shasum -a 256 -c Screenlogger-v0.1.2-macos-universal.dmg.sha256
+   shasum -a 256 -c Screenlogger-latest-macos-universal.dmg.sha256
    ```
 
 3. Open the DMG.

@@ -74,7 +74,9 @@ The Release workflow checks the immutable tag, repeats all quality gates,
 creates a temporary Keychain, imports the protected certificate, signs and
 notarizes the exact release bytes, generates the signed appcast, removes the
 temporary credentials, and publishes the verified release. It refuses to
-overwrite any existing release.
+overwrite any existing release. Each release keeps immutable versioned assets
+and also publishes stable latest-download DMG and checksum aliases used by the
+README, so public install links never need a version-only source commit.
 
 Publishing triggers the Update Feed workflow. That workflow rejects drafts and
 prereleases, confirms the feed references the expected DMG, downloads the

@@ -149,6 +149,20 @@ jobs:
             --output build/releases/appcast.xml \
             --tag "$RELEASE_TAG"
 
+      - name: Create stable latest-download aliases
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dmg=(build/releases/Screenlogger-v*-macos-universal.dmg)
+          test "${#dmg[@]}" -eq 1
+          latest="build/releases/Screenlogger-latest-macos-universal.dmg"
+          cp "${dmg[0]}" "$latest"
+          (
+            cd build/releases
+            shasum -a 256 "$(basename "$latest")" \
+              >"$(basename "$latest").sha256"
+          )
+
       - name: Compile routed UI contracts
         run: |
           xcodebuild \
@@ -214,6 +228,7 @@ jobs:
           gh release create "$RELEASE_TAG" "${assets[@]}" \
             --verify-tag \
             --latest \
+            --generate-notes \
             --title "Screenlogger $RELEASE_TAG" \
             --notes "Developer ID signed and notarized universal macOS release. Open the DMG and drag Screenlogger to Applications. In-app updates are additionally protected by Screenlogger's Ed25519 update signature."
 
