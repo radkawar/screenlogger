@@ -142,41 +142,7 @@ struct TimelineActivityRibbon: View {
                         }
                     }
 
-                    ForEach(activity.gaps) { gap in
-                        let x = Self.timelineX(timestampMs: gap.startMs, in: window, width: w)
-                        let endX = Self.timelineX(timestampMs: gap.endMs, in: window, width: w)
-                        let gapWidth = max(1, endX - x)
-                        Rectangle()
-                            .fill(Color.clear)
-                            .contentShape(Rectangle())
-                            .frame(width: gapWidth, height: 44)
-                            .position(x: x + gapWidth / 2, y: 22)
-                            .help(Self.gapHelp(gap))
-                            .accessibilityElement()
-                            .accessibilityLabel("No captures")
-                            .accessibilityValue(Self.gapAccessibilityValue(gap))
-                            .accessibilityHint(
-                                "Select the nearest captured moment. If two moments are equally near, Screenlogger selects the earlier one."
-                            )
-                            .accessibilityAddTraits(.isButton)
-                            .accessibilityAction {
-                                let midpoint = gap.startMs + gap.durationMs / 2
-                                guard let selection = activity.selection(at: midpoint) else { return }
-                                model.stopReplay()
-                                model.selectTimelineFrame(id: selection.frameID)
-                            }
-
-                        if gapWidth >= 90 {
-                            Text("No captures")
-                                .font(SLDesign.metadataFont)
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, SLDesign.space4)
-                                .background(Color(nsColor: .windowBackgroundColor))
-                                .position(x: x + gapWidth / 2, y: 22)
-                                .allowsHitTesting(false)
-                                .accessibilityHidden(true)
-                        }
-                    }
+                    timelineGaps(activity: activity, window: window, width: w)
 
                     if let selected = model.selectedTimelineFrame, frames.count > 1 {
                         let x = Self.timelineX(timestampMs: selected.timestampMs, in: window, width: w)
@@ -306,6 +272,48 @@ struct TimelineActivityRibbon: View {
     }
 
     private typealias TimelineWindow = TimelineRibbonMapping.Window
+
+    private func timelineGaps(
+        activity: TimelineActivityPresentation,
+        window: TimelineWindow,
+        width: CGFloat
+    ) -> some View {
+        ForEach(activity.gaps) { gap in
+            let x = Self.timelineX(timestampMs: gap.startMs, in: window, width: width)
+            let endX = Self.timelineX(timestampMs: gap.endMs, in: window, width: width)
+            let gapWidth = max(1, endX - x)
+            Rectangle()
+                .fill(Color.clear)
+                .contentShape(Rectangle())
+                .frame(width: gapWidth, height: 44)
+                .position(x: x + gapWidth / 2, y: 22)
+                .help(Self.gapHelp(gap))
+                .accessibilityElement()
+                .accessibilityLabel("No captures")
+                .accessibilityValue(Self.gapAccessibilityValue(gap))
+                .accessibilityHint(
+                    "Select the nearest captured moment. If two moments are equally near, Screenlogger selects the earlier one."
+                )
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction {
+                    let midpoint = gap.startMs + gap.durationMs / 2
+                    guard let selection = activity.selection(at: midpoint) else { return }
+                    model.stopReplay()
+                    model.selectTimelineFrame(id: selection.frameID)
+                }
+
+            if gapWidth >= 90 {
+                Text("No captures")
+                    .font(SLDesign.metadataFont)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, SLDesign.space4)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                    .position(x: x + gapWidth / 2, y: 22)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
 
     private struct TimelineRangeOption: Identifiable {
         let step: Int

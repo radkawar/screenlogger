@@ -56,6 +56,9 @@ Never put a private key in a release asset.
 CI and Release use the `macos-26` runner with Xcode 26.4.1 (Swift 6.3).
 MLX 0.32.3 requires Swift 6.3; Xcode 26.3 cannot resolve that dependency.
 This build-tool requirement does not change the app's macOS 14 deployment target.
+Require the pinned CI app build before tagging: a newer local compiler can accept
+SwiftUI expressions that exceed Swift 6.3's type-checking limit. Keep complex
+Timeline layers in separate view-building functions.
 Upstream semantic-runtime license notices are preserved verbatim; their Unicode
 copyright symbols are exempt from the repository's ASCII-only source policy.
 
