@@ -45,7 +45,16 @@ final class IPCSocketContractTests: XCTestCase {
         try host.start(store: store, root: root, semanticService: service)
         let client = ScreenlogSocketClient(root: root, timeout: 10)
         let searches = (0..<ScreenlogSocketHost.maximumSemanticSearches).map { _ in
-            Task.detached { try client.semanticSearch(SemanticSearchRequest(query: "held diagram")) }
+            Task {
+                try await withCheckedThrowingContinuation { continuation in
+                    // Socket reads block. Keep them off Swift's cooperative pool,
+                    // which can have fewer threads than the admitted searches.
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        continuation.resume(
+                            with: Result { try client.semanticSearch(SemanticSearchRequest(query: "held diagram")) })
+                    }
+                }
+            }
         }
         await fulfillment(of: [entered], timeout: 2)
 

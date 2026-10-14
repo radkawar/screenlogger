@@ -14,7 +14,7 @@ Changes must preserve privacy, predictable native behavior, and tested release r
 ## Local checks
 
 ```sh
-export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+export DEVELOPER_DIR=/Applications/Xcode_26.4.1.app/Contents/Developer
 Scripts/check-repository.sh
 xcrun swift-format lint --strict --configuration .swift-format --recursive Sources Tests UITests
 swift test
@@ -22,6 +22,11 @@ Scripts/xcodegen.sh generate
 git diff --exit-code -- Screenlog.xcodeproj/project.pbxproj
 Scripts/build.sh
 ```
+
+Use the CI-pinned Xcode 26.4.1 / Swift 6.3 formatter. Newer formatters can
+produce a different import order and fail the release formatting gate.
+Concurrent tests of blocking socket clients must use dispatch workers, not
+occupy Swift's cooperative pool while waiting for the async server.
 
 Run `Scripts/test-ui.sh` after changes to navigation, accessibility labels,
 permission presentation, Library, Timeline, or Settings.
