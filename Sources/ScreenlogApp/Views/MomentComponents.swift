@@ -6,7 +6,7 @@ import SwiftUI
 
 enum SLAppIdentity {
     // Both caches are bounded. Screenlogger resolves an identity for every
-    // Library card, filter chip, and ribbon badge, so an unbounded cache keeps
+    // Library card, filter, and ribbon source, so an unbounded cache keeps
     // one full icon family per app and per size alive for the life of the
     // process even after the surface that asked for it is gone.
     private static let nameCache: NSCache<NSString, NSString> = {
@@ -80,7 +80,7 @@ enum SLAppIdentity {
         let key = "placeholder-\(Int(size))" as NSString
         if let cached = placeholderCache.object(forKey: key) { return cached }
         let fallback =
-            NSImage(systemSymbolName: "app.dashed", accessibilityDescription: nil)
+            NSImage(systemSymbolName: "app", accessibilityDescription: nil)
             ?? NSImage(size: NSSize(width: size, height: size))
         fallback.size = NSSize(width: size, height: size)
         placeholderCache.setObject(fallback, forKey: key)
@@ -125,7 +125,6 @@ struct SLAppIconView: View {
             .resizable()
             .interpolation(.high)
             .frame(width: size, height: size)
-            .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
             .task(id: iconKey) {
                 let key = iconKey
                 if let cached = SLAppIdentity.cachedIcon(bundleID: bundleID, size: iconSize) {
@@ -142,11 +141,6 @@ struct SLAppIconView: View {
             }
     }
 }
-
-// MARK: - Search
-
-/// Dismissible structured-search chips (app: / site: / date: ...).
-/// `compact` fits chips inside the single top search field.
 
 struct SLFaviconView: View {
     let domain: String

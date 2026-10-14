@@ -53,11 +53,19 @@ extension StatusMenuController {
 
         menu.addItem(
             makeItem(
-                title: "Show Library",
+                title: "Show Search",
                 action: #selector(openSearchShell(_:)),
                 tag: .openSearch,
-                symbol: "books.vertical",
+                symbol: "magnifyingglass",
                 shortcut: .showLibrary
+            ))
+        menu.addItem(
+            makeItem(
+                title: "Show Sessions",
+                action: #selector(openSessions(_:)),
+                tag: .sessions,
+                symbol: "rectangle.stack",
+                shortcut: .showSessions
             ))
         menu.addItem(
             makeItem(
@@ -230,6 +238,7 @@ extension StatusMenuController {
     private func refreshMenuKeyboardShortcuts() {
         let shortcuts: [(ItemTag, KeyboardShortcutActionID)] = [
             (.openSearch, .showLibrary),
+            (.sessions, .showSessions),
             (.timeline, .showTimeline),
             (.toggleRecording, .toggleCapture),
             (.settings, .showSettings),

@@ -1,5 +1,15 @@
 import Foundation
 
+public enum SearchQueryValidationError: Error, LocalizedError, Sendable {
+    case invalid(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalid(let message): return message
+        }
+    }
+}
+
 /// Structured search operators: `app:`, `site:`, `date:`, `before:`, `since:`.
 /// Free-text remainder is what goes to FTS5 MATCH.
 public struct ParsedSearchQuery: Equatable, Sendable {
@@ -16,6 +26,8 @@ public struct ParsedSearchQuery: Equatable, Sendable {
     public var rawDate: String?
     public var rawBefore: String?
     public var rawSince: String?
+    /// Invalid drafts must not run with silently discarded constraints.
+    public var validationIssue: String?
 
     public init(
         ftsText: String = "",
@@ -29,7 +41,8 @@ public struct ParsedSearchQuery: Equatable, Sendable {
         rawSite: String? = nil,
         rawDate: String? = nil,
         rawBefore: String? = nil,
-        rawSince: String? = nil
+        rawSince: String? = nil,
+        validationIssue: String? = nil
     ) {
         self.ftsText = ftsText
         self.appFilter = appFilter
@@ -43,6 +56,7 @@ public struct ParsedSearchQuery: Equatable, Sendable {
         self.rawDate = rawDate
         self.rawBefore = rawBefore
         self.rawSince = rawSince
+        self.validationIssue = validationIssue
     }
 
     public var highlightTokens: [String] {
@@ -189,6 +203,8 @@ public enum SearchOperatorParser {
         var rawDate: String?
         var rawBefore: String?
         var rawSince: String?
+        var validationIssue: String?
+        var seenOperators = Set<String>()
 
         guard let opPattern else {
             // The expression is a source-controlled constant, but search must
@@ -203,6 +219,9 @@ public enum SearchOperatorParser {
         for m in matches {
             guard m.numberOfRanges >= 4 else { continue }
             let key = ns.substring(with: m.range(at: 1)).lowercased()
+            if !seenOperators.insert(key).inserted {
+                validationIssue = validationIssue ?? "Use one \(key): filter."
+            }
             let val: String
             if m.range(at: 2).location != NSNotFound {
                 val = ns.substring(with: m.range(at: 2))
@@ -211,7 +230,10 @@ public enum SearchOperatorParser {
             } else {
                 val = ""
             }
-            guard !val.isEmpty else { continue }
+            guard !val.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                validationIssue = validationIssue ?? "Enter a value after \(key):."
+                continue
+            }
             switch key {
             case "app":
                 app = val
@@ -219,21 +241,30 @@ public enum SearchOperatorParser {
             case "site":
                 site = FaviconCache.normalizeDomain(val)
                 rawSite = val
+                if site?.isEmpty != false {
+                    validationIssue = validationIssue ?? "Enter a website after site:."
+                }
             case "date":
                 rawDate = val
                 if let day = parseDay(val, calendar: cal) {
                     dayStart = day.start
                     dayEnd = day.end
+                } else {
+                    validationIssue = validationIssue ?? "Enter a valid date, such as date:2026-10-15."
                 }
             case "before":
                 rawBefore = val
                 if let day = parseDay(val, calendar: cal) {
                     before = day.end
+                } else {
+                    validationIssue = validationIssue ?? "Enter a valid end date, such as before:2026-10-15."
                 }
             case "since":
                 rawSince = val
                 if let day = parseDay(val, calendar: cal) {
                     since = day.start
+                } else {
+                    validationIssue = validationIssue ?? "Enter a valid start date, such as since:2026-10-15."
                 }
             default:
                 break
@@ -243,6 +274,9 @@ public enum SearchOperatorParser {
         var fts = trimmed
         if let unfinishedQuotedOpPattern {
             let range = NSRange(location: 0, length: (fts as NSString).length)
+            if unfinishedQuotedOpPattern.firstMatch(in: fts, range: range) != nil {
+                validationIssue = validationIssue ?? "Close the quote to finish this filter."
+            }
             fts = unfinishedQuotedOpPattern.stringByReplacingMatches(
                 in: fts,
                 options: [],
@@ -256,6 +290,9 @@ public enum SearchOperatorParser {
             range: NSRange(location: 0, length: (fts as NSString).length),
             withTemplate: " "
         )
+        if fts.range(of: #"(?i)\b(app|site|date|before|since):"#, options: .regularExpression) != nil {
+            validationIssue = validationIssue ?? "Enter a value after the filter name."
+        }
         // Also strip incomplete trailing operators like `app:` with no value
         fts = fts.replacingOccurrences(
             of: #"(?i)\b(app|site|date|before|since):\s*"#,
@@ -267,6 +304,11 @@ public enum SearchOperatorParser {
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
+        let lowerBound = max(dayStart ?? Int64.min, since ?? Int64.min)
+        let upperBound = min(dayEnd ?? Int64.max, before ?? Int64.max)
+        if lowerBound > upperBound {
+            validationIssue = validationIssue ?? "These dates don't overlap. Change or remove a date filter."
+        }
         return ParsedSearchQuery(
             ftsText: fts,
             appFilter: app,
@@ -279,7 +321,8 @@ public enum SearchOperatorParser {
             rawSite: rawSite,
             rawDate: rawDate,
             rawBefore: rawBefore,
-            rawSince: rawSince
+            rawSince: rawSince,
+            validationIssue: validationIssue
         )
     }
 
@@ -723,7 +766,8 @@ public enum SearchOperatorParser {
         df.locale = Locale(identifier: "en_US_POSIX")
         df.timeZone = calendar.timeZone
         df.dateFormat = "yyyy-MM-dd"
-        if let day = df.date(from: s) {
+        df.isLenient = false
+        if let day = df.date(from: s), df.string(from: day) == s {
             return dayBounds(day, calendar: calendar)
         }
         let lower = s.lowercased()
@@ -739,10 +783,9 @@ public enum SearchOperatorParser {
 
     private static func dayBounds(_ day: Date, calendar: Calendar) -> (start: Int64, end: Int64) {
         let start = calendar.startOfDay(for: day)
-        let end = calendar.date(byAdding: DateComponents(day: 1, second: -1), to: start) ?? start
-        return (
-            Int64(start.timeIntervalSince1970 * 1000),
-            Int64(end.timeIntervalSince1970 * 1000)
-        )
+        let nextDay = calendar.date(byAdding: .day, value: 1, to: start) ?? start
+        let startMs = Int64(start.timeIntervalSince1970 * 1000)
+        let endMs = Int64(nextDay.timeIntervalSince1970 * 1000)
+        return (startMs, max(startMs, endMs - 1))
     }
 }

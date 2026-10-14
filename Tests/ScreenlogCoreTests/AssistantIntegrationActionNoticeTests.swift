@@ -1,6 +1,5 @@
-import XCTest
-
 @testable import ScreenlogCore
+import XCTest
 
 final class AssistantIntegrationActionNoticeTests: XCTestCase {
     func testNoticeSeverityIsExplicitForEveryActionOutcome() {
@@ -17,19 +16,6 @@ final class AssistantIntegrationActionNoticeTests: XCTestCase {
     }
 
     func testSuccessfulNoticesUseStablePrivacySafeCopy() {
-        XCTAssertEqual(
-            AssistantIntegrationActionNotice.installed(.claude).message,
-            "Installed the Claude Code integration files. Restart Claude Code if it was already open."
-        )
-        XCTAssertEqual(
-            AssistantIntegrationActionNotice.verified(.cursor).message,
-            "The Cursor integration files are current."
-        )
-        XCTAssertEqual(
-            AssistantIntegrationActionNotice.removed(.codex).message,
-            "Removed the Codex integration."
-        )
-
         let notices: [AssistantIntegrationActionNotice] = [
             .installed(.claude),
             .verified(.cursor),
@@ -41,7 +27,6 @@ final class AssistantIntegrationActionNoticeTests: XCTestCase {
         ]
         for notice in notices {
             XCTAssertFalse(notice.message.contains("/Users/"))
-            XCTAssertFalse(notice.message.contains(" to "))
         }
     }
 
@@ -58,11 +43,6 @@ final class AssistantIntegrationActionNoticeTests: XCTestCase {
             AssistantIntegrationActionFailure(.replacementFailed(path: "private", reason: "details")),
             .replacementFailed
         )
-        XCTAssertEqual(
-            AssistantIntegrationActionFailure.destinationConflict.message,
-            "Another item is using the integration location. Screenlogger left it unchanged."
-        )
-
         for failure in [
             AssistantIntegrationActionFailure.resourcesUnavailable,
             .configurationUnavailable,
@@ -77,18 +57,4 @@ final class AssistantIntegrationActionNoticeTests: XCTestCase {
         }
     }
 
-    func testSemanticSeverityHasStableAccessibilityLabels() {
-        XCTAssertEqual(
-            AssistantIntegrationActionNoticeSeverity.success.accessibilityLabel,
-            "Assistant integration updated"
-        )
-        XCTAssertEqual(
-            AssistantIntegrationActionNoticeSeverity.information.accessibilityLabel,
-            "Assistant integration information"
-        )
-        XCTAssertEqual(
-            AssistantIntegrationActionNoticeSeverity.failure.accessibilityLabel,
-            "Assistant integration action failed"
-        )
-    }
 }

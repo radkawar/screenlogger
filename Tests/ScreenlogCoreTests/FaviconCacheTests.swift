@@ -1,8 +1,7 @@
 import AppKit
+@testable import ScreenlogCore
 import XCTest
 import os
-
-@testable import ScreenlogCore
 
 private final class FaviconURLProtocolStub: URLProtocol, @unchecked Sendable {
     private struct State: Sendable {

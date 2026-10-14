@@ -44,7 +44,7 @@ struct CaptureDisplaySettingsSection: View {
                     Divider()
 
                     Label(
-                        "Excluded apps are removed from every display. If the active app, website, or private browser is protected, the entire moment is skipped.",
+                        "Screenlogger removes excluded apps from every display. Screenlogger skips the entire moment if a rule protects the active app, website, or private browser.",
                         systemImage: "hand.raised"
                     )
                     .font(.caption)
@@ -74,14 +74,13 @@ struct CaptureTimingSettingsSection: View {
                 SettingsCardRow(
                     icon: "timer",
                     title: "Capture Interval",
-                    subtitle: "How often Screenlogger saves a still while capture is on."
+                    subtitle: "How often Screenlogger saves a still image while capture is on."
                 ) {
                     Text(CaptureSettingsCopy.interval(model.intervalSeconds))
                         .font(.body.monospacedDigit())
                         .foregroundStyle(.secondary)
                         .frame(minWidth: 44, alignment: .trailing)
-                }
-                .padding(14)
+                }.padding(SLDesign.space16)
 
                 HStack(spacing: 10) {
                     Text("More often")
@@ -90,25 +89,23 @@ struct CaptureTimingSettingsSection: View {
                     Slider(value: $model.intervalSeconds, in: 0.5...10, step: 0.5)
                         .accessibilityLabel("Capture interval")
                         .accessibilityValue(CaptureSettingsCopy.interval(model.intervalSeconds))
-                        .accessibilityHint("Choose how often Screenlogger saves a still")
+                        .accessibilityHint("Choose how often Screenlogger saves a still image")
                         .accessibilityIdentifier("capture.interval.slider")
                     Text("Less often")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 14)
+                }.padding(.horizontal, SLDesign.space16)
+                    .padding(.bottom, 14)
 
                 Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
                 Label(
-                    "On battery, capture waits at least 5 seconds and uses lighter text recognition.",
+                    "On battery power, capture waits at least 5 seconds and uses text recognition that needs less processing.",
                     systemImage: "battery.25percent"
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 14)
+                .fixedSize(horizontal: false, vertical: true).padding(.horizontal, SLDesign.space16)
                 .padding(.bottom, 14)
                 .accessibilityIdentifier("capture.timing.battery-note")
 
@@ -130,8 +127,7 @@ struct CaptureTimingSettingsSection: View {
                         )
                         .accessibilityHint("Pause after five minutes without keyboard or pointer activity")
                         .accessibilityIdentifier("capture.pause-on-inactivity.toggle")
-                }
-                .padding(14)
+                }.padding(SLDesign.space16)
             }
         }
         .accessibilityIdentifier("capture.timing")
@@ -185,11 +181,11 @@ struct CaptureImageSettingsSection: View {
                             }
                             .labelsHidden()
                             .frame(width: 170)
-                            .accessibilityHint("HEIC uses less storage; JPEG is easier to use outside Apple apps")
+                            .accessibilityHint("HEIC uses less storage. More apps outside Apple support JPEG.")
                             .accessibilityIdentifier("capture.encoding.picker")
                         }
 
-                        Text("HEIC usually uses less storage. Choose JPEG if you often use exported stills outside Apple apps.")
+                        Text("HEIC usually uses less storage. Choose JPEG if you often use exported still images outside Apple apps.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -206,10 +202,10 @@ struct CaptureImageSettingsSection: View {
     private var qualityHelp: String {
         switch model.quality {
         case .standard:
-            return "Standard saves compact images. Text recognition uses the same stored resolution."
+            return "Standard saves smaller images. Text recognition uses the same stored resolution."
         case .high:
             return "High saves sharper images. Text recognition uses the same stored resolution."
-        case .ultra: return "Ultra saves the display at native resolution with minimal compression."
+        case .ultra: return "Ultra saves the display at native resolution with the lowest compression level."
         }
     }
 
@@ -311,8 +307,7 @@ struct AudioTranscriptionSettingsSection: View {
                     )
                     .accessibilityHint("Transcribe selected audio sources on this Mac")
                     .accessibilityIdentifier("capture.audio.enabled.toggle")
-                }
-                .padding(14)
+                }.padding(SLDesign.space16)
 
                 if model.audioTranscriptionEnabled && AudioTranscriptionSupport.isAvailable {
                     Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
@@ -348,9 +343,8 @@ struct AudioTranscriptionSettingsSection: View {
                             }
                             .controlSize(.small)
                             .accessibilityIdentifier("capture.audio.microphone.permission")
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.bottom, 12)
+                        }.padding(.horizontal, SLDesign.space16)
+                            .padding(.bottom, 12)
                     }
 
                     Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
@@ -370,13 +364,12 @@ struct AudioTranscriptionSettingsSection: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                         Text(
-                            "Browser note: macOS cannot reliably identify which background tab produced audio. A background tab may be transcribed when a different, allowed website is active."
+                            "macOS cannot reliably identify which background tab produced audio. Screenlogger can transcribe a background tab when a different, allowed website is active."
                         )
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(14)
+                    }.padding(SLDesign.space16)
                 }
             }
         }
@@ -420,8 +413,7 @@ struct AudioTranscriptionSettingsSection: View {
                 .toggleStyle(.switch)
                 .accessibilityValue(SettingsAccessibilityValue.onOff(isOn.wrappedValue))
                 .accessibilityIdentifier(identifier)
-        }
-        .padding(14)
+        }.padding(SLDesign.space16)
     }
 
     @ViewBuilder
@@ -458,10 +450,9 @@ struct AudioTranscriptionSettingsSection: View {
                 .controlSize(.small)
                 .accessibilityIdentifier("capture.audio.status.action")
             }
-        }
-        .padding(14)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("capture.audio.status")
+        }.padding(SLDesign.space16)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("capture.audio.status")
     }
 
     private var statusActionTitle: String? {

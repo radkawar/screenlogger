@@ -15,27 +15,25 @@ struct PermissionsSetupProgress: View {
     let isRecording: Bool
 
     var body: some View {
-        GroupBox {
+        VStack(alignment: .leading, spacing: SLDesign.space8) {
+            Text(progressTitle)
+                .font(SLDesign.metadataFont)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Setup progress, \(progressTitle)")
+                .accessibilityIdentifier("setup.progress.summary")
             ViewThatFits(in: .horizontal) {
                 horizontalProgress
                     .fixedSize(horizontal: true, vertical: false)
                 verticalProgress
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } label: {
-            Label(progressTitle, systemImage: progressSymbol)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Setup progress, \(progressTitle)")
-                .accessibilityIdentifier("setup.progress.summary")
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("setup.progress")
     }
 
     private var horizontalProgress: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: SLDesign.space8) {
             screenRecordingStage
             connector(complete: screenRecordingAllowed)
             accessibilityStage
@@ -45,7 +43,7 @@ struct PermissionsSetupProgress: View {
     }
 
     private var verticalProgress: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: SLDesign.space8) {
             screenRecordingStage
             accessibilityStage
             captureStage
@@ -83,8 +81,8 @@ struct PermissionsSetupProgress: View {
 
     private func connector(complete: Bool) -> some View {
         Capsule()
-            .fill(complete ? SLDesign.success : Color.secondary.opacity(0.22))
-            .frame(width: 24, height: 2)
+            .fill(complete ? Color.secondary : Color(nsColor: .separatorColor))
+            .frame(width: SLDesign.space16, height: 1)
             .accessibilityHidden(true)
     }
 
@@ -97,12 +95,8 @@ struct PermissionsSetupProgress: View {
     private var progressTitle: String {
         if isRecording { return "Setup complete" }
         if screenRecordingAllowed, accessibilityAllowed { return "Step 3 of 3" }
-        if screenRecordingAllowed { return "Step 2 of 3" }
+        if screenRecordingAllowed || accessibilityAllowed { return "Step 2 of 3" }
         return "Step 1 of 3"
-    }
-
-    private var progressSymbol: String {
-        isRecording ? "checkmark.circle.fill" : "list.number"
     }
 
     private func permissionStageState(_ permission: ScreenlogPermission) -> StageState {
@@ -122,7 +116,7 @@ struct PermissionsSetupProgress: View {
         identifier: String
     ) -> some View {
         Label(title, systemImage: symbol)
-            .font(.callout.weight(state == .current ? .semibold : .regular))
+            .font(SLDesign.metadataFont.weight(state == .current ? .semibold : .regular))
             .foregroundStyle(stageColor(state))
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityElement(children: .combine)
@@ -134,7 +128,7 @@ struct PermissionsSetupProgress: View {
     private func stageColor(_ state: StageState) -> Color {
         switch state {
         case .current: return .accentColor
-        case .complete: return SLDesign.success
+        case .complete: return .secondary
         case .upcoming: return .secondary
         }
     }
@@ -156,68 +150,49 @@ struct FirstRunAudioSetupCard: View {
     let onMicrophonePermission: () -> Void
 
     var body: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .center, spacing: 12) {
-                    Image(systemName: "waveform.badge.mic")
-                        .font(.title3)
-                        .foregroundStyle(.tint)
-                        .frame(width: 24)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Search What You Hear")
-                            .font(.callout.weight(.semibold))
-                        Text("Optional on-device transcripts for calls, meetings, and presentations.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 8)
-                    Toggle("Audio Transcription", isOn: $isEnabled)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .accessibilityValue(SettingsAccessibilityValue.onOff(isEnabled))
-                        .accessibilityIdentifier("setup.audio.enabled")
+        VStack(alignment: .leading, spacing: SLDesign.space16) {
+            HStack(alignment: .center, spacing: SLDesign.space16) {
+                VStack(alignment: .leading, spacing: SLDesign.space4) {
+                    Text("Audio Transcription (Optional)")
+                        .font(SLDesign.sectionFont)
+                    Text("Search calls, meetings, and presentations with on-device transcripts.")
+                        .font(SLDesign.metadataFont)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-
-                if isEnabled {
-                    Divider()
-                    audioSourceRow(
-                        title: "Computer Audio",
-                        detail: "Transcribe words played by apps.",
-                        symbol: "speaker.wave.2",
-                        isOn: $computerAudioEnabled,
-                        identifier: "setup.audio.computer"
-                    )
-                    audioSourceRow(
-                        title: "Microphone",
-                        detail: microphoneDetail,
-                        symbol: "mic",
-                        isOn: $microphoneEnabled,
-                        identifier: "setup.audio.microphone"
-                    )
-
-                    if microphoneEnabled, microphoneAuthorization != .authorized {
-                        Button(microphoneActionTitle, action: onMicrophonePermission)
-                            .controlSize(.small)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                            .accessibilityIdentifier("setup.audio.microphone.permission")
-                    }
-                }
-
-                Label(
-                    "Apple's speech model runs on this Mac. Only finalized text is saved; raw audio is discarded.",
-                    systemImage: "lock.shield"
+                Spacer(minLength: SLDesign.space8)
+                Toggle("Audio Transcription", isOn: $isEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .accessibilityValue(SettingsAccessibilityValue.onOff(isEnabled))
+                    .accessibilityIdentifier("setup.audio.enabled")
+            }
+            if isEnabled {
+                audioSourceRow(
+                    title: "Computer Audio",
+                    detail: "Transcribe words played by apps.",
+                    symbol: "speaker.wave.2",
+                    isOn: $computerAudioEnabled,
+                    identifier: "setup.audio.computer"
                 )
-                .font(.caption)
+                audioSourceRow(
+                    title: "Microphone",
+                    detail: microphoneDetail,
+                    symbol: "mic",
+                    isOn: $microphoneEnabled,
+                    identifier: "setup.audio.microphone"
+                )
+                if microphoneEnabled, microphoneAuthorization != .authorized {
+                    Button(microphoneActionTitle, action: onMicrophonePermission)
+                        .controlSize(.small)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .accessibilityIdentifier("setup.audio.microphone.permission")
+                }
+            }
+            Text("Apple's speech model runs on this Mac. Screenlogger saves only finalized text and discards raw audio.")
+                .font(SLDesign.metadataFont)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.vertical, 2)
-        } label: {
-            Text("Audio Transcription (Optional)")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("setup.audio")
@@ -230,7 +205,7 @@ struct FirstRunAudioSetupCard: View {
         case .notDetermined:
             return "Transcribe your voice. macOS asks only if you select this option."
         case .denied, .restricted:
-            return "Microphone access is unavailable; Computer Audio still works."
+            return "Microphone access is unavailable. Computer Audio still works."
         }
     }
 
@@ -246,20 +221,20 @@ struct FirstRunAudioSetupCard: View {
         isOn: Binding<Bool>,
         identifier: String
     ) -> some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: SLDesign.space8) {
             Image(systemName: symbol)
                 .foregroundStyle(.secondary)
-                .frame(width: 24)
+                .frame(width: SLDesign.space24)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: SLDesign.space4) {
                 Text(title)
-                    .font(.callout)
+                    .font(SLDesign.bodyFont)
                 Text(detail)
-                    .font(.caption)
+                    .font(SLDesign.metadataFont)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: SLDesign.space8)
             Toggle(title, isOn: isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
@@ -276,6 +251,8 @@ struct PermissionsPrivacySummary: View {
         let identifier: String
     }
 
+    let screenRecordingAllowed: Bool
+    let accessibilityAllowed: Bool
     let audioTranscriptionEnabled: Bool
     let microphoneEnabled: Bool
     @State private var showingDetails = false
@@ -299,7 +276,7 @@ struct PermissionsPrivacySummary: View {
                     identifier: "setup.privacy.no-sensors"
                 ),
             Fact(
-                title: "Pause or turn off anytime",
+                title: "Pause or turn off at any time",
                 symbol: "pause.circle",
                 identifier: "setup.privacy.control"
             ),
@@ -307,62 +284,53 @@ struct PermissionsPrivacySummary: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Privacy on This Mac", systemImage: "lock.shield")
-                .font(.headline)
-
-            DisclosureGroup(isExpanded: $showingDetails) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(
-                        privacyDetail
-                    )
-                    .font(.callout)
+        DisclosureGroup(isExpanded: $showingDetails) {
+            VStack(alignment: .leading, spacing: SLDesign.space16) {
+                Text(privacyDetail)
+                    .font(SLDesign.bodyFont)
                     .fixedSize(horizontal: false, vertical: true)
-
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 145), alignment: .leading)],
-                        alignment: .leading,
-                        spacing: 8
-                    ) {
-                        ForEach(facts, id: \.identifier) { fact in
-                            Label(fact.title, systemImage: fact.symbol)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .accessibilityElement(children: .combine)
-                                .accessibilityIdentifier(fact.identifier)
-                        }
+                PermissionsStatusCard(
+                    screenRecordingAllowed: screenRecordingAllowed,
+                    accessibilityAllowed: accessibilityAllowed
+                )
+                VStack(alignment: .leading, spacing: SLDesign.space8) {
+                    ForEach(facts, id: \.identifier) { fact in
+                        Label(fact.title, systemImage: fact.symbol)
+                            .font(SLDesign.metadataFont)
+                            .foregroundStyle(.secondary)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier(fact.identifier)
                     }
                 }
-                .padding(.top, 10)
-            } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("How Screenlogger uses these permissions")
-                        .font(.callout.weight(.medium))
-                    Text(privacySummary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             }
-            .padding(.vertical, 4)
-            .accessibilityHint("Show details about capture and privacy controls")
-            .accessibilityIdentifier("setup.privacy-summary")
+            .padding(.top, SLDesign.space16)
+        } label: {
+            VStack(alignment: .leading, spacing: SLDesign.space4) {
+                Text("Privacy on This Mac")
+                    .font(SLDesign.sectionFont)
+                Text(privacySummary)
+                    .font(SLDesign.metadataFont)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        .padding(.horizontal, 4)
+        .accessibilityHint("Show details about capture and privacy controls")
+        .accessibilityIdentifier("setup.privacy-summary")
     }
 
     private var privacyDetail: String {
         let capture =
-            "Screen Recording saves occasional still images. Accessibility applies exclusions and captures useful app context while capture is on."
+            "Screenlogger uses Screen Recording to save still images at intervals. Screenlogger uses Accessibility to apply exclusions and capture app context."
         guard audioTranscriptionEnabled else { return capture }
         let source = microphoneEnabled ? "computer and microphone audio" : "computer audio"
         return
-            "\(capture) Optional on-device transcription processes \(source), saves finalized text only, and immediately discards audio samples."
+            "\(capture) Optional on-device transcription processes \(source). Screenlogger saves finalized text only and immediately discards audio samples."
     }
 
     private var privacySummary: String {
         audioTranscriptionEnabled
-            ? "Saved on this Mac, raw audio is never saved, and controls can change anytime."
-            : "Saved on this Mac, no camera or microphone, and controls can change anytime."
+            ? "Screenlogger saves data on this Mac, but never saves raw audio. You can change capture controls at any time."
+            : "Screenlogger saves data on this Mac without a camera or microphone. You can change capture controls at any time."
     }
 }
 
@@ -371,144 +339,71 @@ struct PermissionsStatusCard: View {
     let accessibilityAllowed: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("macOS Permissions", systemImage: "switch.2")
-                .font(.headline)
-
-            VStack(spacing: 0) {
-                permissionRow(
-                    title: "Screen Recording",
-                    detail: "Required to save still images and recognize visible text.",
-                    granted: screenRecordingAllowed,
-                    required: true,
-                    identifier: "setup.permission.screen-recording"
-                )
-                Divider()
-                    .padding(.leading, 34)
-                permissionRow(
-                    title: "Accessibility",
-                    detail: "Required so exclusions and app context are applied completely.",
-                    granted: accessibilityAllowed,
-                    required: true,
-                    identifier: "setup.permission.accessibility"
-                )
-            }
-            .padding(.vertical, 2)
+        VStack(alignment: .leading, spacing: SLDesign.space16) {
+            permissionRow(
+                title: "Screen Recording",
+                detail: "Required to save still images and recognize visible text.",
+                granted: screenRecordingAllowed,
+                identifier: "setup.permission.screen-recording"
+            )
+            permissionRow(
+                title: "Accessibility",
+                detail: "Required to apply exclusions and capture app context.",
+                granted: accessibilityAllowed,
+                identifier: "setup.permission.accessibility"
+            )
         }
-        .padding(.horizontal, 4)
     }
 
     private func permissionRow(
         title: String,
         detail: String,
         granted: Bool,
-        required: Bool,
         identifier: String
     ) -> some View {
-        HStack(alignment: .center, spacing: 10) {
-            Image(systemName: granted ? "checkmark.circle.fill" : "circle.dashed")
-                .foregroundStyle(granted ? SLDesign.success : (required ? SLDesign.warning : .secondary))
-                .font(.body)
-                .frame(width: 24)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: SLDesign.space4) {
+            HStack(spacing: SLDesign.space8) {
                 Text(title)
-                    .font(.body)
-                Text(detail)
-                    .font(.caption)
+                    .font(SLDesign.bodyFont.weight(.medium))
+                Spacer(minLength: SLDesign.space8)
+                Text(granted ? "Allowed" : "Required")
+                    .font(SLDesign.metadataFont)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
-
-            Spacer(minLength: 8)
-
-            if granted {
-                permissionStatus("Allowed", symbol: "checkmark", tint: SLDesign.success)
-            } else {
-                permissionStatus(
-                    "Required",
-                    symbol: "exclamationmark",
-                    tint: SLDesign.warning
-                )
-            }
+            Text(detail)
+                .font(SLDesign.metadataFont)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 10)
-        .accessibilityElement(children: .contain)
+        .accessibilityElement(children: .combine)
         .accessibilityIdentifier(identifier)
-    }
-
-    private func permissionStatus(
-        _ title: String,
-        symbol: String,
-        tint: Color
-    ) -> some View {
-        Label(title, systemImage: symbol)
-            .font(.caption.weight(.medium))
-            .foregroundStyle(tint)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(title)
     }
 }
 
 struct PermissionsNextActionCard: View {
-    let screenRecordingAllowed: Bool
-    let accessibilityAllowed: Bool
-    let preferredPermission: ScreenlogPermission?
-    let journeyState: PermissionJourneyState?
-    let isRecording: Bool
-    let timedPauseActive: Bool
-    let captureStartFailed: Bool
+    let permission: ScreenlogPermission
+    let journeyState: PermissionJourneyState
 
     var body: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 10) {
-                if targetPermission == .screenRecording {
+        VStack(alignment: .leading, spacing: SLDesign.space16) {
+            Text("Allow \(permission.title)")
+                .font(SLDesign.sectionFont)
+                .accessibilityAddTraits(.isHeader)
+            VStack(alignment: .leading, spacing: SLDesign.space8) {
+                if permission == .screenRecording {
                     instructionRow(1, screenRecordingFirstInstruction)
                     instructionRow(2, "Turn on Screenlogger in the list.")
                     instructionRow(3, "Return here. If macOS asks, choose Quit & Reopen.")
-                } else if targetPermission == .accessibility {
+                } else {
                     instructionRow(1, accessibilityFirstInstruction)
                     instructionRow(2, "Turn on Screenlogger in the list.")
                     instructionRow(3, "Return here. Screenlogger checks automatically.")
-                } else {
-                    Text(detail)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } label: {
-            Label(title, systemImage: symbol)
-                .font(.headline)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("setup.next-action")
-    }
-
-    private var targetPermission: ScreenlogPermission? {
-        if let preferredPermission {
-            let preferredIsAllowed =
-                switch preferredPermission {
-                case .screenRecording: screenRecordingAllowed
-                case .accessibility: accessibilityAllowed
-                }
-            if !preferredIsAllowed { return preferredPermission }
-        }
-        if !screenRecordingAllowed { return .screenRecording }
-        if !accessibilityAllowed { return .accessibility }
-        return nil
-    }
-
-    private var title: String {
-        if let targetPermission { return "Allow \(targetPermission.title)" }
-        if isRecording { return "Finish Setup" }
-        if timedPauseActive { return "Resume or Keep Capture Off" }
-        return captureStartFailed
-            ? "Try Starting Capture Again"
-            : "Choose Whether Capture Starts"
     }
 
     private var screenRecordingFirstInstruction: String {
@@ -517,7 +412,7 @@ struct PermissionsNextActionCard: View {
             return "Choose Quit & Reopen Screenlogger below."
         case .awaitingSystemSettings, .requesting, .verificationFailed:
             return "Choose Open Screen Recording Settings below."
-        case .needsRequest, .ready, .none:
+        case .needsRequest, .ready:
             return "Choose Allow Screen Recording below."
         }
     }
@@ -526,41 +421,20 @@ struct PermissionsNextActionCard: View {
         switch journeyState {
         case .awaitingSystemSettings, .restartRequired, .requesting, .verificationFailed:
             return "Choose Open Accessibility Settings below."
-        case .needsRequest, .ready, .none:
+        case .needsRequest, .ready:
             return "Choose Allow Accessibility below."
         }
     }
 
-    private var symbol: String {
-        if targetPermission == .screenRecording { return "arrow.up.forward.app" }
-        if targetPermission == .accessibility { return "accessibility" }
-        if isRecording { return "checkmark" }
-        return "cursorarrow.click.2"
-    }
-
-    private var detail: String {
-        if isRecording {
-            return "Capture is already on. Choose Done to close setup."
-        }
-        if timedPauseActive {
-            return "Resume now, or keep capture off. Your saved Library remains available either way."
-        }
-        if captureStartFailed {
-            return "Choose Start Capture to try again. Capture remains off unless Screenlogger confirms it started."
-        }
-        return "Choose Start Capture to begin saving moments, or Keep Capture Off."
-    }
-
     private func instructionRow(_ number: Int, _ text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("\(number)")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 18, height: 18)
-                .background(Color.accentColor.opacity(0.12), in: Circle())
+        HStack(alignment: .firstTextBaseline, spacing: SLDesign.space8) {
+            Text("\(number).")
+                .font(SLDesign.metadataFont.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: SLDesign.space16, alignment: .leading)
                 .accessibilityHidden(true)
             Text(text)
-                .font(.callout)
+                .font(SLDesign.bodyFont)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
@@ -577,23 +451,23 @@ struct PermissionsMissingAppHelp: View {
 
     var body: some View {
         DisclosureGroup(
-            "Screenlogger isn't listed in System Settings?",
+            "Screenlogger is not in System Settings?",
             isExpanded: $isExpanded
         ) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: SLDesign.space8) {
                 Text(settingsResult?.instructions ?? manualInstructions)
-                    .font(.caption)
+                    .font(SLDesign.metadataFont)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("setup.drag-direction.\(permission.rawValue)")
 
-                PermissionDragDirection(permission: permission)
                 AppBundleDragChip(
                     url: appURL,
                     displayName: appName,
                     permission: permission
                 )
 
-                HStack(spacing: 10) {
+                HStack(spacing: SLDesign.space8) {
                     Button("Show in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([appURL])
                     }
@@ -605,9 +479,9 @@ struct PermissionsMissingAppHelp: View {
                         .accessibilityIdentifier("setup.retry-settings")
                 }
             }
-            .padding(.top, 6)
+            .padding(.top, SLDesign.space8)
         }
-        .font(.caption.weight(.medium))
+        .font(SLDesign.metadataFont.weight(.medium))
         .accessibilityHint("Shows help for adding Screenlogger to a macOS privacy list")
         .accessibilityIdentifier("setup.missing-app-help")
     }
@@ -623,71 +497,49 @@ private struct AppBundleDragChip: View {
     let permission: ScreenlogPermission
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(
-                nsImage: {
-                    let icon = NSWorkspace.shared.icon(forFile: url.path)
-                    icon.size = NSSize(width: 32, height: 32)
-                    return icon
-                }()
-            )
-            .resizable()
-            .frame(width: 28, height: 28)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .accessibilityHidden(true)
+        HStack(spacing: SLDesign.space8) {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                .resizable()
+                .scaledToFit()
+                .frame(width: SLDesign.space32, height: SLDesign.space32)
+                .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: SLDesign.space4) {
                 Text(displayName)
-                    .font(.caption.weight(.semibold))
+                    .font(SLDesign.bodyFont.weight(.medium))
                     .lineLimit(1)
                 Text("Drag into the \(permission.title) list")
-                    .font(.caption2)
+                    .font(SLDesign.metadataFont)
                     .foregroundStyle(.secondary)
             }
 
-            Spacer(minLength: 4)
+            Spacer(minLength: SLDesign.space8)
 
             Image(systemName: "hand.draw")
-                .font(.caption)
+                .font(SLDesign.bodyFont)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        .padding(SLDesign.space8)
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: SLDesign.thumbRadius)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: SLDesign.thumbRadius)
+                .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
+        }
+        .contentShape(Rectangle())
         .onDrag {
             AppBundleDragProvider.make(for: url)
         }
-        .contentShape(Rectangle())
         .help("Drag \(displayName) into the System Settings privacy list")
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(displayName) app")
         .accessibilityHint("Drag this app into the open System Settings privacy list")
-        .accessibilityIdentifier("setup.drag-app.\(permission.rawValue)")
-    }
-}
-
-private struct PermissionDragDirection: View {
-    let permission: ScreenlogPermission
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Label("Drag from here", systemImage: "app.dashed")
-            Image(systemName: "arrow.right")
-                .foregroundStyle(.tertiary)
-                .accessibilityHidden(true)
-            Label("Drop into \(permission.title)", systemImage: "list.bullet.rectangle")
+        .accessibilityAction(named: Text("Show in Finder")) {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
         }
-        .font(.caption.weight(.medium))
-        .foregroundStyle(.secondary)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            "Drag Screenlogger from below into the \(permission.title) list in System Settings"
-        )
-        .accessibilityIdentifier("setup.drag-direction.\(permission.rawValue)")
+        .accessibilityIdentifier("setup.drag-app.\(permission.rawValue)")
     }
 }

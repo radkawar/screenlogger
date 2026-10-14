@@ -2,85 +2,67 @@ import AppKit
 import ScreenlogCore
 import SwiftUI
 
-/// A consistent origin row for Library results. Browser captures keep the
-/// application that hosted the page as well as the website that was visited.
+/// One quiet origin/time line. The title already carries the application name
+/// when no window title was recorded, so that fallback is not repeated here.
 struct LibraryResultProvenance: View {
     let result: FTSResult
-    let iconSize: CGFloat
-    let font: Font
+    let display: LibraryResultPresentation
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        Group {
-            if let domain = displayDomain {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 6) {
-                        applicationIdentity
-                        Divider()
-                            .frame(height: iconSize)
-                            .accessibilityHidden(true)
-                        websiteIdentity(domain)
-                    }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        applicationIdentity
-                        websiteIdentity(domain)
-                    }
-                }
-            } else {
-                applicationIdentity
-            }
+        HStack(spacing: SLDesign.space4) {
+            SLAppIconView(bundleID: result.bundleID, size: 12)
+                .accessibilityHidden(true)
+            Text(display.context)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .font(font)
+        .font(SLDesign.metadataFont)
         .foregroundStyle(.secondary)
+        .help(display.fullTimestamp)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel)
-    }
-
-    private var applicationIdentity: some View {
-        HStack(spacing: 5) {
-            SLAppIconView(bundleID: result.bundleID, size: iconSize)
-            Text(result.searchAppLabel)
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-        }
-    }
-
-    private func websiteIdentity(_ domain: String) -> some View {
-        HStack(spacing: 5) {
-            SLFaviconView(domain: domain, size: iconSize)
-            Text(domain)
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-        }
-    }
-
-    private var displayDomain: String? {
-        guard let domain = result.domain?.trimmingCharacters(in: .whitespacesAndNewlines),
-            !domain.isEmpty
-        else { return nil }
-        return domain
-    }
-
-    private var accessibilityLabel: String {
-        guard let displayDomain else {
-            return "Application: \(result.searchAppLabel)"
-        }
-        return "Application: \(result.searchAppLabel), website: \(displayDomain)"
+        .accessibilityLabel(display.accessibilityContext)
     }
 }
 
 /// Visual result card with a captured still and concise provenance.
 struct SearchResultCard: View {
     let result: FTSResult
+    let semanticHit: SemanticSearchHit?
     let selected: Bool
     let keyboardFocused: Bool
     let interactionEnabled: Bool
     let onSelect: () -> Void
     let onOpen: () -> Void
+    let onShowInSessions: () -> Void
     /// Supplied by the parent, which already observes the model. Observing it
     /// here would invalidate every card in the grid on any model change.
     let onDelete: () -> Void
+    private let display: LibraryResultPresentation
     @State private var hovering = false
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    init(
+        result: FTSResult,
+        semanticHit: SemanticSearchHit? = nil,
+        selected: Bool,
+        keyboardFocused: Bool,
+        interactionEnabled: Bool,
+        onSelect: @escaping () -> Void,
+        onOpen: @escaping () -> Void,
+        onShowInSessions: @escaping () -> Void,
+        onDelete: @escaping () -> Void
+    ) {
+        self.result = result
+        self.semanticHit = semanticHit
+        self.selected = selected
+        self.keyboardFocused = keyboardFocused
+        self.interactionEnabled = interactionEnabled
+        self.onSelect = onSelect
+        self.onOpen = onOpen
+        self.onShowInSessions = onShowInSessions
+        self.onDelete = onDelete
+        display = LibraryResultPresentation(result: result, semanticHit: semanticHit)
+    }
 
     var body: some View {
         Group {
@@ -93,13 +75,15 @@ struct SearchResultCard: View {
                     .simultaneousGesture(TapGesture(count: 2).onEnded { onOpen() })
                     .contextMenu {
                         Button("Open in Timeline") { onOpen() }
+                        Button("Show in Sessions", action: onShowInSessions)
+                            .accessibilityIdentifier("library.result.context.show-in-sessions")
                         if let domain = result.domain, !domain.isEmpty {
                             Button("Copy domain") {
                                 NSPasteboard.general.clearContents()
                                 NSPasteboard.general.setString(domain, forType: .string)
                             }
                         }
-                        if let snip = result.searchCleanedSnippet, !snip.isEmpty {
+                        if let snip = display.text.cleanedSnippet {
                             Button("Copy snippet") {
                                 NSPasteboard.general.clearContents()
                                 NSPasteboard.general.setString(snip, forType: .string)
@@ -115,6 +99,7 @@ struct SearchResultCard: View {
                     .accessibilityAction(.default, onSelect)
                     .accessibilityAction(named: "Select for Preview", onSelect)
                     .accessibilityAction(named: "Open in Timeline", onOpen)
+                    .accessibilityAction(named: "Show in Sessions", onShowInSessions)
                     .accessibilityAction(named: "Delete Moment", onDelete)
             } else {
                 baseCard
@@ -128,7 +113,7 @@ struct SearchResultCard: View {
         cardContent
             .help(cardHelp)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(result.searchDisplayTitle), \(accessibilityProvenance)")
+            .accessibilityLabel(display.text.title)
             .accessibilityValue(accessibilityValue)
             .accessibilityHint(accessibilityHint)
             .accessibilityAddTraits(selected ? .isSelected : [])
@@ -136,7 +121,7 @@ struct SearchResultCard: View {
     }
 
     private var cardContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: SLDesign.space8) {
             LibraryThumbnail(
                 frameID: result.frameID,
                 path: result.imagePath,
@@ -151,16 +136,16 @@ struct SearchResultCard: View {
                     .strokeBorder(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 1)
             )
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text(result.searchDisplayTitle)
-                    .font(.subheadline.weight(.semibold))
+            VStack(alignment: .leading, spacing: SLDesign.space4) {
+                Text(display.text.title)
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if let snippet = cardHighlightedSnippet {
+                if let snippet = display.highlightedExcerpt {
                     Text(snippet)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -171,9 +156,9 @@ struct SearchResultCard: View {
 
                 resultMetadata
             }
-            .padding(.horizontal, 2)
+            .padding(.horizontal, SLDesign.space4)
         }
-        .padding(8)
+        .padding(SLDesign.space8)
         .background(
             selected
                 ? Color.accentColor.opacity(keyboardFocused ? 0.14 : 0.08)
@@ -217,58 +202,25 @@ struct SearchResultCard: View {
     }
 
     private var resultMetadata: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: SLDesign.space4) {
+            LibraryResultProvenance(result: result, display: display)
+            if let semanticHit { SemanticResultSourceLabel(hit: semanticHit) }
             if let source = result.transcriptSource {
                 Label(source.label, systemImage: source == .microphone ? "mic.fill" : "waveform")
-                    .font(.caption.weight(.medium))
+                    .font(SLDesign.metadataFont)
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Transcript source: \(source.label)")
             }
-            provenance
-            resultTime
         }
     }
 
-    private var provenance: some View {
-        LibraryResultProvenance(result: result, iconSize: 13, font: .caption)
-    }
-
-    private var resultTime: some View {
-        Text(
-            "\(SLTimeFormat.dayLabel(result.timestampMs)), "
-                + SLTimeFormat.shortTime(result.timestampMs)
-        )
-        .font(.caption.monospacedDigit())
-        .foregroundStyle(.tertiary)
-        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-        .help(SLTimeFormat.full(result.timestampMs))
-    }
-
-    private var accessibilityProvenance: String {
-        guard let domain = result.domain?.trimmingCharacters(in: .whitespacesAndNewlines),
-            !domain.isEmpty
-        else { return result.searchAppLabel }
-        return "\(result.searchAppLabel), \(domain)"
-    }
-
-    private var cardSnippet: String? {
-        guard let snippet = result.searchCleanedSnippet,
-            snippet.caseInsensitiveCompare(result.searchDisplayTitle) != .orderedSame
-        else { return nil }
-        return snippet
-    }
-
-    /// Same gate as `cardSnippet`, with the matched terms emphasized. The plain
-    /// form is kept for the accessibility value, which takes no attributes.
-    private var cardHighlightedSnippet: AttributedString? {
-        guard cardSnippet != nil else { return nil }
-        return result.searchHighlightedSnippet
-    }
-
     private var accessibilityValue: String {
-        [SLTimeFormat.full(result.timestampMs), cardSnippet, knownPreviewAccessibilityStatus]
-            .compactMap { $0 }
-            .joined(separator: ", ")
+        [
+            display.accessibilityContext, display.text.excerpt, knownPreviewAccessibilityStatus,
+            semanticHit.map { SemanticSearchPresentation.sourceLabel($0.kind) },
+        ]
+        .compactMap { $0 }
+        .joined(separator: ", ")
     }
 
     private var knownPreviewAccessibilityStatus: String? {
@@ -289,25 +241,44 @@ struct SearchResultInspector: View {
 
     let result: FTSResult
     let presentation: Presentation
+    let semanticHit: SemanticSearchHit?
     let interactionEnabled: Bool
     let onOpen: () -> Void
+    private let display: LibraryResultPresentation
+
+    init(
+        result: FTSResult,
+        presentation: Presentation,
+        semanticHit: SemanticSearchHit? = nil,
+        interactionEnabled: Bool,
+        onOpen: @escaping () -> Void
+    ) {
+        self.result = result
+        self.presentation = presentation
+        self.semanticHit = semanticHit
+        self.interactionEnabled = interactionEnabled
+        self.onOpen = onOpen
+        display = LibraryResultPresentation(result: result, semanticHit: semanticHit)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 previewContent
-                    .padding(16)
+                    .padding(SLDesign.space16)
             }
 
             Divider()
 
             HStack {
+                Spacer(minLength: 0)
                 Button(action: onOpen) {
-                    Label("Open in Timeline", systemImage: "arrow.right.circle.fill")
-                        .frame(maxWidth: .infinity)
+                    Label("Open in Timeline", systemImage: "arrow.right")
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+                .buttonStyle(.borderless)
+                .controlSize(.regular)
+                .font(.callout)
+                .slCompactControlTarget()
                 .disabled(!interactionEnabled)
                 .accessibilityHint(
                     interactionEnabled
@@ -316,7 +287,7 @@ struct SearchResultInspector: View {
                 )
                 .accessibilityIdentifier("library.result.inspector.open")
             }
-            .padding(12)
+            .padding(SLDesign.space12)
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .background(inspectorBackground)
@@ -335,16 +306,7 @@ struct SearchResultInspector: View {
     }
 
     private var previewContent: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
-                Label("Selected Moment", systemImage: "sidebar.right")
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                Text(SLTimeFormat.shortTime(result.timestampMs))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .help(SLTimeFormat.full(result.timestampMs))
-            }
+        VStack(alignment: .leading, spacing: SLDesign.space16) {
 
             LibraryThumbnail(
                 frameID: result.frameID,
@@ -362,87 +324,84 @@ struct SearchResultInspector: View {
                     .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(result.searchDisplayTitle)
-                    .font(.headline)
-                    .lineLimit(3)
-                    .accessibilityIdentifier("library.result.inspector.selection.\(result.frameID)")
+            Text(display.text.title)
+                .font(SLDesign.sectionFont)
+                .lineLimit(3)
+                .accessibilityIdentifier("library.result.inspector.selection.\(result.frameID)")
 
-                LibraryResultProvenance(
-                    result: result,
-                    iconSize: 16,
-                    font: .subheadline.weight(.medium)
-                )
-
-                Text(SLTimeFormat.full(result.timestampMs))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.tertiary)
-            }
-
-            if let plain = result.searchCleanedSnippet,
-                plain.caseInsensitiveCompare(result.searchDisplayTitle) != .orderedSame,
-                let snippet = result.searchHighlightedSnippet
-            {
-                Divider().opacity(0.5)
+            if let snippet = display.highlightedExcerpt {
                 Text(snippet)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
                     .lineLimit(8)
                     .textSelection(.enabled)
             }
 
-            if let source = result.transcriptSource {
-                Label(
-                    "Transcript from \(source.label)",
-                    systemImage: source == .microphone ? "mic.fill" : "waveform"
-                )
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: SLDesign.space8) {
+                LibraryResultProvenance(result: result, display: display)
+                if let semanticHit { SemanticResultSourceLabel(hit: semanticHit) }
+                if let source = result.transcriptSource {
+                    Label(
+                        "Transcript from \(source.label)",
+                        systemImage: source == .microphone ? "mic.fill" : "waveform"
+                    )
+                    .font(SLDesign.metadataFont)
+                    .foregroundStyle(.secondary)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-extension FTSResult {
-    fileprivate var searchDisplayTitle: String {
-        if let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return title
-        }
-        if let snippet = searchCleanedSnippet, !snippet.isEmpty {
-            return snippet
-        }
-        return searchAppLabel
-    }
+/// Prepared once when a result view receives its inputs, not while hover,
+/// selection focus or thumbnail loading repeatedly evaluates its body.
+struct LibraryResultPresentation {
+    let text: LibraryResultTextPresentation
+    let highlightedExcerpt: AttributedString?
+    let context: String
+    let accessibilityContext: String
+    let fullTimestamp: String
 
-    fileprivate var searchAppLabel: String {
-        displayName.flatMap { $0.isEmpty ? nil : $0 }
-            ?? SLAppIdentity.displayName(bundleID: bundleID)
-    }
-
-    fileprivate var searchCleanedSnippet: String? {
-        SearchSnippet.parse(snippet)?.text
-    }
-
-    /// Snippet with the matched terms emphasized.
-    fileprivate var searchHighlightedSnippet: AttributedString? {
-        guard let parsed = SearchSnippet.parse(snippet) else { return nil }
-        var attributed = AttributedString(parsed.text)
-        for range in parsed.matches {
-            guard let lower = AttributedString.Index(range.lowerBound, within: attributed),
-                let upper = AttributedString.Index(range.upperBound, within: attributed)
-            else { continue }
-            attributed[lower..<upper].inlinePresentationIntent = .stronglyEmphasized
+    init(result: FTSResult, semanticHit: SemanticSearchHit?) {
+        text = LibraryResultTextPresentation(
+            title: result.title,
+            appLabel: result.searchAppLabel,
+            domain: result.domain,
+            snippet: result.snippet,
+            allowsUnmarkedExcerpt: result.transcriptSource != nil || semanticHit != nil
+        )
+        fullTimestamp = SLTimeFormat.full(result.timestampMs)
+        let origins = [text.appContext, text.domainContext].compactMap { $0 }
+        let timestamp =
+            "\(SLTimeFormat.dayLabel(result.timestampMs)), "
+            + SLTimeFormat.shortTime(result.timestampMs)
+        context = (origins + [timestamp]).joined(separator: " \u{00B7} ")
+        accessibilityContext = (origins + [fullTimestamp]).joined(separator: ", ")
+        if let excerpt = text.excerpt {
+            var attributed = AttributedString(excerpt)
+            for range in text.matches {
+                guard let lower = AttributedString.Index(range.lowerBound, within: attributed),
+                    let upper = AttributedString.Index(range.upperBound, within: attributed)
+                else { continue }
+                attributed[lower..<upper].inlinePresentationIntent = .stronglyEmphasized
+            }
+            highlightedExcerpt = attributed
+        } else {
+            highlightedExcerpt = nil
         }
-        return attributed
     }
 }
 
 extension FTSResult {
+    fileprivate var searchAppLabel: String {
+        SearchSnippet.parse(displayName)?.text
+            ?? SLAppIdentity.displayName(bundleID: bundleID)
+    }
+
     /// Identifies the moment in the deletion review sheet. The sheet itself
     /// reports the exact moment, file, and byte counts.
     var libraryDeletionDetail: String {
         "\(searchAppLabel) at \(SLTimeFormat.full(timestampMs))."
-            + " Every display captured at this moment is removed."
+            + " Screenlogger removes every display capture from this moment."
     }
 }

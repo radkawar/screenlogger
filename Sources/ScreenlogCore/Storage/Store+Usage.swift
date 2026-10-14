@@ -231,8 +231,10 @@ extension Store {
                       AND length(f.image_path) > 0
                     ORDER BY f.timestamp ASC
                     LIMIT 1
-                )
+                ),
+                names.value
             FROM session_bounds sb
+            LEFT JOIN metadata names ON names.key = 'session.name.' || sb.start_ms
             ORDER BY sb.start_ms DESC
             """
         let stmt = try db.prepare(sql)
@@ -256,7 +258,8 @@ extension Store {
                     frameCount: SQLiteColumn.int64(stmt, 2),
                     primaryBundleID: SQLiteColumn.text(stmt, 3),
                     primaryDisplayName: SQLiteColumn.text(stmt, 4),
-                    previewImagePath: SQLiteColumn.text(stmt, 5)
+                    previewImagePath: SQLiteColumn.text(stmt, 5),
+                    customName: SQLiteColumn.text(stmt, 6)
                 )
             )
         }

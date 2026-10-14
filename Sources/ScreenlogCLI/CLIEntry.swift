@@ -12,7 +12,7 @@ enum ScreenlogCLIMain {
             fflush(stdout)
             fputs("error: \(err)\n", stderr)
             if case .appNotRunning = err {
-                fputs("hint: open Screenlogger.app first - the CLI never opens the database itself.\n", stderr)
+                fputs("hint: Open Screenlogger.app first. The CLI never opens the database directly.\n", stderr)
             }
             exit(1)
         } catch let err as CLIError {
@@ -74,6 +74,8 @@ enum ScreenlogCLIMain {
             try recent(sub, client: client)
         case "query":
             try query(sub, client: client)
+        case "semantic":
+            try semantic(sub, client: client)
         case "image":
             try image(sub, client: client)
         case "status":
@@ -87,9 +89,11 @@ enum ScreenlogCLIMain {
         case "record":
             try record(sub, client: client)
         case "compact":
+            guard sub.isEmpty else { throw CLIError.usage("screenlog compact") }
             let n = try client.compact()
             print("compacted_frames=\(n)")
         case "retention":
+            guard sub.isEmpty else { throw CLIError.usage("screenlog retention") }
             print(try client.retention())
         case "doctor":
             try await doctor(sub, root: root, client: client)
@@ -114,7 +118,8 @@ enum ScreenlogCLIMain {
           recent [--limit N] [--show-ocr] [--max-ocr-chars N] [--json]
           usage time|coverage|top-applications|top-domains|sessions
           list applications|domains
-          query frame|context|image|axtree|sample|ocrboxes|fts ...
+          query frame|context|image|axtree|sample|ocrboxes|fts|semantic ...
+          semantic status|download|enable|disable|pause|resume|index-now|remove-index|remove-models
           record start|stop|once
           stats | status [--json] | doctor [--json] | ping
           skill install|status [--json]|upgrade|remove [claude|cursor|codex|grok|openclaw|all]
@@ -136,6 +141,7 @@ enum ScreenlogCLIMain {
             return usageHelp(for: subcommand)
         case "query":
             return queryHelp(for: subcommand)
+        case "semantic": return semanticHelp
         case "image":
             return "Usage: screenlog image --id N | --at DATE [--out PATH] [--base64] [--json]"
         case "status": return "Usage: screenlog status [--json]"

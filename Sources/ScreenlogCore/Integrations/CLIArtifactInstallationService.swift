@@ -11,15 +11,15 @@ public enum CLIArtifactConflict: Error, LocalizedError, Equatable, Sendable {
         switch self {
         case .incomplete(let existing, let missing):
             return
-                "The existing command-line installation is incomplete (found: \(existing.joined(separator: ", ")); missing: \(missing.joined(separator: ", "))). Move or remove those files before installing."
+                "The command installation is incomplete. Found: \(existing.joined(separator: ", ")). Missing: \(missing.joined(separator: ", ")). Move or remove those files before installation."
         case .unrecognized(let existing):
             return
-                "Screenlogger did not create the existing \(existing.joined(separator: ", ")). Move or remove those files before installing."
+                "Screenlogger did not create these existing files: \(existing.joined(separator: ", ")). Move or remove them before installation."
         case .modifiedAuthenticatedInstallation(let paths):
             return
-                "The Screenlogger command-line installation was changed after installation (\(paths.joined(separator: ", "))). Move or remove it before reinstalling."
+                "These command files differ from the installation receipt: \(paths.joined(separator: ", ")). Move or remove them before reinstallation."
         case .invalidReceipt(let path):
-            return "The Screenlogger command-line receipt at \(path) is invalid. Move or remove it before installing."
+            return "The Screenlogger command-line receipt at \(path) is invalid. Move or remove it before installation."
         }
     }
 
@@ -80,17 +80,17 @@ public enum CLIArtifactInstallationError: Error, LocalizedError, Equatable {
         switch self {
         case .conflict(let conflict): return conflict.localizedDescription
         case .sourceArtifactsInvalid:
-            return "Screenlogger's bundled command files could not be verified. Reinstall the app and try again."
+            return "Screenlogger could not verify its bundled command files. Reinstall the app. Try again."
         case .stagedVerificationFailed(let reason):
             return "The staged screenlog command failed its launch check: \(reason)"
         case .installationFailed(let reason): return reason
         case .removalFailed(let reason): return reason
         case .installationRecoveryRequired(let path):
             return
-                "Screenlogger couldn't roll back every command file automatically. Recovery files were preserved at \(path)."
+                "Screenlogger could not restore every previous command file automatically. It kept recovery files at \(path)."
         case .removalRecoveryRequired(let path):
             return
-                "Screenlogger couldn't restore every command file automatically. Recovery files were preserved at \(path)."
+                "Screenlogger could not restore every command file automatically. It kept recovery files at \(path)."
         }
     }
 }
@@ -358,7 +358,7 @@ public struct CLIArtifactInstallationService {
         } catch {
             try? fileManager.removeItem(at: quarantine)
             throw CLIArtifactInstallationError.removalFailed(
-                "The screenlog command couldn't be removed. Its existing files were preserved."
+                "Screenlogger could not remove the screenlog command. It preserved the existing files."
             )
         }
 
@@ -386,7 +386,7 @@ public struct CLIArtifactInstallationService {
                 )
             }
             throw CLIArtifactInstallationError.removalFailed(
-                "The screenlog command couldn't be removed. Its existing files were preserved."
+                "Screenlogger could not remove the screenlog command. It preserved the existing files."
             )
         }
 

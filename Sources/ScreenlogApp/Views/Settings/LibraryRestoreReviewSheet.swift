@@ -32,15 +32,15 @@ struct LibraryRestoreReviewSheet: View {
     }
 
     private var reviewContent: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack(alignment: .top, spacing: 14) {
-                Image(systemName: "arrow.counterclockwise.circle.fill")
-                    .font(.system(size: 32))
-                    .foregroundStyle(.tint)
+        VStack(alignment: .leading, spacing: SLDesign.space24) {
+            HStack(alignment: .top, spacing: SLDesign.space16) {
+                Image(systemName: "arrow.counterclockwise")
+                    .font(SLDesign.sectionFont)
+                    .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: SLDesign.space8) {
                     Text("Replace Captured History?")
-                        .font(.title2.weight(.semibold))
+                        .font(SLDesign.titleFont)
                     Text("This backup passed Screenlogger's database, file, and checksum checks.")
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -49,7 +49,7 @@ struct LibraryRestoreReviewSheet: View {
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
 
-            Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 10) {
+            Grid(alignment: .leading, horizontalSpacing: SLDesign.space16, verticalSpacing: SLDesign.space8) {
                 GridRow {
                     Text("Backup").foregroundStyle(.secondary)
                     Text(review.archive.deletingPathExtension().lastPathComponent)
@@ -65,12 +65,12 @@ struct LibraryRestoreReviewSheet: View {
                     Text(AppModel.formatByteSize(review.manifest.totalBytes))
                 }
             }
-            .font(.system(size: 13))
+            .font(SLDesign.bodyFont)
 
             Text(
-                "Your current captured history will be replaced, not merged. Screenlogger pauses capture, keeps the current Library until the replacement is active, and restores it automatically if activation fails. Settings and exclusions remain unchanged."
+                "Screenlogger replaces your current captured history. It does not merge the two Libraries. Screenlogger pauses capture and keeps the current Library until the replacement is active. If activation fails, Screenlogger automatically restores the current Library. Settings and exclusions remain unchanged."
             )
-            .font(.callout)
+            .font(SLDesign.bodyFont)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
 

@@ -14,7 +14,14 @@ enum SLDesign {
         width: workspaceMinimumWidth,
         height: workspaceMinimumHeight
     )
+    static let librarySidebarWidth: CGFloat = 224
 
+    static let titleFont = Font.system(.title2, design: .default).weight(.semibold)
+    static let sectionFont = Font.headline
+    static let bodyFont = Font.body
+    static let metadataFont = Font.caption
+
+    static let space4: CGFloat = 4
     static let space8: CGFloat = 8
     static let space10: CGFloat = 10
     static let space12: CGFloat = 12
@@ -22,6 +29,8 @@ enum SLDesign {
     static let space16: CGFloat = 16
     static let space20: CGFloat = 20
     static let space24: CGFloat = 24
+    static let space32: CGFloat = 32
+    static let space48: CGFloat = 48
 
     /// Minimum pointer target for compact toolbar and icon-only controls.
     /// The symbol may remain visually smaller while the full target is easy

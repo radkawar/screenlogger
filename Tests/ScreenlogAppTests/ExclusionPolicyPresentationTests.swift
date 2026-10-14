@@ -11,8 +11,6 @@ final class ExclusionPolicyPresentationTests: XCTestCase {
 
         XCTAssertEqual(presentation.outcome, .neverCapture)
         XCTAssertEqual(presentation.provenance, [.explicitApplication])
-        XCTAssertEqual(presentation.provenanceSummary, "Explicit application")
-        XCTAssertTrue(presentation.detail.contains("explicitly excluded under Applications"))
     }
 
     func testExplicitBrowserExplainsThatEveryWindowIsCovered() {
@@ -27,11 +25,7 @@ final class ExclusionPolicyPresentationTests: XCTestCase {
             presentation.provenance,
             [.explicitApplication, .entireBrowser]
         )
-        XCTAssertEqual(
-            presentation.provenanceSummary,
-            "Explicit application, Entire browser"
-        )
-        XCTAssertTrue(presentation.detail.contains("every one of its windows is skipped"))
+        XCTAssertTrue(presentation.detail.contains("skips every window"))
     }
 
     func testBroaderApplicationCategoryOwnsEffectiveOutcome() {
@@ -44,7 +38,6 @@ final class ExclusionPolicyPresentationTests: XCTestCase {
 
         XCTAssertEqual(presentation.outcome, .neverCapture)
         XCTAssertEqual(presentation.provenance, [.broaderCategory("Password Managers")])
-        XCTAssertTrue(presentation.detail.contains("covered by the enabled Password Managers category"))
     }
 
     func testWebsiteRetainsExplicitAndCategoryProvenanceTogether() {
@@ -70,7 +63,6 @@ final class ExclusionPolicyPresentationTests: XCTestCase {
 
         XCTAssertEqual(presentation.outcome, .canCapture)
         XCTAssertTrue(presentation.provenance.isEmpty)
-        XCTAssertEqual(presentation.provenanceSummary, "No matching exclusion")
         XCTAssertTrue(presentation.detail.contains("when its browser address is available"))
     }
 
@@ -129,7 +121,7 @@ final class ExclusionPolicyPresentationTests: XCTestCase {
                     ExclusionPolicyPresentation.futureMomentsNotice
                 )
             )
-            XCTAssertTrue(presentation.accessibilityHint.contains("not deleted"))
+            XCTAssertTrue(presentation.accessibilityHint.contains("does not delete existing Library moments"))
         }
     }
 }

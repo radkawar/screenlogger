@@ -223,7 +223,8 @@ APP="$PRODUCTS/Screenlogger.app"
 CLI="$PRODUCTS/screenlog"
 FRAMEWORK="$APP/Contents/Frameworks/ScreenlogCore.framework"
 APP_PLIST="$APP/Contents/Info.plist"
-for required_path in "$APP" "$CLI" "$FRAMEWORK" "$APP_PLIST"; do
+SEMANTIC_WORKER="$APP/Contents/MacOS/screenlog-semantic-worker"
+for required_path in "$APP" "$CLI" "$FRAMEWORK" "$APP_PLIST" "$SEMANTIC_WORKER"; do
   if [[ ! -e "$required_path" ]]; then
     echo "error: required Release product is missing: $required_path" >&2
     exit 1
@@ -326,6 +327,7 @@ PACKAGE_MANIFEST_PLIST="$WORK_ROOT/package-manifest.plist"
 /usr/bin/plutil -insert build -string "$BUILD_NUMBER" "$PACKAGE_MANIFEST_PLIST"
 /usr/bin/plutil -insert minimumMacOS -string "$MINIMUM_MACOS" "$PACKAGE_MANIFEST_PLIST"
 /usr/bin/plutil -insert architectures -json '["arm64","x86_64"]' "$PACKAGE_MANIFEST_PLIST"
+/usr/bin/plutil -insert semanticArchitectures -json '["arm64"]' "$PACKAGE_MANIFEST_PLIST"
 /usr/bin/plutil -insert signing -string "$SIGNING_MODE" "$PACKAGE_MANIFEST_PLIST"
 /usr/bin/plutil -insert notarized -bool "$([[ "$SIGNING_MODE" == "developer-id" ]] && echo true || echo false)" \
   "$PACKAGE_MANIFEST_PLIST"
@@ -342,6 +344,9 @@ fi
   "$PACKAGE_MANIFEST_PLIST"
 /usr/bin/plutil -insert bundledCLISHA256 -string \
   "$(sha256 "$STAGE/Screenlogger.app/Contents/MacOS/screenlog")" \
+  "$PACKAGE_MANIFEST_PLIST"
+/usr/bin/plutil -insert semanticWorkerSHA256 -string \
+  "$(sha256 "$STAGE/Screenlogger.app/Contents/MacOS/screenlog-semantic-worker")" \
   "$PACKAGE_MANIFEST_PLIST"
 /usr/bin/plutil -insert standaloneCLISHA256 -string \
   "$(sha256 "$STAGE/CLI/screenlog")" \
@@ -461,6 +466,7 @@ RELEASE_MANIFEST_TMP="$WORK_ROOT/$PACKAGE_NAME.json"
 /usr/bin/plutil -insert build -string "$BUILD_NUMBER" "$RELEASE_MANIFEST_PLIST"
 /usr/bin/plutil -insert minimumMacOS -string "$MINIMUM_MACOS" "$RELEASE_MANIFEST_PLIST"
 /usr/bin/plutil -insert architectures -json '["arm64","x86_64"]' "$RELEASE_MANIFEST_PLIST"
+/usr/bin/plutil -insert semanticArchitectures -json '["arm64"]' "$RELEASE_MANIFEST_PLIST"
 /usr/bin/plutil -insert signing -string "$SIGNING_MODE" "$RELEASE_MANIFEST_PLIST"
 /usr/bin/plutil -insert notarized -bool "$([[ "$SIGNING_MODE" == "developer-id" ]] && echo true || echo false)" \
   "$RELEASE_MANIFEST_PLIST"
@@ -484,6 +490,7 @@ DSYM_STAGE="$WORK_ROOT/$PACKAGE_NAME-dSYMs"
 for dsym_name in \
   Screenlogger.app.dSYM \
   screenlog.dSYM \
+  screenlog-semantic-worker.dSYM \
   ScreenlogCore.framework.dSYM; do
   if [[ -d "$PRODUCTS/$dsym_name" ]]; then
     mkdir -p "$DSYM_STAGE"

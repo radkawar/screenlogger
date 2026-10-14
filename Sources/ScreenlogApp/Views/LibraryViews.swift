@@ -23,9 +23,6 @@ struct SearchPane: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(spacing: 10) {
-                    LibraryContentModeBar(
-                        selection: $model.libraryWorkspaceNavigation.contentMode
-                    )
 
                     if let issue = libraryDeletionIssue {
                         TimelineDeletionIssueBannerView(
@@ -66,8 +63,9 @@ struct SearchPane: View {
             reconcileSelection(with: results.map(\.frameID))
         }
         .onChange(of: focusRequest) { _, _ in
-            model.libraryWorkspaceNavigation.contentMode = .search
-            guard !model.filteredSearchResults.isEmpty else { return }
+            guard model.libraryWorkspaceNavigation.acceptsSearchFocus,
+                !model.filteredSearchResults.isEmpty
+            else { return }
             if model.libraryWorkspaceNavigation.selectedResultID == nil {
                 model.libraryWorkspaceNavigation.selectResult(
                     model.filteredSearchResults.first?.frameID
@@ -139,6 +137,7 @@ struct SearchPane: View {
                         SearchResultInspector(
                             result: selectedResult,
                             presentation: .pane,
+                            semanticHit: model.semanticSearchHits[selectedResult.frameID],
                             interactionEnabled: libraryResultsRemainInteractive
                         ) {
                             openResult(selectedResult)
@@ -169,10 +168,10 @@ struct SearchPane: View {
                     !model.filteredSearchResults.isEmpty
                 {
                     HStack(spacing: 8) {
-                        Label("Couldn't update results", systemImage: "exclamationmark.circle.fill")
+                        Label("Could not update results", systemImage: "exclamationmark.circle.fill")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(SLDesign.warning)
-                        Text("Showing results from your previous successful search. \(issue.message)")
+                        Text("Showing results from your previous successful search. \(model.semanticSearchMessage ?? issue.message)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
@@ -190,7 +189,7 @@ struct SearchPane: View {
                     )
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel(
-                        "Couldn't update results. Showing results from your previous successful search. \(issue.message)"
+                        "Could not update results. Showing results from your previous successful search. \(model.semanticSearchMessage ?? issue.message)"
                     )
                     .accessibilityIdentifier("library.results.update-error")
                 }
@@ -213,14 +212,14 @@ struct SearchPane: View {
         return max(1, Int((resultsWidth + 16) / (minimumCardWidth + 16)))
     }
 
-    private var filterPanelMinimumWidth: CGFloat { 175 }
-    private var filterPanelIdealWidth: CGFloat { 205 }
+    private var filterPanelMinimumWidth: CGFloat { 176 }
+    private var filterPanelIdealWidth: CGFloat { SLDesign.librarySidebarWidth }
     private var filterPanelMaximumWidth: CGFloat { 280 }
     private var resultsMinimumWidth: CGFloat { 360 }
     private var inspectorMinimumWidth: CGFloat { 270 }
     private var inspectorIdealWidth: CGFloat { 300 }
     private var inspectorMaximumWidth: CGFloat { 420 }
-    private var resultsContentHorizontalInset: CGFloat { 12 }
+    private var resultsContentHorizontalInset: CGFloat { SLDesign.space16 }
     private var minimumCardWidth: CGFloat { dynamicTypeSize.isAccessibilitySize ? 280 : 220 }
 
     private func showsInspector(totalWidth: CGFloat) -> Bool {
@@ -282,15 +281,14 @@ struct SearchPane: View {
                 .accessibilityIdentifier("library.results.title")
             if !model.filteredSearchResults.isEmpty {
                 Text(resultCountLabel)
-                    .font(.caption2.weight(.medium).monospacedDigit())
+                    .font(SLDesign.metadataFont.monospacedDigit())
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(.quaternary.opacity(0.45), in: Capsule(style: .continuous))
                     .accessibilityLabel("Result count")
                     .accessibilityValue(resultCountLabel)
                     .accessibilityIdentifier("library.results.count")
             }
+            LibrarySearchSortPicker()
+                .frame(maxWidth: 140)
             Spacer()
             if model.isSearching, !model.filteredSearchResults.isEmpty {
                 ProgressView()
@@ -298,13 +296,7 @@ struct SearchPane: View {
                 Text("Updating results")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            } else if resultsFocused,
-                !compactFilters,
-                !dynamicTypeSize.isAccessibilitySize
-            {
-                Text("Use the arrow keys to browse. Return opens. Escape returns to search.")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(.tertiary)
+                    .accessibilityIdentifier("library.results.updating")
             }
 
             if let selectedResult,
@@ -425,7 +417,9 @@ struct SearchPane: View {
                             // its window yields to Timeline. That transient
                             // dismissal must not erase the user's preview
                             // preference before they return to the Library.
-                            if model.shellSearchMode {
+                            if model.shellSearchMode,
+                                model.libraryWorkspaceNavigation.compactPreviewPresented != isPresented
+                            {
                                 model.libraryWorkspaceNavigation.compactPreviewPresented =
                                     isPresented
                             }
@@ -436,6 +430,7 @@ struct SearchPane: View {
                     SearchResultInspector(
                         result: selectedResult,
                         presentation: .popover,
+                        semanticHit: model.semanticSearchHits[selectedResult.frameID],
                         interactionEnabled: libraryResultsRemainInteractive
                     ) {
                         openResult(selectedResult)
@@ -459,7 +454,9 @@ struct SearchPane: View {
                     && model.searchDatePickerOrigin == .compactFilters
             },
             set: { isPresented in
-                if !isPresented { model.showSearchDatePicker = false }
+                if !isPresented, model.showSearchDatePicker, model.searchDatePickerOrigin == .compactFilters {
+                    model.showSearchDatePicker = false
+                }
             }
         )
     }
@@ -504,6 +501,7 @@ struct SearchPane: View {
                         ForEach(rows, id: \.frameID) { result in
                             SearchResultCard(
                                 result: result,
+                                semanticHit: model.semanticSearchHits[result.frameID],
                                 selected:
                                     model.libraryWorkspaceNavigation.selectedResultID
                                     == result.frameID,
@@ -516,6 +514,10 @@ struct SearchPane: View {
                                     resultsFocused = true
                                 },
                                 onOpen: { openResult(result) },
+                                onShowInSessions: {
+                                    dismissTransientOverlays()
+                                    Task { await model.showSearchResultInSessions(result) }
+                                },
                                 onDelete: {
                                     Task {
                                         await model.prepareLibraryDeletion(
@@ -646,7 +648,9 @@ struct SearchPane: View {
 
         if !rows.isEmpty { return .content }
         if model.isSearching { return .loading }
+        if model.librarySearchValidationMessage != nil { return .invalidFilters }
         if queryEmpty, !model.hasActiveLibrarySearchFilters { return .idle }
+        if model.relatedSearchNeedsDescription { return .needsDescription }
         if model.searchQueryNeedsMoreInput { return .needsMoreInput }
         if model.librarySearchState.issue != nil { return .recoverableError }
         if model.activeLibrarySearchFilterCount > 0 { return .filteredEmpty }

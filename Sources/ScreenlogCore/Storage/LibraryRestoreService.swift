@@ -31,9 +31,9 @@ public enum LibraryRestoreError: Error, LocalizedError, Equatable, Sendable {
     public var errorDescription: String? {
         switch self {
         case .invalidBackup(let issue):
-            return "This Library copy can't be restored. \(issue.localizedDescription)"
+            return "Screenlogger cannot restore this Library copy. \(issue.localizedDescription)"
         case .newerSchema:
-            return "This Library copy was made by a newer Screenlogger version. Update Screenlogger before restoring it."
+            return "A newer Screenlogger version made this Library copy. Update Screenlogger before you restore it."
         case .unsafeArchive:
             return "Choose a Library copy outside your current Screenlogger Library."
         case .unsafeLiveLibrary:
@@ -43,11 +43,11 @@ public enum LibraryRestoreError: Error, LocalizedError, Equatable, Sendable {
         case .anotherRestoreNeedsRecovery:
             return "Screenlogger found more than one unfinished restore and left every Library unchanged."
         case .stagingFailed:
-            return "Screenlogger couldn't prepare and verify the replacement Library. Your current Library is unchanged."
+            return "Screenlogger could not prepare and verify the replacement Library. It did not change your current Library."
         case .activationFailed:
-            return "Screenlogger couldn't activate the replacement Library and restored your previous Library."
+            return "Screenlogger could not activate the replacement Library. It restored your previous Library."
         case .rollbackFailed:
-            return "Screenlogger couldn't safely finish or undo an interrupted restore. Capture must remain off."
+            return "Screenlogger could not safely complete or undo an interrupted restore. Capture must remain off."
         }
     }
 }

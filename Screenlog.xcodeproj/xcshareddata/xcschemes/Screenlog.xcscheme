@@ -77,6 +77,34 @@
                ReferencedContainer = "container:Screenlog.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "0A9AFCE3B7C8B5D7CC9F1ED1"
+               BuildableName = "ScreenlogSemanticTests.xctest"
+               BlueprintName = "ScreenlogSemanticTests"
+               ReferencedContainer = "container:Screenlog.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "5DA89FBF53B432DC595D8DE0"
+               BuildableName = "screenlog-semantic-worker"
+               BlueprintName = "ScreenlogSemanticWorker"
+               ReferencedContainer = "container:Screenlog.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -114,6 +142,17 @@
                BlueprintIdentifier = "9581FCCA577F7C06A7F438D7"
                BuildableName = "ScreenlogAppTests.xctest"
                BlueprintName = "ScreenlogAppTests"
+               ReferencedContainer = "container:Screenlog.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "0A9AFCE3B7C8B5D7CC9F1ED1"
+               BuildableName = "ScreenlogSemanticTests.xctest"
+               BlueprintName = "ScreenlogSemanticTests"
                ReferencedContainer = "container:Screenlog.xcodeproj">
             </BuildableReference>
          </TestableReference>

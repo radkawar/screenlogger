@@ -31,28 +31,28 @@ struct LocalToolAccessSettingsSection: View {
 
     private var readinessOverview: some View {
         SettingsCard {
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: SLDesign.space16) {
                 Image(
                     systemName:
                         isReady
-                        ? "checkmark.circle.fill"
+                        ? "checkmark.circle"
                         : "point.3.connected.trianglepath.dotted"
                 )
-                .font(.system(size: 22, weight: .medium))
-                .foregroundStyle(isReady ? SLDesign.success : .secondary)
-                .frame(width: 28)
+                .font(SLDesign.bodyFont)
+                .foregroundStyle(.secondary)
+                .frame(width: SettingsChrome.iconSize)
                 .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: SLDesign.space4) {
                     Text(title)
-                        .font(.headline)
+                        .font(SLDesign.bodyFont.weight(.medium))
                     Text(detail)
-                        .font(.callout)
+                        .font(SLDesign.metadataFont)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     if !isReady {
                         readinessLabels
-                            .padding(.top, 2)
+                            .padding(.top, SLDesign.space4)
                     }
                 }
 
@@ -83,23 +83,19 @@ struct LocalToolAccessSettingsSection: View {
     private var setupActions: some View {
         SettingsCard(padding: 0) {
             VStack(spacing: 0) {
-                connectionRow
-                    .padding(14)
+                connectionRow.padding(SLDesign.space16)
 
                 Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
-                commandRow
-                    .padding(14)
+                commandRow.padding(SLDesign.space16)
 
                 Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
-                verificationRow
-                    .padding(14)
+                verificationRow.padding(SLDesign.space16)
 
                 Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
-                mutationAccessRow
-                    .padding(14)
+                mutationAccessRow.padding(SLDesign.space16)
             }
         }
     }
@@ -338,8 +334,7 @@ struct LocalToolAccessSettingsSection: View {
                     )
                     .accessibilityIdentifier("settings.integrations.test-search")
                 }
-            }
-            .padding(14)
+            }.padding(SLDesign.space16)
         }
         .accessibilityIdentifier("settings.integrations.test-search-card")
     }
@@ -368,15 +363,15 @@ struct LocalToolAccessSettingsSection: View {
         case .succeeded(let result):
             let noun = result.resultCount == 1 ? "result" : "results"
             return
-                "Search completed with \(result.resultCount) \(noun) in \(result.latencyMilliseconds) ms. Result content was discarded."
+                "Search completed with \(result.resultCount) \(noun) in \(result.latencyMilliseconds) ms. Screenlogger discarded the result content."
         case .failed(.commandUnavailable):
-            return "The managed command is unavailable. Refresh Command Setup, then test again."
+            return "The managed command is unavailable. Refresh Command Setup. Then test again."
         case .failed(.commandFailed):
-            return "The command could not search this Library. Retry Command Access, then test again."
+            return "The command could not search this Library. Retry Command Access. Then test again."
         case .failed(.timedOut):
-            return "The search did not finish within 10 seconds. Keep Screenlogger open and test again."
+            return "The search did not finish within 10 seconds. Keep Screenlogger open. Test again."
         case .failed(.invalidResponse):
-            return "The command returned an unexpected response. Reinstall the managed command, then test again."
+            return "The command returned an unexpected response. Reinstall the managed command. Then test again."
         }
     }
 
@@ -560,15 +555,15 @@ struct LocalToolAccessSettingsSection: View {
             return
                 "The Terminal command reached this Library through Command Access. This does not confirm that an assistant loaded its integration."
         case .failed(.appUnavailable):
-            return "The Terminal command could not reach Screenlogger. Retry Command Access, then verify again."
+            return "The Terminal command could not reach Screenlogger. Retry Command Access. Then verify again."
         case .failed(.protocolMismatch):
             return "The app and managed command use different connection protocols. Update or reinstall the command."
         case .failed(.versionMismatch):
             return "The managed command does not match this Screenlogger build. Update or reinstall it."
         case .failed(.invalidResponse):
-            return "The managed command returned an unexpected response. Update it, then verify again."
+            return "The managed command returned an unexpected response. Update it. Then verify again."
         case .failed(.commandFailed):
-            return "The managed command could not complete the Library check. Review connection health, then try again."
+            return "The managed command could not complete the Library check. Review the connection status. Then try again."
         }
     }
 
@@ -678,7 +673,7 @@ struct LocalToolAccessSettingsSection: View {
         switch model.cliInstallState {
         case .notInstalled:
             return
-                "No Screenlogger Terminal command was found in the expected user-level location. Installing it does not require administrator access."
+                "Screenlogger did not find its Terminal command in the expected user-level location. Installation does not require administrator access."
         case .installing:
             return
                 "Screenlogger is checking its command files and installing them only for your macOS user account."
@@ -733,7 +728,7 @@ struct LocalToolAccessSettingsSection: View {
 
     private var mutationAccessDescription: String {
         model.localToolCaptureControlAndMaintenanceEnabled
-            ? "Terminal and configured assistants may start capture, stop capture, capture once, compact the Library, and run retention cleanup. History search remains available."
+            ? "Terminal and configured assistants can start capture, stop capture, or capture once. They can compact the Library and run retention cleanup. History search remains available."
             : "History search is read-only. Terminal and configured assistants cannot control capture or run Library maintenance."
     }
 
@@ -784,10 +779,10 @@ struct LocalToolAccessSettingsSection: View {
 
     private func pathSetupTechnicalDetail(base: String, setup: CLIPathSetup?) -> String {
         guard let setup else {
-            return "\(base) Add ~/.local/bin to your shell's PATH, then choose Check Again."
+            return "\(base) Add ~/.local/bin to your shell's PATH. Then choose Check Again."
         }
         return
-            "\(base) Copy the \(setup.shellName) setup command, paste it into Terminal, open a new Terminal window, then choose Check Again."
+            "\(base) Copy the \(setup.shellName) setup command. Paste it into Terminal. Open a new Terminal window. Choose Check Again."
     }
 
     private func copyPathSetup(_ setup: CLIPathSetup) {

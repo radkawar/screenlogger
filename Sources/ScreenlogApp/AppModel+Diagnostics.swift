@@ -12,7 +12,8 @@ extension AppModel {
         guard !diagnosticsExportState.isExporting else { return }
         let panel = NSSavePanel()
         panel.title = "Export Screenlogger Diagnostics"
-        panel.message = "Includes app and Library health only - never screenshots, recognized text, searches, websites, or Library paths."
+        panel.message =
+            "Includes app and Library status only. Never includes screenshots, recognized text, searches, websites, or Library paths."
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
         panel.allowedContentTypes = [

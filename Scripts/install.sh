@@ -120,12 +120,12 @@ if ! sl_cli_pair_recognized "$CLI_SRC" "$FW_SRC"; then
   exit 1
 fi
 
-# Existing nodes must be authenticated by the current receipts. There is no
-# supported pre-release installation generation to adopt. Never overwrite
-# receiptless or ambiguous conflicts, even when their bytes look product-shaped.
+# The app and Command Setup have independent authenticated ownership receipts.
+# Command Setup can legitimately update the CLI after this app was installed.
+# Never overwrite receiptless or ambiguous conflicts, even if product-shaped.
 if sl_node_exists "$RECEIPT_DST"; then
-  if ! sl_receipt_matches "$RECEIPT_DST" "$APP_DST" "$CLI_DST" "$FW_DST"; then
-    echo "error: existing local-install receipt or artifacts were modified; preserving all destinations" >&2
+  if ! sl_app_receipt_matches "$RECEIPT_DST" "$APP_DST" "$CLI_DST" "$FW_DST"; then
+    echo "error: existing local-install receipt or app was modified; preserving all destinations" >&2
     exit 1
   fi
 else

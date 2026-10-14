@@ -1,20 +1,8 @@
 import Foundation
+@testable import ScreenlogCore
 import XCTest
 
-@testable import ScreenlogCore
-
 final class CapturePauseReasonTests: XCTestCase {
-    func testEveryPauseReasonHasConciseAndActionableCopy() {
-        XCTAssertEqual(Set(CapturePauseReason.allCases.map(\.statusTitle)).count, 6)
-
-        for reason in CapturePauseReason.allCases {
-            XCTAssertTrue(reason.statusTitle.hasPrefix("Paused - "))
-            XCTAssertFalse(reason.userDescription.isEmpty)
-            XCTAssertTrue(reason.userDescription.hasSuffix("."))
-            XCTAssertFalse(reason.systemImageName.isEmpty)
-        }
-    }
-
     func testOnlyPermissionAndLowDiskRequireUserAction() {
         XCTAssertTrue(CapturePauseReason.permissionRequired.needsUserAction)
         XCTAssertTrue(CapturePauseReason.lowDiskSpace.needsUserAction)

@@ -17,16 +17,18 @@ struct LibraryExportStatusView: View {
             )
         case .completed(let destination):
             StorageResultStatus(
-                message: "Library backup created and verified.",
+                message: "Screenlogger created and verified your Library backup.",
                 systemImage: "checkmark.circle.fill",
                 identifier: "storage.library-export.completed"
             ) {
                 Button("Show in Finder") { model.revealLibraryExport(destination) }
-                    .buttonStyle(.link)
-                    .accessibilityHint("Reveal the verified Library backup in Finder")
+                    .buttonStyle(.borderless)
+                    .tint(.primary)
+                    .accessibilityHint("Show the verified Library backup in Finder")
                     .accessibilityIdentifier("storage.library-export.reveal")
                 Button("Done") { model.dismissLibraryExportStatus() }
-                    .buttonStyle(.link)
+                    .buttonStyle(.borderless)
+                    .tint(.primary)
                     .accessibilityIdentifier("storage.library-export.done")
             }
         case .failed(let error):
@@ -37,11 +39,13 @@ struct LibraryExportStatusView: View {
                 identifier: "storage.library-export.failed"
             ) {
                 Button("Try Again...") { model.chooseLibraryExportDestination() }
-                    .buttonStyle(.link)
+                    .buttonStyle(.borderless)
+                    .tint(.primary)
                     .accessibilityHint("Choose another destination for the Library backup")
                     .accessibilityIdentifier("storage.library-export.retry")
                 Button("Dismiss") { model.dismissLibraryExportStatus() }
-                    .buttonStyle(.link)
+                    .buttonStyle(.borderless)
+                    .tint(.primary)
                     .accessibilityIdentifier("storage.library-export.dismiss")
             }
         }
@@ -69,12 +73,13 @@ struct LibraryRestoreStatusView: View {
             )
         case .completed:
             StorageResultStatus(
-                message: "Library restored and verified.",
+                message: "Screenlogger restored and verified your Library.",
                 systemImage: "checkmark.circle.fill",
                 identifier: "storage.library-restore.completed"
             ) {
                 Button("Done") { model.dismissLibraryRestoreResult() }
-                    .buttonStyle(.link)
+                    .buttonStyle(.borderless)
+                    .tint(.primary)
                     .accessibilityIdentifier("storage.library-restore.done")
             }
         case .failed(let error):
@@ -85,11 +90,13 @@ struct LibraryRestoreStatusView: View {
                 identifier: "storage.library-restore.failed"
             ) {
                 Button("Choose Another Backup...") { model.chooseLibraryRestoreSource() }
-                    .buttonStyle(.link)
-                    .accessibilityHint("Choose and verify another Screenlogger Library backup")
+                    .buttonStyle(.borderless)
+                    .tint(.primary)
+                    .accessibilityHint("Choose another Screenlogger Library backup for verification")
                     .accessibilityIdentifier("storage.library-restore.choose-another")
                 Button("Dismiss") { model.dismissLibraryRestoreResult() }
-                    .buttonStyle(.link)
+                    .buttonStyle(.borderless)
+                    .tint(.primary)
                     .accessibilityIdentifier("storage.library-restore.dismiss")
             }
         }
@@ -117,7 +124,8 @@ struct StorageMaintenanceStatusView: View {
                 identifier: "settings.storage.maintenance.status"
             ) {
                 Button("Done") { model.dismissStorageMaintenanceStatus() }
-                    .buttonStyle(.link)
+                    .buttonStyle(.borderless)
+                    .tint(.primary)
                     .accessibilityIdentifier("settings.storage.maintenance.done")
             }
         case .failure(let failure):
@@ -129,11 +137,13 @@ struct StorageMaintenanceStatusView: View {
             ) {
                 if failure.retryOperation != nil {
                     Button("Retry") { model.retryStorageMaintenance() }
-                        .buttonStyle(.link)
+                        .buttonStyle(.borderless)
+                        .tint(.primary)
                         .accessibilityIdentifier("settings.storage.maintenance.retry")
                 }
                 Button("Dismiss") { model.dismissStorageMaintenanceStatus() }
-                    .buttonStyle(.link)
+                    .buttonStyle(.borderless)
+                    .tint(.primary)
                     .accessibilityIdentifier("settings.storage.maintenance.dismiss")
             }
         }
@@ -179,11 +189,13 @@ struct StorageDeletionStatusView: View {
                     Button("Retry") {
                         Task { await model.retryLibraryDeletionIssue() }
                     }
-                    .buttonStyle(.link)
+                    .buttonStyle(.borderless)
+                    .tint(.primary)
                     .accessibilityIdentifier("library.deletion.issue.storage.retry")
                 }
                 Button("Dismiss") { model.dismissLibraryDeletionIssue() }
-                    .buttonStyle(.link)
+                    .buttonStyle(.borderless)
+                    .tint(.primary)
                     .accessibilityIdentifier("library.deletion.issue.storage.dismiss")
             }
         } else if model.libraryDeletionInProgress, model.libraryDeletionReview == nil {
@@ -198,7 +210,8 @@ struct StorageDeletionStatusView: View {
                 identifier: "settings.storage.deletion.success"
             ) {
                 Button("Done") { model.dismissLibraryDeletionSuccess() }
-                    .buttonStyle(.link)
+                    .buttonStyle(.borderless)
+                    .tint(.primary)
                     .accessibilityIdentifier("settings.storage.deletion.done")
             }
         }

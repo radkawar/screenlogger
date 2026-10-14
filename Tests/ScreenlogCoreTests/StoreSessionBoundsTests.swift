@@ -1,6 +1,5 @@
-import XCTest
-
 @testable import ScreenlogCore
+import XCTest
 
 /// `sessions(limit:)` bounds the window-function block scan to the newest N
 /// sessions. Every case here pins the bounded result to the unbounded one so a

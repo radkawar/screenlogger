@@ -336,15 +336,17 @@ struct LibrarySearchSortPicker: View {
                 Text(Self.label(for: sort)).tag(sort)
             }
         }
-        .pickerStyle(.segmented)
+        .pickerStyle(.menu)
         .labelsHidden()
+        .disabled(model.librarySearchEngine == .related)
+        .help(model.librarySearchEngine == .related ? "Meaning results are ordered by similarity." : "Choose the result order.")
         .accessibilityIdentifier("library.search.sort")
         .accessibilityLabel("Sort results")
     }
 
     private var sortBinding: Binding<LibrarySearchSort> {
         Binding(
-            get: { model.searchSort },
+            get: { model.librarySearchEngine == .related ? .relevance : model.searchSort },
             set: { model.setSearchSort($0) }
         )
     }

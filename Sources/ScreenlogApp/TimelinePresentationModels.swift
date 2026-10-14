@@ -22,36 +22,36 @@ enum TimelineIssue: Equatable, Sendable {
     case refreshSessions
     case refreshTimeline
     case showRecentActivity
-    case reloadSession(startMs: Int64)
+    case reloadSession(startMs: Int64, day: Date? = nil, preferLatestMoment: Bool = true)
     case reopenMoment(frameID: Int64, timestampMs: Int64?)
 
     var title: String {
         switch self {
         case .refreshSessions:
-            return "Recorded days couldn't refresh"
+            return "Could not refresh recorded days"
         case .refreshTimeline:
-            return "Timeline couldn't refresh"
+            return "Could not refresh Timeline"
         case .showRecentActivity:
-            return "Recent activity couldn't open"
+            return "Could not open recent activity"
         case .reloadSession:
-            return "Session couldn't open"
+            return "Could not open session"
         case .reopenMoment:
-            return "Moment couldn't open"
+            return "Could not open moment"
         }
     }
 
     var message: String {
         switch self {
         case .refreshSessions:
-            return "Screenlogger couldn't load your recorded days. Try again."
+            return "Screenlogger could not load your recorded days. Try again."
         case .refreshTimeline:
-            return "Screenlogger couldn't load your recent moments. Try again."
+            return "Screenlogger could not load your recent moments. Try again."
         case .showRecentActivity:
             return "Your current session is still open. Try showing recent activity again."
         case .reloadSession:
-            return "Screenlogger couldn't load this session. Try opening it again."
+            return "Screenlogger could not load this session. Try to open it again."
         case .reopenMoment:
-            return "Screenlogger couldn't open this moment. Try opening it again."
+            return "Screenlogger could not open this moment. Try to open it again."
         }
     }
 }
@@ -74,9 +74,9 @@ enum TimelinePreviewIssue: Equatable, Sendable {
 
     var title: String {
         switch self {
-        case .momentMissing: "Moment Couldn't Be Found"
+        case .momentMissing: "Moment Not Found"
         case .mediaUnavailable: "Preview No Longer Stored"
-        case .mediaUnreadable: "Couldn't Load Preview"
+        case .mediaUnreadable: "Could Not Load Preview"
         }
     }
 
@@ -85,7 +85,7 @@ enum TimelinePreviewIssue: Equatable, Sendable {
         case .momentMissing:
             "The Timeline may have changed. Refresh it to find the nearest available moment."
         case .mediaUnavailable:
-            "The saved text, app, and time are still available, but this captured image was removed by your storage limits."
+            "The saved text, app, and time are still available. Screenlogger removed this captured image because of your storage limits."
         case .mediaUnreadable:
             "The saved text, app, and time are still available. Try loading the image again."
         }

@@ -102,6 +102,7 @@ STANDALONE_SKILL="$CLI_DIRECTORY/skill/screenlog-cli-skill/SKILL.md"
 APP_INFO="$APP_PATH/Contents/Info.plist"
 APP_EXECUTABLE="$APP_PATH/Contents/MacOS/Screenlogger"
 BUNDLED_CLI="$APP_PATH/Contents/MacOS/screenlog"
+SEMANTIC_WORKER="$APP_PATH/Contents/MacOS/screenlog-semantic-worker"
 APP_FRAMEWORK="$APP_PATH/Contents/Frameworks/ScreenlogCore.framework"
 SPARKLE_FRAMEWORK="$APP_PATH/Contents/Frameworks/Sparkle.framework"
 SPARKLE_VERSION="$SPARKLE_FRAMEWORK/Versions/Current"
@@ -270,6 +271,14 @@ validate_structure_nodes() {
 
   require_executable "$APP_EXECUTABLE" "app executable" || true
   require_executable "$BUNDLED_CLI" "bundled CLI" || true
+  require_executable "$SEMANTIC_WORKER" "semantic worker" || true
+  local metal="$APP_PATH/Contents/Resources/mlx-swift_Cmlx.bundle"
+  require_directory "$metal" "MLX Metal resource bundle" || true
+  if [[ ! -f "$metal/default.metallib" && ! -f "$metal/Contents/Resources/default.metallib" ]]; then
+    fail "the semantic runtime has no compiled Metal library"
+  fi
+  require_directory "$APP_PATH/Contents/Resources/SemanticLicenses" "semantic runtime licenses" || true
+  require_regular_file "$APP_PATH/Contents/Resources/SemanticLicenses/Screenlogger-Encoder-NOTICE.txt" "native encoder notice" || true
   require_executable "$APP_FRAMEWORK_EXECUTABLE" "embedded framework executable" || true
   require_executable "$CLI_PATH" "standalone CLI" || true
   require_executable "$CLI_FRAMEWORK_EXECUTABLE" "standalone framework executable" || true
@@ -360,9 +369,20 @@ check_universal_binary "$BUNDLED_CLI" "bundled CLI"
 check_universal_binary "$APP_FRAMEWORK_EXECUTABLE" "embedded framework executable"
 check_universal_binary "$CLI_PATH" "standalone CLI"
 check_universal_binary "$CLI_FRAMEWORK_EXECUTABLE" "standalone framework executable"
+if [[ "$(lipo -archs "$SEMANTIC_WORKER")" == "arm64" ]]; then
+  pass "the semantic worker has its supported arm64 slice"
+else
+  fail "the semantic worker must contain only the supported arm64 slice"
+fi
+for thin_binary in "$CLI_PATH" "$BUNDLED_CLI" "$APP_FRAMEWORK_EXECUTABLE"; do
+  if otool -L "$thin_binary" | grep -Eiq '(mlx|EmbeddingGemma|llama|xet)'; then
+    fail "Core and the CLI must not link the native semantic runtime: $thin_binary"
+  fi
+done
 
 check_relocatable_link "$APP_EXECUTABLE" "app executable"
 check_relocatable_link "$BUNDLED_CLI" "bundled CLI"
+check_relocatable_link "$SEMANTIC_WORKER" "semantic worker"
 check_relocatable_link "$CLI_PATH" "standalone CLI"
 
 BUNDLED_CLI_VERSION="$(run_cli_version "$BUNDLED_CLI" || true)"
@@ -462,6 +482,7 @@ if [[ "$MODE" == "ad-hoc" ]]; then
     local deep="$5"
     local architecture
     local details
+    local architectures="${6:-arm64 x86_64}"
     local verify_arguments=(--verify --strict)
 
     if [[ "$deep" == "1" ]]; then
@@ -473,7 +494,7 @@ if [[ "$MODE" == "ad-hoc" ]]; then
       return
     fi
 
-    for architecture in arm64 x86_64; do
+    for architecture in $architectures; do
       if ! /usr/bin/codesign "${verify_arguments[@]}" \
         --arch "$architecture" \
         "$artifact" >/dev/null 2>&1; then
@@ -501,13 +522,15 @@ if [[ "$MODE" == "ad-hoc" ]]; then
       fi
     done
 
-    pass "$label has complete ad-hoc signatures for arm64 and x86_64"
+    pass "$label has complete ad-hoc signatures for $architectures"
   }
 
   check_ad_hoc_signature "$APP_FRAMEWORK" "embedded framework" \
     "dev.screenlog.core" 1 0
   check_ad_hoc_signature "$BUNDLED_CLI" "bundled CLI" \
     "dev.screenlog.cli" 0 0
+  check_ad_hoc_signature "$SEMANTIC_WORKER" "semantic worker" \
+    "dev.screenlog.semantic-worker" 0 0 arm64
   check_ad_hoc_signature "$APP_PATH" "app" \
     "dev.screenlog.app" 1 1
   check_ad_hoc_signature "$CLI_FRAMEWORK" "standalone CLI framework" \
@@ -592,6 +615,7 @@ check_signature() {
   local expected_identifier="$3"
   local deep="$4"
   local architecture
+  local architectures="${5:-arm64 x86_64}"
   local details
   local verify_arguments=(--verify --strict)
 
@@ -603,7 +627,7 @@ check_signature() {
     return
   fi
 
-  for architecture in arm64 x86_64; do
+  for architecture in $architectures; do
     if ! codesign "${verify_arguments[@]}" --arch "$architecture" "$artifact" \
       >/dev/null 2>&1; then
       fail "$label $architecture slice has an invalid code signature"
@@ -642,6 +666,7 @@ check_signature "$SPARKLE_VERSION" "Sparkle framework" \
   "org.sparkle-project.Sparkle" 1
 check_signature "$APP_FRAMEWORK" "embedded framework" "dev.screenlog.core" 0
 check_signature "$BUNDLED_CLI" "bundled CLI" "dev.screenlog.cli" 0
+check_signature "$SEMANTIC_WORKER" "semantic worker" "dev.screenlog.semantic-worker" 0 arm64
 check_signature "$APP_PATH" "app" "dev.screenlog.app" 1
 check_signature "$CLI_FRAMEWORK" "standalone CLI framework" "dev.screenlog.core" 0
 check_signature "$CLI_PATH" "standalone CLI" "dev.screenlog.cli" 0

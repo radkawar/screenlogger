@@ -66,6 +66,8 @@ let package = Package(
                 "CLIEntry.swift",
                 "CLIMonitoringCommands.swift",
                 "CLIQueryCommands.swift",
+                "CLISemanticCommands.swift",
+                "CLISemanticDocuments.swift",
                 "CLIStatusDocuments.swift",
                 "SkillInstaller.swift",
             ],

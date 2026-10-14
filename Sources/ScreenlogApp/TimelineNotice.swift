@@ -158,20 +158,20 @@ struct TimelineNotice: Identifiable, Equatable, Sendable {
         case .imageUnavailable:
             return "This moment no longer has an image to copy"
         case .imageCopyFailed:
-            return "Image couldn't be copied"
+            return "Could not copy image"
         case .textCopied:
             return "Text copied"
         case .textUnavailable:
             return "This moment has no text to copy"
         case .textCopyFailed:
-            return "Text couldn't be copied"
+            return "Could not copy text"
         case .sourceOpened(let label):
             return "Opened \(label)"
         case .sourceOpenFailed(let label):
-            if let label, !label.isEmpty { return "Couldn't open \(label)" }
-            return "The source couldn't be opened"
+            if let label, !label.isEmpty { return "Could not open \(label)" }
+            return "Could not open the source"
         case .sourceUnavailable:
-            return "This moment doesn't include a source to open"
+            return "This moment does not include a source to open"
         case .noMomentSelected:
             return "Select a moment first"
         case .momentsDeleted(let count, let cleanupPending):

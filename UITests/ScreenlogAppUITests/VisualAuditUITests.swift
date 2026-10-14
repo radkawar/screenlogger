@@ -105,6 +105,7 @@ final class VisualAuditUITests: XCTestCase {
             return app.descendants(matching: .any)["library.result.6"]
         }
         XCTAssertTrue(result.exists)
+        result.click()
         assertElement("library.filters.pane", in: app)
         assertElement("library.inspector.pane", in: app)
         assertElement("library.result.inspector.selection.6", in: app)

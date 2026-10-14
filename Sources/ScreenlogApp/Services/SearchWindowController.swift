@@ -174,11 +174,20 @@ final class SearchWindowController: NSObject, NSWindowDelegate, NSToolbarDelegat
         _ model: AppModel,
         selectingExistingQuery: Bool = false
     ) {
+        // Presenting Sessions must not enqueue a focus request that switches
+        // the retained workspace back to Search. Find remains explicit.
+        guard model.libraryWorkspaceNavigation.prepareSearchFocus(selectingExistingQuery: selectingExistingQuery) else {
+            model.shellFocusSearch = false
+            return
+        }
         // Re-arm the observable request so a reused window always focuses the
         // field, even when the previous presentation also left it true.
         model.shellFocusSearch = false
         DispatchQueue.main.async { [weak self, weak model] in
             guard let self, let model, self.window?.isVisible == true else { return }
+            guard model.libraryWorkspaceNavigation.acceptsSearchFocus else {
+                return
+            }
             model.shellFocusSearch = true
             guard selectingExistingQuery, !model.searchQuery.isEmpty else { return }
             // SwiftUI applies FocusState on this run-loop turn. Select through

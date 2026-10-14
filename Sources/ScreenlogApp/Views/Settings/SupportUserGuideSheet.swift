@@ -10,10 +10,15 @@ struct SupportUserGuideSheet: View {
     var body: some View {
         NavigationSplitView {
             List(SupportGuideTopic.allCases, selection: $selection) { topic in
-                Label(topic.title, systemImage: topic.systemImage)
-                    .tag(topic)
-                    .accessibilityHint(topic.summary)
-                    .accessibilityIdentifier("settings.guide.topic.\(topic.rawValue)")
+                Label {
+                    Text(topic.title)
+                } icon: {
+                    Image(systemName: topic.systemImage)
+                        .foregroundStyle(.secondary)
+                }
+                .tag(topic)
+                .accessibilityHint(topic.summary)
+                .accessibilityIdentifier("settings.guide.topic.\(topic.rawValue)")
             }
             .listStyle(.sidebar)
             .navigationTitle("Screenlogger Guide")
@@ -25,8 +30,7 @@ struct SupportUserGuideSheet: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
+                    .padding(SLDesign.space16)
                     .background(.bar)
                     .accessibilityIdentifier("settings.guide.offline")
             }
@@ -36,6 +40,7 @@ struct SupportUserGuideSheet: View {
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 700, idealWidth: 780, minHeight: 470, idealHeight: 540)
         .tint(model.accentSwiftUIColor)
+        .accentColor(model.accentSwiftUIColor)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done", action: onDismiss)
@@ -52,14 +57,14 @@ struct SupportUserGuideSheet: View {
     private var guideDetail: some View {
         if let topic = selection {
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: SLDesign.space24) {
                     guideHeader(topic)
                     topicActions(topic)
                     ForEach(topic.sections) { section in
                         guideSection(section)
                     }
                 }
-                .padding(28)
+                .padding(SLDesign.space24)
                 .frame(maxWidth: 600, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
@@ -75,30 +80,25 @@ struct SupportUserGuideSheet: View {
     }
 
     private func guideHeader(_ topic: SupportGuideTopic) -> some View {
-        HStack(alignment: .top, spacing: 14) {
-            Image(systemName: topic.systemImage)
-                .font(.system(size: 24, weight: .medium))
-                .foregroundStyle(model.accentSwiftUIColor)
-                .frame(width: 34, height: 34)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(topic.title)
-                    .font(.title2.weight(.semibold))
-                    .accessibilityAddTraits(.isHeader)
-                Text(topic.summary)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        VStack(alignment: .leading, spacing: SLDesign.space8) {
+            Text(topic.title)
+                .font(SLDesign.titleFont)
+                .accessibilityAddTraits(.isHeader)
+            Text(topic.summary)
+                .font(SLDesign.bodyFont)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private func guideSection(_ section: SupportGuideSection) -> some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: SLDesign.space8) {
+            Text(section.title)
+                .font(SLDesign.sectionFont)
+                .accessibilityAddTraits(.isHeader)
+            VStack(alignment: .leading, spacing: SLDesign.space8) {
                 ForEach(Array(section.points.enumerated()), id: \.offset) { index, point in
-                    HStack(alignment: .firstTextBaseline, spacing: 9) {
+                    HStack(alignment: .firstTextBaseline, spacing: SLDesign.space8) {
                         Text("\(index + 1)")
                             .font(.caption.monospacedDigit().weight(.medium))
                             .foregroundStyle(.secondary)
@@ -111,11 +111,7 @@ struct SupportUserGuideSheet: View {
                     .accessibilityElement(children: .combine)
                 }
             }
-            .padding(.vertical, 4)
-        } label: {
-            Text(section.title)
-                .font(.headline)
-                .accessibilityAddTraits(.isHeader)
+            .padding(.vertical, SLDesign.space4)
         }
     }
 
@@ -240,9 +236,9 @@ private enum SupportGuideTopic: String, CaseIterable, Identifiable {
     var summary: String {
         switch self {
         case .gettingStarted:
-            return "Set up capture and learn where Screenlogger lives on your Mac."
+            return "Set up capture. Find Screenlogger on your Mac."
         case .librarySearch:
-            return "Find saved moments with plain-language search and focused filters."
+            return "Find saved moments with search words and filters."
         case .timeline:
             return "Review activity in time order and move through moments efficiently."
         case .privacyExclusions:
@@ -260,8 +256,8 @@ private enum SupportGuideTopic: String, CaseIterable, Identifiable {
                     title: "Set up capture",
                     points: [
                         "Allow Screen Recording so Screenlogger can save visual moments.",
-                        "Allow Accessibility so exclusions and window, control, browser, and private-window context are applied completely.",
-                        "Choose Start Capture when setup is ready; you can pause or stop at any time.",
+                        "Allow Accessibility so Screenlogger can apply exclusions and capture window, control, browser, and private-window context.",
+                        "Choose Start Capture when setup is ready. You can pause or stop at any time.",
                     ]
                 ),
                 SupportGuideSection(
@@ -278,15 +274,16 @@ private enum SupportGuideTopic: String, CaseIterable, Identifiable {
                 SupportGuideSection(
                     title: "Find a moment",
                     points: [
-                        "Open Library and describe what you remember in the search field.",
+                        "Open Library. Enter search words in the search field.",
                         "Use time, app, site, or session filters when the first results are too broad.",
-                        "Select a result to preview it, then open it in Timeline for surrounding context.",
+                        "Select a result to preview it. Open it in Timeline to see the adjacent moments.",
+                        "Select Sessions. Select a session to show its details and latest moment. Select Open in Timeline to show the session in Timeline.",
                     ]
                 ),
                 SupportGuideSection(
                     title: "Useful shortcuts",
                     points: [
-                        "Press Command-1 for Library or Command-K to open search.",
+                        "Press Command-1 for Search, Command-2 for Sessions, or Command-3 for Timeline. Customize these in Keyboard Shortcuts settings.",
                         "Clear filters to return to results across your full Library.",
                     ]
                 ),
@@ -296,8 +293,8 @@ private enum SupportGuideTopic: String, CaseIterable, Identifiable {
                 SupportGuideSection(
                     title: "Review activity",
                     points: [
-                        "Choose a day and session, then move backward or forward through saved moments.",
-                        "Use Space to play or pause and the arrow keys to step one moment at a time.",
+                        "Choose a day and session. Move backward or forward through saved moments.",
+                        "Use Space to play or pause. Use the arrow keys to move one moment at a time.",
                         "Use Option-Left or Option-Right to move between activity groups.",
                     ]
                 ),
@@ -305,7 +302,7 @@ private enum SupportGuideTopic: String, CaseIterable, Identifiable {
                     title: "Inspect details",
                     points: [
                         "Zoom with Command-Plus, Command-Minus, or Command-0.",
-                        "Detected text can be selected when its overlay is enabled in Appearance settings.",
+                        "You can select recognized text when its overlay is on in Appearance settings.",
                     ]
                 ),
             ]
@@ -314,7 +311,7 @@ private enum SupportGuideTopic: String, CaseIterable, Identifiable {
                 SupportGuideSection(
                     title: "Private by default",
                     points: [
-                        "Screenshots, recognized text, and search data stay on this Mac.",
+                        "Screenlogger stores screenshots, recognized text, and search data on this Mac. Connected assistants can send retrieved content to their AI providers.",
                         "Diagnostics never include screenshots, recognized text, searches, or Library paths.",
                     ]
                 ),
@@ -322,7 +319,7 @@ private enum SupportGuideTopic: String, CaseIterable, Identifiable {
                     title: "Choose what is skipped",
                     points: [
                         "Add apps or detectable websites in Exclusions settings.",
-                        "Private browsing and protected fields are skipped when Screenlogger can detect them.",
+                        "Screenlogger skips private browsing and protected fields when it can detect them.",
                         "If website detection is unavailable, review the visible capture status before continuing.",
                     ]
                 ),
@@ -332,17 +329,17 @@ private enum SupportGuideTopic: String, CaseIterable, Identifiable {
                 SupportGuideSection(
                     title: "Capture is not running",
                     points: [
-                        "Open Capture settings and follow the current status action.",
-                        "After changing either macOS permission, quit and reopen Screenlogger if prompted.",
+                        "Open Capture settings. Follow the current status action.",
+                        "After a macOS permission change, quit Screenlogger if prompted. Then open Screenlogger again.",
                         "If storage is low, free space or adjust retention in Storage settings.",
                     ]
                 ),
                 SupportGuideSection(
                     title: "Library or search is unavailable",
                     points: [
-                        "Use Try Again first; your existing Library is not deleted.",
-                        "Reveal the Library or its diagnostics when a recovery screen offers those actions.",
-                        "Export privacy-safe diagnostics from Support if you need to share app health details.",
+                        "Use Try Again first. Screenlogger does not delete your existing Library.",
+                        "Show the Library or its diagnostics when a recovery screen offers those actions.",
+                        "Export diagnostics from Support if you need to share app status details. Diagnostics do not contain captured content.",
                     ]
                 ),
             ]

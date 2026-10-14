@@ -5,10 +5,10 @@ struct ExclusionsSectionHeader: View {
     var detail: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: SLDesign.space4) {
             Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .font(SLDesign.sectionFont)
+                .foregroundStyle(.primary)
             if let detail {
                 Text(detail)
                     .font(.caption)
@@ -22,7 +22,6 @@ struct ExclusionsSectionHeader: View {
 }
 
 struct ExclusionToggleRow: View {
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let icon: String
@@ -60,28 +59,24 @@ struct ExclusionToggleRow: View {
                 }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(.horizontal, SLDesign.space16)
+        .padding(.vertical, SLDesign.space8)
     }
 
     private var identity: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: SLDesign.space16) {
             Image(systemName: icon)
-                .font(.body)
+                .font(SLDesign.bodyFont)
                 .foregroundStyle(.secondary)
-                .frame(width: 28, height: 28)
-                .background(
-                    SettingsChrome.iconFill(colorScheme),
-                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-                )
+                .frame(width: SettingsChrome.iconSize, height: SettingsChrome.iconSize)
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: SLDesign.space4) {
                 Text(title)
-                    .font(.body.weight(.medium))
+                    .font(SLDesign.bodyFont.weight(.medium))
                     .fixedSize(horizontal: false, vertical: true)
                 Text(detail)
-                    .font(.caption)
+                    .font(SLDesign.metadataFont)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let policy {

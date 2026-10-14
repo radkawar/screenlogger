@@ -77,7 +77,7 @@ enum ExclusionPolicyProvenance: Equatable, Sendable {
 /// users. It intentionally never claims that changing a rule deletes history.
 struct ExclusionPolicyPresentation: Equatable, Sendable {
     static let futureMomentsNotice =
-        "Changes apply to future moments only. Existing Library moments are not deleted."
+        "Changes apply to future moments only. Screenlogger does not delete existing Library moments."
 
     static let scopeSummary =
         "Exclusions decide what Screenlogger may save in future moments. Existing Library moments are unchanged."
@@ -131,14 +131,14 @@ struct ExclusionPolicyPresentation: Equatable, Sendable {
         let detail: String
         if explicitlyExcluded, isBrowser {
             detail =
-                "\(displayName) is explicitly excluded as an entire browser, so every one of its windows is skipped."
+                "Screenlogger excludes the entire \(displayName) browser. Screenlogger skips every window from this browser."
         } else if !categoryNames.isEmpty, explicitlyExcluded {
             detail =
-                "\(displayName) is explicitly excluded and is also covered by \(categoryDescription(categoryNames))."
+                "An application exclusion and \(categoryDescription(categoryNames)) exclude \(displayName)."
         } else if !categoryNames.isEmpty {
-            detail = "\(displayName) is covered by \(categoryDescription(categoryNames))."
+            detail = "Screenlogger excludes \(displayName) under \(categoryDescription(categoryNames))."
         } else {
-            detail = "\(displayName) is explicitly excluded under Applications."
+            detail = "An exclusion under Applications excludes \(displayName)."
         }
         return Self(outcome: .neverCapture, provenance: provenance, detail: detail)
     }
@@ -165,13 +165,13 @@ struct ExclusionPolicyPresentation: Equatable, Sendable {
         let detail: String
         if explicitlyExcluded, !categories.isEmpty {
             detail =
-                "\(domain) is explicitly excluded and is also covered by \(categoryDescription(categories)) when its browser address is available."
+                "A website exclusion and \(categoryDescription(categories)) exclude \(domain) when its browser address is available."
         } else if explicitlyExcluded {
             detail =
-                "\(domain) is explicitly excluded when its browser address is available."
+                "A website exclusion excludes \(domain) when its browser address is available."
         } else {
             detail =
-                "\(domain) is covered by \(categoryDescription(categories)) when its browser address is available."
+                "Screenlogger excludes \(domain) under \(categoryDescription(categories)) when its browser address is available."
         }
         return Self(outcome: .neverCapture, provenance: provenance, detail: detail)
     }
@@ -202,14 +202,14 @@ struct ExclusionPolicyPresentation: Equatable, Sendable {
                 outcome: .neverCapture,
                 provenance: [.unknownAddressStrictProtection],
                 detail:
-                    "Supported browsers are skipped whenever Screenlogger cannot identify their active website."
+                    "Screenlogger skips supported browsers whenever it cannot identify their active website."
             )
         }
         return Self(
             outcome: .canCapture,
             provenance: [],
             detail:
-                "A supported browser can be captured when its active website is unknown. Exclude the entire browser for a guaranteed block."
+                "Screenlogger can capture a supported browser when its active website is unknown. Exclude the entire browser to prevent capture."
         )
     }
 

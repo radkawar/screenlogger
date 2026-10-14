@@ -48,6 +48,105 @@ final class CrossWindowNavigationUITests: XCTestCase {
         dataDirectory = nil
     }
 
+    func testConflictingDatesBlockSearchUntilFiltersAreCleared() throws {
+        let app = try launch(route: "--open-library")
+        let search = assertElement("library.search.field", in: app)
+        search.click()
+        pasteText("quarterly since:2030-01-01 before:2020-01-01", into: search)
+        assertElement("library.state.invalid-filters", in: app)
+        XCTAssertFalse(app.descendants(matching: .any)["library.result.8"].exists)
+        assertElement("library.filters.clear", in: app).click()
+        assertElement("library.result.8", in: app)
+        XCTAssertFalse(app.descendants(matching: .any)["library.state.invalid-filters"].exists)
+    }
+
+    func testRelatedWithoutModelsPreservesExactSearchAndSessions() throws {
+        let app = try launch(route: "--open-library", seedSessionDetails: true)
+        let search = assertElement("library.search.field", in: app)
+        search.click()
+        pasteText("quarterly planning", into: search)
+        let result = assertElement("library.result.8", in: app)
+        result.click()
+        let engine = assertElement("library.search.engine", in: app)
+        engine.click()
+        let related = app.menuItems.matching(identifier: "library.search.related").firstMatch
+        XCTAssertTrue(related.waitForExistence(timeout: Self.timeout))
+        XCTAssertFalse(related.isEnabled)
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertEqual(search.value as? String, "quarterly planning")
+        XCTAssertTrue(result.exists)
+        attachSessionScreenshot(app.windows["Library"], name: "Exact search with Related unavailable")
+        result.rightClick()
+        let showInSessions = app.menuItems.matching(identifier: "library.result.context.show-in-sessions").firstMatch
+        XCTAssertTrue(showInSessions.waitForExistence(timeout: Self.timeout))
+        showInSessions.click()
+        assertElement("library.preview.image.8", in: app)
+        XCTAssertFalse(app.descendants(matching: .any)["library.search.field"].exists)
+        let contentMode = assertElement("library.content-mode", in: app)
+        contentMode.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Search")).firstMatch.click()
+        XCTAssertEqual(assertElement("library.search.field", in: app).value as? String, "quarterly planning")
+        assertElement("library.result.8", in: app).doubleClick()
+        assertWindow("Timeline", in: app)
+        assertElement("navigation.timeline.back-to-search", in: app).click()
+        showSessions(in: app)
+        assertElement("library.sessions.detail.open", in: app)
+        let directory = try XCTUnwrap(dataDirectory)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent("semantic-models/text-q8/model.safetensors").path
+            ))
+    }
+
+    func testSearchResultSessionMomentReturnsToSessionsWithSearchContextRetained() throws {
+        let app = try launch(route: "--open-library", seedSessionDetails: true)
+        let search = assertElement("library.search.field", in: app)
+        search.click()
+        pasteText("quarterly planning", into: search)
+        let screens = assertElement("library.filter.content.screen", in: app)
+        screens.click()
+        let result = assertElement("library.result.8", in: app)
+        result.click()
+        result.rightClick()
+        let showInSessions = app.menuItems.matching(identifier: "library.result.context.show-in-sessions").firstMatch
+        XCTAssertTrue(showInSessions.waitForExistence(timeout: Self.timeout))
+        showInSessions.click()
+        assertElement("library.sessions.detail.moment.8", in: app).click()
+        assertWindow("Timeline", in: app)
+        assertElement("navigation.timeline.back-to-search", in: app).click()
+        assertWindow("Library", in: app)
+        assertElement("library.sessions.detail.moment.8", in: app)
+        XCTAssertFalse(app.descendants(matching: .any)["library.search.field"].exists)
+
+        let contentMode = assertElement("library.content-mode", in: app)
+        contentMode.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Search")).firstMatch.click()
+        XCTAssertEqual(assertElement("library.search.field", in: app).value as? String, "quarterly planning")
+        XCTAssertEqual(assertElement("library.filter.content.screen", in: app).value as? String, "Selected")
+        assertElement("library.result.8", in: app)
+    }
+
+    func testSemanticSetupShowsDisabledSwitchWithoutModelsAndPreservesExactResults() throws {
+        let app = try launch(route: "--open-library")
+        assertElement("library.search.engine", in: app).click()
+        assertElement("library.search.semantic-settings", in: app).click()
+        assertWindow("Settings", in: app)
+        assertElement("settings.destination.search-semantic-search", in: app)
+        assertElement("settings.semantic.card", in: app)
+        assertElement("settings.semantic.model-missing", in: app)
+        XCTAssertFalse(assertElement("settings.semantic.enabled", in: app).isEnabled)
+        XCTAssertFalse(app.descendants(matching: .any)["settings.semantic.index-now"].exists)
+        assertElement("settings.semantic.download-enable", in: app)
+        XCTAssertFalse(app.descendants(matching: .any)["settings.semantic.download-progress"].exists)
+        attachSessionScreenshot(app.windows["Settings"], name: "Meaning Search setup")
+        app.typeKey("w", modifierFlags: .command)
+        waitForDisappearance(app.windows["Settings"], description: "Semantic Search Settings")
+        let library = assertWindow("Library", in: app)
+        library.click()
+        let search = assertElement("library.search.field", in: app)
+        search.click()
+        pasteText("quarterly planning", into: search)
+        assertElement("library.result.8", in: app)
+    }
+
     func testEscapeDismissesSearchSuggestionsBeforeLibrary() throws {
         let app = try launch(route: "--open-library")
         let library = assertWindow("Library", in: app)
@@ -87,32 +186,268 @@ final class CrossWindowNavigationUITests: XCTestCase {
     }
 
     func testLibrarySessionsBrowseAllMomentsAndOpenInTimeline() throws {
-        let app = try launch(route: "--open-library")
+        let app = try launch(route: "--open-library", seedSessionDetails: true)
+        showSessions(in: app)
+        let library = assertWindow("Library", in: app)
+        let rows = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "library.session.")
+        )
+        let firstSession = rows.element(boundBy: 0)
+        XCTAssertTrue(firstSession.waitForExistence(timeout: Self.timeout))
+        let firstID = firstSession.identifier
+        let secondSession = rows.element(boundBy: 1)
+        let secondID = secondSession.identifier
+
+        firstSession.click()
+        assertSessionDetail(firstID, in: app)
+        assertElement("library.preview.image.8", in: app)
+        assertElement("library.sessions.detail.coverage", in: app)
+        assertElement("library.sessions.detail.applications", in: app)
+        XCTAssertFalse(app.windows["Timeline"].exists)
+        attachSessionScreenshot(library, name: "Sessions single-click detail")
+
+        assertElement("library.sessions.detail.rename", in: app).click()
+        let nameField = assertElement("library.sessions.rename.field", in: app)
+        nameField.click()
+        nameField.typeKey("a", modifierFlags: .command)
+        nameField.typeText("Planning review")
+        assertElement("library.sessions.rename.save", in: app).click()
+        XCTAssertTrue(library.staticTexts["Planning review"].waitForExistence(timeout: Self.timeout))
+        waitForDisappearance(nameField, description: "saved session name editor")
+
+        // Rename an unselected row. Invoking Rename deliberately selects its
+        // target, but the sheet must not disappear when the detail changes ID.
+        assertSessionDetail(firstID, in: app)
+        assertElement(secondID, in: app).rightClick()
+        let renameMenu = app.menuItems.matching(identifier: "library.session.context.rename").firstMatch
+        XCTAssertTrue(renameMenu.waitForExistence(timeout: Self.timeout))
+        renameMenu.click()
+        let secondStart = String(secondID.dropFirst("library.session.".count))
+        assertElement("library.sessions.rename.target.\(secondStart)", in: app)
+        let cancelledName = assertElement("library.sessions.rename.field", in: app)
+        let originalSecondName = cancelledName.value as? String ?? ""
+        cancelledName.click()
+        cancelledName.typeKey("a", modifierFlags: .command)
+        cancelledName.typeText("Discard this change")
+        assertElement("library.sessions.rename.cancel", in: app).click()
+        waitForDisappearance(cancelledName, description: "cancelled session name editor")
+        assertSessionDetail(secondID, in: app)
+
+        // Make the same row unselected again before saving through its menu.
+        assertElement(firstID, in: app).click()
+        assertSessionDetail(firstID, in: app)
+        assertElement(secondID, in: app).rightClick()
+        XCTAssertTrue(renameMenu.waitForExistence(timeout: Self.timeout))
+        renameMenu.click()
+        assertElement("library.sessions.rename.target.\(secondStart)", in: app)
+        let secondName = assertElement("library.sessions.rename.field", in: app)
+        XCTAssertEqual(secondName.value as? String ?? "", originalSecondName)
+        secondName.click()
+        secondName.typeKey("a", modifierFlags: .command)
+        secondName.typeText("Earlier review")
+        assertElement("library.sessions.rename.save", in: app).click()
+        waitForDisappearance(secondName, description: "saved second session name editor")
+        assertSessionDetail(secondID, in: app)
+        XCTAssertTrue(assertElement(secondID, in: app).label.contains("Earlier review"))
+        XCTAssertTrue(assertElement(firstID, in: app).label.contains("Planning review"))
+        assertElement("library.preview.image.6", in: app)
+        XCTAssertFalse(app.descendants(matching: .any)["library.preview.image.8"].exists)
+        XCTAssertFalse(app.windows["Timeline"].exists)
+
+        // Both entry points use the same saved name and reset implementation.
+        assertElement("library.sessions.detail.rename", in: app).click()
+        let savedSecondName = assertElement("library.sessions.rename.field", in: app)
+        XCTAssertEqual(savedSecondName.value as? String, "Earlier review")
+        assertElement("library.sessions.rename.reset", in: app).click()
+        waitForDisappearance(savedSecondName, description: "reset second session name editor")
+        assertSessionDetail(secondID, in: app)
+        XCTAssertFalse(assertElement(secondID, in: app).label.contains("Earlier review"))
+        XCTAssertTrue(assertElement(firstID, in: app).label.contains("Planning review"))
+        assertElement("library.sessions.detail.open", in: app).click()
+        assertWindow("Timeline", in: app)
+        assertElement("navigation.timeline.back-to-search", in: app).click()
+        assertWindow("Library", in: app)
+        assertSessionDetail(secondID, in: app)
+        assertElement("library.preview.image.6", in: app)
+        assertElement(firstID, in: app).click()
+        XCTAssertTrue(library.staticTexts["Planning review"].waitForExistence(timeout: Self.timeout))
+    }
+
+    func testLibrarySessionsReturnOpensTimelineWithoutPinNavigation() throws {
+        let app = try launch(route: "--open-library", seedSessionDetails: true)
+        showSessions(in: app)
+        let row = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "library.session.")
+        ).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: Self.timeout))
+        let identifier = row.identifier
+        row.click()
+        assertSessionDetail(identifier, in: app)
+
+        row.rightClick()
+        let pin = app.menuItems["Pin Session"]
+        XCTAssertTrue(pin.waitForExistence(timeout: Self.timeout))
+        pin.click()
+        assertWindow("Library", in: app)
+        assertSessionDetail(identifier, in: app)
+        XCTAssertFalse(app.windows["Timeline"].exists)
+
+        let pinnedRow = assertElement(identifier, in: app)
+        pinnedRow.rightClick()
+        let unpin = app.menuItems["Unpin Session"]
+        XCTAssertTrue(unpin.waitForExistence(timeout: Self.timeout))
+        unpin.click()
+        assertSessionDetail(identifier, in: app)
+        XCTAssertFalse(app.windows["Timeline"].exists)
+
+        assertElement(identifier, in: app).click()
+        app.typeKey(.return, modifierFlags: [])
+        assertWindow("Timeline", in: app)
+        assertElement("navigation.timeline.back-to-search", in: app).click()
+        assertWindow("Library", in: app)
+        assertSessionDetail(identifier, in: app)
+    }
+
+    func testLibrarySessionsShowsListAndDetailAtMinimumWindowSize() throws {
+        let app = try launch(route: "--open-library", sessionsAtMinimumWindowSize: true)
+        let library = assertWindow("Library", in: app)
+        let list = assertElement("library.sessions.list", in: app)
+        let detail = assertElement("library.sessions.detail", in: app)
+        let preview = assertElement("library.preview.image.8", in: app)
+        let open = assertElement("library.sessions.detail.open", in: app)
+
+        XCTAssertLessThanOrEqual(list.frame.maxX, detail.frame.minX + 1)
+        XCTAssertGreaterThanOrEqual(list.frame.minX, library.frame.minX)
+        XCTAssertLessThanOrEqual(detail.frame.maxX, library.frame.maxX)
+        XCTAssertTrue(open.isHittable)
+        XCTAssertTrue(preview.isHittable, "The first screenshot must be visible without scrolling past a report.")
+        XCTAssertGreaterThan(preview.frame.width, 160)
+        XCTAssertGreaterThan(preview.frame.height, 100)
+        XCTAssertLessThan(preview.frame.minY, library.frame.maxY)
+        attachSessionScreenshot(library, name: "Sessions at 820 by 540")
+        let contentMode = assertElement("library.content-mode", in: app)
+        contentMode.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Search")).firstMatch.click()
+        XCTAssertTrue(assertElement("library.search.field", in: app).isHittable)
+        XCTAssertTrue(assertElement("library.search.engine", in: app).isHittable)
+        attachSessionScreenshot(library, name: "Search at 820 by 540")
+
+        showSessions(in: app)
+        let chrome = windowChromeSize(
+            for: library,
+            initialContentSize: CGSize(width: 820, height: 540)
+        )
+        resize(library, toContentSize: CGSize(width: 1_200, height: 720), chrome: chrome)
+        let moments = assertElement("library.sessions.detail.moments", in: app)
+        let activity = assertElement("library.sessions.detail.activity", in: app)
+        let sideBySide = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                activity.frame.minX >= moments.frame.maxX
+                    && abs(activity.frame.minY - moments.frame.minY) < 2
+            },
+            object: library
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [sideBySide], timeout: Self.timeout), .completed)
+        XCTAssertTrue(assertElement("library.preview.image.8", in: app).isHittable)
+        attachSessionScreenshot(library, name: "Sessions visual overview at 1200 by 720")
+    }
+
+    private func showSessions(in app: XCUIApplication) {
         let mode = assertElement("library.content-mode", in: app)
         let sessionsMode = mode.descendants(matching: .any).matching(
             NSPredicate(format: "label == %@", "Sessions")
         ).firstMatch
-        XCTAssertTrue(
-            sessionsMode.waitForExistence(timeout: Self.timeout),
-            "Library should expose Sessions as a first-class workspace."
-        )
-
+        XCTAssertTrue(sessionsMode.waitForExistence(timeout: Self.timeout))
         sessionsMode.click()
         assertElement("library.sessions", in: app)
-        let rows = app.descendants(matching: .any).matching(
-            NSPredicate(format: "identifier BEGINSWITH %@", "library.session.")
-        )
-        let firstSession = rows.firstMatch
-        XCTAssertTrue(
-            firstSession.waitForExistence(timeout: Self.timeout),
-            "The Sessions workspace should list seeded recording sessions."
-        )
+    }
 
-        firstSession.doubleClick()
+    private func assertSessionDetail(_ rowIdentifier: String, in app: XCUIApplication) {
+        let startMs = String(rowIdentifier.dropFirst("library.session.".count))
+        assertElement("library.sessions.detail.selection.\(startMs)", in: app)
+        assertElement("library.sessions.detail.range", in: app)
+        assertElement("library.sessions.detail.summary", in: app)
+    }
+
+    private func attachSessionScreenshot(_ window: XCUIElement, name: String) {
+        let attachment = XCTAttachment(screenshot: window.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    func testBackToLibraryCompletesSearchStartedBeforeOpeningRetainedResult() throws {
+        let app = try launch(
+            route: "--open-library",
+            librarySearchDelayMilliseconds: 3_000
+        )
+        let search = assertElement("library.search.field", in: app)
+        search.click()
+        search.typeText("navigation")
+        let retainedResult = assertElement("library.result.6", in: app)
+
+        search.click()
+        search.typeKey("a", modifierFlags: .command)
+        pasteText("quarterly", into: search)
+        search.typeKey(.return, modifierFlags: [])
+        assertElement("library.results.updating", in: app)
+        retainedResult.doubleClick()
         assertWindow("Timeline", in: app)
         assertElement("navigation.timeline.back-to-search", in: app).click()
+
         assertWindow("Library", in: app)
-        assertElement("library.sessions", in: app)
+        XCTAssertEqual(search.value as? String, "quarterly")
+        assertElement("library.result.8", in: app)
+        waitForDisappearance(retainedResult, description: "the superseded search result")
+        XCTAssertFalse(
+            app.descendants(matching: .any)["library.results.updating"].exists,
+            "A retained Library must finish its query even when a result was opened mid-search."
+        )
+    }
+
+    func testRecordedDayNavigationCrossesMidnightWithinOneSession() throws {
+        let app = try launch(route: "--open-library", seedOvernightSession: true)
+        let mode = assertElement("library.content-mode", in: app)
+        mode.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "Sessions"))
+            .firstMatch.click()
+        let overnight = app.descendants(matching: .any).matching(
+            NSPredicate(
+                format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
+                "library.session.",
+                "Overnight Fixture"
+            )
+        ).firstMatch
+        let sessions = assertElement("library.sessions", in: app)
+        for _ in 0..<5 where !overnight.isHittable {
+            sessions.swipeUp()
+        }
+        XCTAssertTrue(overnight.waitForExistence(timeout: Self.timeout))
+        overnight.click()
+        assertElement("library.sessions.detail.open", in: app).click()
+        assertWindow("Timeline", in: app)
+
+        let previousDay = assertElement("timeline.day.previous", in: app)
+        XCTAssertTrue(previousDay.isEnabled)
+        previousDay.click()
+        let reachedFirstRecordedDay = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "enabled == false"),
+            object: previousDay
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [reachedFirstRecordedDay], timeout: Self.timeout),
+            .completed,
+            "Previous day must select the pre-midnight moment, not the same session's final day."
+        )
+
+        assertElement("timeline.day.next", in: app).click()
+        let returnedToSecondDay = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "enabled == true"),
+            object: previousDay
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [returnedToSecondDay], timeout: Self.timeout),
+            .completed
+        )
     }
 
     func testLibraryResultDeletionOpensReviewOnTheLibraryWindow() throws {
@@ -175,6 +510,11 @@ final class CrossWindowNavigationUITests: XCTestCase {
         search.typeText(" ap")
         assertElement("library.search.suggestion.op-app", in: app).click()
         XCTAssertEqual(search.value as? String, "quarterly planning app:")
+        assertElement("library.state.invalid-filters", in: app)
+        waitForDisappearance(
+            app.descendants(matching: .any)["library.result.8"],
+            description: "stale results after inserting an incomplete operator"
+        )
         waitForDisappearance(
             appOperator,
             description: "the app chip while its replacement is being edited"
@@ -188,12 +528,17 @@ final class CrossWindowNavigationUITests: XCTestCase {
             "Remove Application filter: Safari"
         )
         XCTAssertEqual(search.value as? String, "quarterly planning")
+        waitForDisappearance(
+            app.descendants(matching: .any)["library.result.8"],
+            description: "TextEdit result excluded by the Safari filter"
+        )
 
         replacementOperator.click()
         waitForDisappearance(
             replacementOperator,
             description: "the removed app search operator"
         )
+        assertElement("library.result.8", in: app)
         app.typeText(" notes")
         XCTAssertEqual(
             search.value as? String,
@@ -1340,7 +1685,11 @@ final class CrossWindowNavigationUITests: XCTestCase {
         grantPermissionAfterOpeningSettings: Bool = false,
         grantPermissionsSequentially: Bool = false,
         fullKeyboardAccess: Bool = false,
-        firstRunFrameDelayMilliseconds: UInt64? = nil
+        firstRunFrameDelayMilliseconds: UInt64? = nil,
+        librarySearchDelayMilliseconds: UInt64? = nil,
+        seedOvernightSession: Bool = false,
+        sessionsAtMinimumWindowSize: Bool = false,
+        seedSessionDetails: Bool = false
     ) throws -> XCUIApplication {
         let directory = try XCTUnwrap(dataDirectory)
         let token = try XCTUnwrap(UUID(uuidString: directory.lastPathComponent)).uuidString
@@ -1356,6 +1705,8 @@ final class CrossWindowNavigationUITests: XCTestCase {
             application.launchArguments.append(contentsOf: ["-AppleKeyboardUIMode", "3"])
         }
         application.launchEnvironment["SCREENLOG_DATA_DIR"] = directory.path
+        application.launchEnvironment["SCREENLOG_SEMANTIC_MODELS_DIR"] =
+            directory.appendingPathComponent("semantic-models", isDirectory: true).path
         application.launchEnvironment["CFFIXED_USER_HOME"] =
             directory.appendingPathComponent("home", isDirectory: true).path
         application.launchEnvironment["LANGUAGE"] = "en"
@@ -1386,6 +1737,19 @@ final class CrossWindowNavigationUITests: XCTestCase {
         if let firstRunFrameDelayMilliseconds {
             application.launchEnvironment["SCREENLOG_UI_TEST_FIRST_RUN_FRAME_DELAY_MS"] =
                 String(firstRunFrameDelayMilliseconds)
+        }
+        if let librarySearchDelayMilliseconds {
+            application.launchEnvironment["SCREENLOG_UI_TEST_LIBRARY_SEARCH_DELAY_MS"] =
+                String(librarySearchDelayMilliseconds)
+        }
+        if seedOvernightSession {
+            application.launchEnvironment["SCREENLOG_UI_TEST_OVERNIGHT_SESSION"] = "1"
+        }
+        if sessionsAtMinimumWindowSize {
+            application.launchEnvironment["SCREENLOG_UI_TEST_SESSIONS_MINIMUM_WINDOW"] = "1"
+        }
+        if seedSessionDetails || sessionsAtMinimumWindowSize {
+            application.launchEnvironment["SCREENLOG_UI_TEST_SESSION_DETAILS"] = "1"
         }
         application.launch()
         app = application

@@ -11,7 +11,11 @@ extension StatusMenuController {
     }
 
     @objc func openSearchShell(_ sender: Any?) {
-        appModel.openSearchWindow()
+        appModel.showLibrarySection(.search)
+    }
+
+    @objc func openSessions(_ sender: Any?) {
+        appModel.showLibrarySection(.sessions)
     }
 
     @objc func toggleRecording(_ sender: Any?) {

@@ -15,8 +15,7 @@ struct StorageManagementCard: View {
                     subtitle: "Choose what Screenlogger should do as your Library grows."
                 ) {
                     EmptyView()
-                }
-                .padding(14)
+                }.padding(SLDesign.space16)
 
                 Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
@@ -35,8 +34,7 @@ struct StorageManagementCard: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(14)
+                }.padding(SLDesign.space16)
 
                 if model.storageMode == .limit {
                     Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
@@ -90,10 +88,9 @@ struct StorageManagementCard: View {
                                 "Review permanent removal of capture media beyond the current limits"
                             )
                             .accessibilityIdentifier("settings.storage.apply-limits")
-                    }
-                    .padding(14)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("settings.storage.limits")
+                    }.padding(SLDesign.space16)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("settings.storage.limits")
                 }
             }
         }
@@ -119,9 +116,9 @@ struct StorageManagementCard: View {
 
     private var storageCapHelp: String {
         if model.storageCapMB <= 0 {
-            return "A 0 GB size limit uses the age limit only. Oldest media is removed first; searchable history remains."
+            return "A 0 GB size limit uses the age limit only. Screenlogger removes the oldest media first. Searchable history remains."
         }
-        return "Screenlogger applies whichever limit is reached first. Oldest media is removed first; searchable history remains."
+        return "Screenlogger applies the first limit it reaches. Screenlogger removes the oldest media first. Searchable history remains."
     }
 
     private var storageModeHelp: String {
@@ -131,7 +128,7 @@ struct StorageManagementCard: View {
         case .compress:
             return "Turns eligible older capture images into video while preserving the moments in your Library."
         case .limit:
-            return "Removes capture media after its age or size limit is reached. Text, app names, and timestamps remain searchable."
+            return "Screenlogger removes capture media at its age or size limit. Text, app names, and timestamps remain searchable."
         }
     }
 
@@ -177,7 +174,7 @@ struct StorageManagementCard: View {
             if model.storageCleanupPreflightState.isLoading {
                 summary += " Refreshing this estimate..."
             } else if model.storageCleanupPreflightState.refreshFailed {
-                summary += " This is the last available estimate; the latest refresh failed."
+                summary += " This is the last available estimate. The latest refresh failed."
             }
             return summary
         }
@@ -185,7 +182,7 @@ struct StorageManagementCard: View {
         case .loading:
             return "Calculating what the current limits would remove..."
         case .failed:
-            return "A cleanup estimate is unavailable. Screenlogger will show the exact result after limits are applied."
+            return "A cleanup estimate is unavailable. Screenlogger will show the exact result after it applies the limits."
         case .idle, .available:
             return "Screenlogger will calculate the current cleanup scope before you apply these limits."
         }

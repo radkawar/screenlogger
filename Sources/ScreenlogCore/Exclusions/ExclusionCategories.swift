@@ -17,7 +17,7 @@ public enum ExclusionCategory: String, CaseIterable, Identifiable, Sendable {
     public var detail: String {
         switch self {
         case .passwordManagers: return "Password manager apps"
-        case .banks: return "UK & US banks, neobanks, and fintech"
+        case .banks: return "UK and US banks and financial services"
         }
     }
 

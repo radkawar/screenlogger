@@ -1,7 +1,6 @@
 import SQLite3
-import XCTest
-
 @testable import ScreenlogCore
+import XCTest
 
 final class StoreQueryTests: XCTestCase {
     var tempRoot: URL!

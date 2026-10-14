@@ -37,10 +37,12 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         case excludeCurrentWebsite = 19
         case audioTranscriptionStatus = 20
         case hideMenuBarIcon = 21
+        case sessions = 22
 
         var accessibilityIdentifier: String {
             switch self {
             case .openSearch: return "status-menu.library"
+            case .sessions: return "status-menu.sessions"
             case .toggleRecording: return "status-menu.capture-toggle"
             case .settings: return "status-menu.settings"
             case .pauseOneHour: return "status-menu.pause-one-hour"

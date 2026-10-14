@@ -1,7 +1,6 @@
+@testable import ScreenlogCore
 import UniformTypeIdentifiers
 import XCTest
-
-@testable import ScreenlogCore
 
 final class PermissionFlowTests: XCTestCase {
     func testBothPermissionsAreRequiredForCaptureReadiness() {
@@ -196,7 +195,6 @@ final class PermissionFlowTests: XCTestCase {
 
         XCTAssertEqual(result.route, .unavailable)
         XCTAssertFalse(result.opened)
-        XCTAssertTrue(result.instructions.hasPrefix("Open System Settings manually"))
     }
 
     func testRefreshPreservesAwaitingStateUntilPermissionBecomesReady() {

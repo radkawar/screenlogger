@@ -1,7 +1,6 @@
 import Foundation
-import XCTest
-
 @testable import ScreenlogCore
+import XCTest
 
 final class DiagnosticsBundleServiceTests: XCTestCase {
     private var temporaryRoot: URL!

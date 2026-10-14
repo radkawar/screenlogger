@@ -59,11 +59,11 @@ enum OnDeviceTranscriptionError: LocalizedError {
         case .speechUnavailable:
             return "On-device speech recognition is unavailable on this Mac."
         case .unsupportedLocale:
-            return "The current language is not supported for on-device transcription."
+            return "On-device transcription does not support the current language."
         case .modelUnavailable:
-            return "The on-device speech model could not be prepared."
+            return "Screenlogger could not prepare the on-device speech model."
         case .incompatibleAudioFormat:
-            return "The current audio format cannot be transcribed."
+            return "Screenlogger cannot transcribe the current audio format."
         case .analyzerClosed:
             return "The on-device speech analyzer stopped accepting audio."
         }
@@ -303,11 +303,15 @@ actor OnDeviceTranscriptionSession {
         let previousPhase = preparationGate.finish()
         inputContinuation?.finish()
         inputContinuation = nil
-        analysisTask?.cancel()
-        resultTask?.cancel()
+        let stoppedAnalysisTask = analysisTask
+        let stoppedResultTask = resultTask
+        stoppedAnalysisTask?.cancel()
+        stoppedResultTask?.cancel()
         if previousPhase == .ready {
             await analyzer.cancelAndFinishNow()
         }
+        _ = await stoppedAnalysisTask?.result
+        _ = await stoppedResultTask?.result
         resetResources()
     }
 
@@ -363,6 +367,7 @@ actor OnDeviceTranscriptionSession {
         resultTask = Task { [weak self, transcriber, store] in
             do {
                 for try await result in transcriber.results {
+                    try Task.checkCancellation()
                     guard result.isFinal else { continue }
                     let text = String(result.text.characters)
                         .trimmingCharacters(in: .whitespacesAndNewlines)

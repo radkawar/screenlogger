@@ -1,6 +1,5 @@
-import XCTest
-
 @testable import ScreenlogCore
+import XCTest
 
 final class TimelineContentStateTests: XCTestCase {
     func testInitialAndActiveLoadsNeverPresentFirstRunActions() {

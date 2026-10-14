@@ -95,11 +95,38 @@ if ! "$BUNDLED_CLI" --version >/dev/null; then
 fi
 echo "cli --version: $("$CLI" --version)"
 
-# Detect dyld hard-fail without leaving a stuck GUI process.
+# Detect dyld hard-fail without opening or migrating the user's Library or
+# preferences. This is the DEBUG-only routed test boundary used by UI tests.
 set +e
 SMOKE_OUT="$(
-  "$APP/Contents/MacOS/Screenlogger" >/dev/null 2>&1 &
+  set -e
+  token="$(/usr/bin/uuidgen)"
+  smoke_tmp="$(/usr/bin/getconf DARWIN_USER_TEMP_DIR)"
+  smoke_parent="${smoke_tmp%/}/screenlogger-ui-tests"
+  smoke_root="$smoke_parent/$token"
+  [[ ! -L "$smoke_parent" ]] || exit 1
+  mkdir -p "$smoke_parent"
+  mkdir -m 700 "$smoke_root"
+  pid=""
+  cleanup_smoke() {
+    if [[ -n "$pid" ]]; then
+      kill -KILL "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+    fi
+    rm -rf -- "$smoke_root"
+  }
+  trap cleanup_smoke EXIT
+  trap 'exit 130' INT TERM
+  mkdir -m 700 "$smoke_root/home"
+  TMPDIR="$smoke_tmp" \
+    SCREENLOG_UI_TEST_PREFERENCES_MODE=isolated-v1 \
+    SCREENLOG_UI_TEST_PREFERENCES_SUITE="dev.screenlog.ui-tests.$token" \
+    SCREENLOG_DATA_DIR="$smoke_root" \
+    CFFIXED_USER_HOME="$smoke_root/home" \
+    SCREENLOG_SEMANTIC_MODELS_DIR="$smoke_root/models" \
+    "$APP/Contents/MacOS/Screenlogger" --screenlogger-ui-test-token "$token" >/dev/null 2>&1 &
   pid=$!
+  set +e
   sleep 0.6
   if kill -0 "$pid" 2>/dev/null; then
     echo "alive=1"
@@ -112,6 +139,7 @@ SMOKE_OUT="$(
     code=$?
     echo "alive=0 exit=$code"
   fi
+  pid=""
 )"
 set -e
 if echo "$SMOKE_OUT" | grep -qiE 'dyld\[|Library not loaded|image not found'; then

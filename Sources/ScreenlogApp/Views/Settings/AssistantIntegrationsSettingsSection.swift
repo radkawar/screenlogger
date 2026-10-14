@@ -21,27 +21,23 @@ struct AssistantIntegrationsSettingsSection: View {
 
         SettingsCard(padding: 0) {
             VStack(alignment: .leading, spacing: 0) {
-                sectionHeader
-                    .padding(14)
+                sectionHeader.padding(SLDesign.space16)
 
                 Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
-                privacyDisclosure
-                    .padding(.horizontal, 14)
+                privacyDisclosure.padding(.horizontal, SLDesign.space16)
                     .padding(.vertical, 10)
 
                 if !localAccessIsReady {
                     Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
-                    readinessSummary
-                        .padding(.horizontal, 14)
+                    readinessSummary.padding(.horizontal, SLDesign.space16)
                         .padding(.vertical, 10)
                 }
 
                 Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
-                handoffRouting
-                    .padding(.horizontal, 14)
+                handoffRouting.padding(.horizontal, SLDesign.space16)
                     .padding(.vertical, 10)
 
                 if !connectedTargets.isEmpty {
@@ -65,9 +61,8 @@ struct AssistantIntegrationsSettingsSection: View {
                 emphasizesPrimaryAction: false,
                 onRemove: { onRemove(target) },
                 onResolve: { inspection in onResolve(target, inspection) }
-            )
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
+            ).padding(.horizontal, SLDesign.space16)
+                .padding(.vertical, 7)
 
             if index < targets.count - 1 {
                 Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
@@ -98,20 +93,19 @@ struct AssistantIntegrationsSettingsSection: View {
                         .foregroundStyle(.secondary)
                 }
             }
-        }
-        .padding(14)
-        .accessibilityHint(
-            showsOtherAssistants
-                ? "Hide supported assistants that were not detected on this Mac"
-                : "Show supported assistants that were not detected on this Mac"
-        )
-        .accessibilityIdentifier("settings.integrations.other-assistants")
+        }.padding(SLDesign.space16)
+            .accessibilityHint(
+                showsOtherAssistants
+                    ? "Hide supported assistants that were not detected on this Mac"
+                    : "Show supported assistants that were not detected on this Mac"
+            )
+            .accessibilityIdentifier("settings.integrations.other-assistants")
     }
 
     private var privacyDisclosure: some View {
         DisclosureGroup(isExpanded: $showsConnectionPrivacy) {
             Text(
-                "A connection adds files on this Mac. An assistant may send your request and retrieved content to its configured AI provider when you ask it to search Screenlogger. Review that assistant's privacy settings before use."
+                "A connection adds files on this Mac. If you request a Screenlogger search, an assistant can send your request and retrieved content to its configured AI provider. Review that assistant's privacy settings before use."
             )
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -226,7 +220,7 @@ struct AssistantIntegrationsSettingsSection: View {
                 )
                 .font(.callout.weight(.medium))
                 Text(
-                    "Automatic preselects the only available connection. When several are available, Screenlogger asks you to choose. Every handoff is reviewed before it opens."
+                    "Automatic selects the only available connection. If several connections are available, Screenlogger asks you to choose. You review each handoff before it opens."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)

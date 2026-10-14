@@ -39,16 +39,17 @@ public enum CapturePauseReason: String, CaseIterable, Codable, Sendable, Equatab
         case .permissionRequired:
             return "Allow Screen Recording and Accessibility in System Settings to resume capture."
         case .excludedContent:
-            return "The current app or website is excluded. Capture resumes when you switch away."
+            return
+                "Screenlogger excludes the current application or website. Capture resumes when you switch to another application or website."
         case .privateBrowsing:
-            return "Private Browsing is excluded. Capture resumes when you leave the private window."
+            return "Screenlogger excludes Private Browsing. Capture resumes when you leave the private window."
         case .browserAddressUnavailable:
             return
                 "Screenlogger could not identify this browser's website. Allow Accessibility access or turn off strict website protection."
         case .inactivity:
-            return "No keyboard or pointer activity was detected. Capture resumes when you return."
+            return "Screenlogger detected no keyboard or pointer activity. Capture resumes when you return."
         case .lowDiskSpace:
-            return "Free up storage on this Mac. Screenlogger will resume automatically when space is available."
+            return "Make more storage space available on this Mac. Screenlogger resumes automatically when space is available."
         }
     }
 

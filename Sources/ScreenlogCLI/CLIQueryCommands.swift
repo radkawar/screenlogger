@@ -7,10 +7,10 @@ extension ScreenlogCLIMain {
     static let searchHelp = """
         Usage:
           screenlog search <QUERY> [--content all|screen|transcripts]
-                           [--literal] [--dedupe-seconds N] [--limit N] [--json]
+                           [--literal] [--dedupe-seconds N] [--limit 1...500] [--json]
 
         QUERY supports app:, site:, date:, since:, and before: operators.
-        --literal keeps punctuation-heavy terms such as 0.1.13 adjacent.
+        --literal keeps tokenizer terms adjacent and in order. It does not match punctuation byte for byte.
 
         Example:
           screenlog search 'release app:Safari since:7d' --dedupe-seconds 30 --json
@@ -24,17 +24,18 @@ extension ScreenlogCLIMain {
                                   [--show-ocr] [--max-ocr-chars N] [--json]
           screenlog query sample [--since DATE|30d] [--before DATE]
                                  [--order oldest|newest] [--cursor DATE]
-                                 [--limit N] [--min-seg-len N]
+                                 [--limit 1...500] [--min-seg-len N]
                                  [--show-ocr] [--max-ocr-chars N] [--json]
           screenlog query fts <QUERY> [search options]
+          screenlog query semantic <QUERY> [--mode images|text|both] [--limit 1...500] [--json]
           screenlog query image|ocrboxes|axtree ...
         """
 
     static let recentHelp = """
-        Usage: screenlog recent [--limit N] [--show-ocr]
+        Usage: screenlog recent [--limit 1...500] [--show-ocr]
                                 [--max-ocr-chars N] [--json]
 
-        Returns the newest captured moments with one representative display per moment.
+        This command returns the newest captured moments with one representative display per moment.
         Example: screenlog recent --limit 20 --show-ocr --max-ocr-chars 500 --json
         """
 
@@ -58,14 +59,17 @@ extension ScreenlogCLIMain {
             return """
                 Usage: screenlog query sample [--since DATE|30d] [--before DATE]
                                               [--order oldest|newest] [--cursor DATE]
-                                              [--limit N] [--min-seg-len N]
+                                              [--limit 1...500] [--min-seg-len N]
                                               [--show-ocr] [--max-ocr-chars N] [--json]
 
-                Results are distributed across the requested range. Use nextCursorMs to page.
+                Sampling selects results across the requested range. It does not return every result.
+                Use nextCursorMs to sample the remaining range after or before the last timestamp again.
                 Example: screenlog query sample --since 7d --limit 40 --show-ocr --json
                 """
         case "fts":
             return searchHelp.replacingOccurrences(of: "screenlog search", with: "screenlog query fts")
+        case "semantic":
+            return semanticQueryHelp
         case "image":
             return "Usage: screenlog query image --id N | --at DATE [--out PATH] [--base64] [--json]"
         case "ocrboxes":
@@ -120,6 +124,8 @@ extension ScreenlogCLIMain {
             return
         }
         switch sub {
+        case "semantic":
+            try semanticQuery(rest, client: client)
         case "fts":
             let q =
                 try stringFlag(rest, name: "--query")
@@ -271,7 +277,7 @@ extension ScreenlogCLIMain {
             )
         }
         guard normalized.utf8.count <= 4_096 else {
-            throw CLIError.message("query exceeds 4096 bytes")
+            throw CLIError.message("query contains more than 4096 bytes")
         }
         let fetchLimit = dedupeSeconds > 0 ? min(500, max(limit, limit * 3)) : limit
         let rawResults = try client.fts(

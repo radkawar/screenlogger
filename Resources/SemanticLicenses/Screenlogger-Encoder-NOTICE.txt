@@ -1,0 +1,60 @@
+Screenlogger native semantic encoder
+
+Screenlogger owns the Swift model and image-preparation implementation in
+Sources/ScreenlogSemanticWorker. No EmbeddingGemma wrapper package is used.
+No upstream affiliation or endorsement is implied.
+
+Model and configuration
+Google DeepMind: EmbeddingGemma 2, Apache License 2.0.
+https://huggingface.co/google/embeddinggemma-2
+Revision: 914f7f89142e33e77833254d9c9b90c3cef7303b
+Original model.safetensors SHA-256:
+197a32965d4b1105faf060417baa899e193fb73cd401f42ec9295234d5553d79
+See Apache-2.0.txt.
+
+Architecture adaptation
+Copyright 2026 HuggingFace Team. All rights reserved.
+Hugging Face Transformers, Apache License 2.0.
+https://github.com/huggingface/transformers
+Revision: 637b76e40bac9398965086863a818f2dd1e7bfd1
+References: embedding_gemma2/modeling_embedding_gemma2.py,
+gemma4/modeling_gemma4.py, gemma4/image_processing_gemma4.py,
+embedding_gemma2/processing_embedding_gemma2.py, and masking_utils.py.
+Changes: independent Swift/MLX implementation; packed q8 weights; singleton
+unpadded inputs; image-only and text-only entry points; no audio tower;
+bounded document chunks; local file validation and isolated process protocol.
+See Apache-2.0.txt.
+
+Pooling and normalization reference
+SentenceTransformers, Apache License 2.0.
+https://github.com/huggingface/sentence-transformers
+Revision: af42679b98dee46267af508551b9d8d54ec3b2ab
+References: pooling.py and normalize.py.
+The implementation preserves per-token projection, FP32 mean accumulation,
+inference-type rounding, and normalization. Returned vectors are re-unitized
+in FP32 for SQLite storage.
+See Apache-2.0.txt.
+
+Packed embedding row-gather adaptation
+Copyright (c) 2024 Apple Inc.
+MLX Swift 0.32.3, MIT License.
+https://github.com/ml-explore/mlx-swift
+Only requested packed embedding rows are dequantized.
+See MLX-LICENSE.txt and MLX-ACKNOWLEDGMENTS.txt.
+
+Image resize adaptation
+PyTorch v2.9.0, aten/src/ATen/native/cpu/UpSampleKernel.cpp.
+https://github.com/pytorch/pytorch/tree/v2.9.0
+Native Swift bicubic antialias coefficient generation, fixed-point arithmetic,
+and per-pass uint8 saturation. Output is written in model patch order.
+See PyTorch-LICENSE.txt for copyright notices and the BSD-style license.
+
+Quantized model data
+Downloaded data is pinned by size and SHA-256. It is hosted separately at:
+https://huggingface.co/Nurymanau/EmbeddingGemma-2-MLX-Swift
+Revision: 06b4e075e6b3772e3c29df9f2a2ace7bd4950bdd
+All 1,290 stored text/vision tensors were compared with the original Google
+checkpoint. Each of 333 packed matrices, its scales, and its biases exactly
+match MLX 0.32.3 affine 8-bit conversion with groups of 64. Other tensors are
+unchanged. Only the audio tower and audio projection are omitted.
+The data host supplies no executable code or Swift package to Screenlogger.

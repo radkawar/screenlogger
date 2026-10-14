@@ -3,6 +3,9 @@ import Foundation
 /// Shared UserDefaults keys for product Settings (native multi-pane).
 public enum ProductPreferenceKey {
     public static let airgapMode = "screenlog.airgapMode"
+    /// Explicit opt-in. Model installation requires a separate user action.
+    public static let semanticSearchEnabled = "screenlog.semanticSearch.enabled"
+    public static let semanticSearchMode = "screenlog.semanticSearch.mode"
     /// Explicit consent to send website domains to the public favicon provider.
     /// Missing keys intentionally read as `false` so upgrades remain private.
     public static let remoteFaviconsEnabled = "screenlog.remoteFaviconsEnabled"
@@ -285,11 +288,12 @@ public enum StorageManagementMode: String, CaseIterable, Identifiable, Sendable 
     public var detail: String {
         switch self {
         case .off:
-            return "No automatic cleanup. Data stays until you free space manually."
+            return "No automatic media removal or video compression. Capture media stays until you remove it."
         case .compress:
-            return "Compress older snapshots to video. Does not delete by age or size cap."
+            return "Screenlogger compresses older screenshots to video. It does not delete media by age or storage limit."
         case .limit:
-            return "Compress, then remove the oldest capture media past the age or size limit. Searchable text remains."
+            return
+                "Screenlogger compresses media. It then removes the oldest media that does not meet the age or storage limit. Searchable text remains."
         }
     }
 

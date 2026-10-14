@@ -17,10 +17,25 @@ struct FloatingSearchView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            searchField
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .zIndex(3)
+            HStack(alignment: .top, spacing: SLDesign.space16) {
+                LibraryContentModeBar(
+                    selection: $model.libraryWorkspaceNavigation.contentMode
+                )
+                .frame(
+                    width: model.libraryWorkspaceNavigation.contentMode == .search ? SLDesign.librarySidebarWidth : nil
+                )
+                .padding(.top, 8)
+
+                if model.libraryWorkspaceNavigation.contentMode == .search {
+                    searchField
+                        .frame(maxWidth: 960)
+                        .zIndex(3)
+                    Spacer(minLength: 0)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .zIndex(3)
 
             Divider()
 
@@ -54,25 +69,38 @@ struct FloatingSearchView: View {
             minHeight: SLDesign.workspaceMinimumHeight
         )
         .tint(model.accentSwiftUIColor)
+        .accentColor(model.accentSwiftUIColor)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear {
             model.showSearchOperatorMenu = false
             synchronizePresentationFromRawQuery(model.searchQuery)
-            searchFocused = true
+            searchFocused = model.libraryWorkspaceNavigation.contentMode == .search
             model.refreshIntegrationSettings(automatic: true)
         }
         .onChange(of: model.shellFocusSearch) { _, focus in
-            if focus {
+            if focus, model.libraryWorkspaceNavigation.acceptsSearchFocus {
                 searchFocused = true
             } else if model.showSearchDatePicker || !model.shellSearchMode {
                 searchFocused = false
+            }
+        }
+        .onChange(of: model.libraryWorkspaceNavigation.contentMode) { _, mode in
+            if mode == .sessions {
+                searchFocused = false
+                model.shellFocusSearch = false
+                model.showSearchOperatorMenu = false
+                model.showSearchDatePicker = false
+            } else {
+                synchronizePresentationFromRawQuery(model.searchQuery)
             }
         }
         .onChange(of: model.showSearchOperatorMenu) { _, isVisible in
             if !isVisible { selectedSuggestionID = nil }
         }
         .onChange(of: model.showSearchDatePicker) { wasVisible, isVisible in
-            if wasVisible, !isVisible, model.shellSearchMode {
+            if wasVisible, !isVisible, model.shellSearchMode,
+                model.libraryWorkspaceNavigation.contentMode == .search
+            {
                 restoreSearchFocus(reopeningAutocomplete: false)
             }
         }
@@ -94,6 +122,9 @@ struct FloatingSearchView: View {
     private var searchField: some View {
         VStack(alignment: .leading, spacing: 8) {
             searchInput
+            if model.librarySearchEngine == .related, let controller = model.semanticSearchController {
+                LibraryIndexingCoverage(controller: controller)
+            }
 
             if let assistantHandoffValidationMessage {
                 Label(assistantHandoffValidationMessage, systemImage: "info.circle")
@@ -120,7 +151,7 @@ struct FloatingSearchView: View {
                     .padding(.horizontal, 2)
             }
         }
-        .frame(maxWidth: 680)
+        .frame(maxWidth: .infinity)
         .popover(isPresented: searchDatePickerPresentation, arrowEdge: .top) {
             SearchDatePickerPopover()
                 .environmentObject(model)
@@ -129,6 +160,11 @@ struct FloatingSearchView: View {
 
     private var searchInput: some View {
         HStack(spacing: 8) {
+            LibrarySemanticSearchControls()
+
+            Divider()
+                .frame(height: 18)
+
             LibrarySearchField(
                 text: presentedSearchBinding,
                 isFocused: $searchFocused,
@@ -155,7 +191,9 @@ struct FloatingSearchView: View {
                         model.refreshSearchAutocomplete(for: presentedSearchText)
                     }
                 } else {
-                    commitRecognizedOperatorDrafts()
+                    if model.libraryWorkspaceNavigation.contentMode == .search {
+                        commitRecognizedOperatorDrafts()
+                    }
                     model.showSearchOperatorMenu = false
                 }
             }
@@ -178,8 +216,10 @@ struct FloatingSearchView: View {
                 } label: {
                     Label("Ask Assistant", systemImage: "arrow.up.forward.app")
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .slCompactControlTarget()
                 .fixedSize()
                 .disabled(model.libraryStartupIssue != nil)
                 .help(
@@ -188,6 +228,16 @@ struct FloatingSearchView: View {
                 .accessibilityHint("Reviews the exact search context before opening an assistant")
                 .accessibilityIdentifier("library.assistant.open")
             }
+        }
+        .padding(.horizontal, SLDesign.space8)
+        .padding(.vertical, SLDesign.space4)
+        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(
+                    searchFocused ? Color.accentColor.opacity(0.65) : Color(nsColor: .separatorColor),
+                    lineWidth: searchFocused ? 2 : 1
+                )
         }
         .zIndex(3)
     }
@@ -270,7 +320,9 @@ struct FloatingSearchView: View {
                 model.showSearchDatePicker && model.searchDatePickerOrigin == .search
             },
             set: { isPresented in
-                if !isPresented { model.showSearchDatePicker = false }
+                if !isPresented, model.showSearchDatePicker, model.searchDatePickerOrigin == .search {
+                    model.showSearchDatePicker = false
+                }
             }
         )
     }
@@ -283,7 +335,7 @@ struct FloatingSearchView: View {
                 Text("Current Session")
                     .fontWeight(.semibold)
                 if let session = model.selectedSession {
-                    Text(session.appLabel)
+                    Text(session.displayTitle)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -321,7 +373,7 @@ struct FloatingSearchView: View {
         guard let session = model.selectedSession else {
             return "Search limited to the Timeline session"
         }
-        return "Search limited to the \(session.appLabel) session"
+        return "Search limited to the \(session.displayTitle) session"
     }
 
     private func handleExitCommand() {
@@ -340,6 +392,7 @@ struct FloatingSearchView: View {
         suppressAutocompleteUntilEditorChanges = !reopeningAutocomplete
         model.shellFocusSearch = false
         DispatchQueue.main.async {
+            guard model.libraryWorkspaceNavigation.contentMode == .search else { return }
             model.shellFocusSearch = true
         }
     }
@@ -350,6 +403,7 @@ struct FloatingSearchView: View {
         lastRawQueryWrittenByEditor = nil
         model.clearLibrarySearch(.text)
         DispatchQueue.main.async {
+            guard model.libraryWorkspaceNavigation.contentMode == .search else { return }
             searchFocused = true
             model.shellFocusSearch = true
         }
@@ -365,7 +419,7 @@ struct FloatingSearchView: View {
 
         guard !model.searchQueryNeedsMoreInput else {
             assistantHandoffValidationMessage =
-                "Finish the search word or filter before asking an assistant."
+                "Complete the search word or filter before you ask an assistant."
             return
         }
 
@@ -417,6 +471,7 @@ struct FloatingSearchView: View {
     private func removeCommittedOperator(_ kind: SearchOperatorKind) {
         committedOperatorValues[kind] = nil
         writeComposedRawQuery()
+        model.scheduleSearchDebounced(autocompleteInput: presentedSearchText)
         restoreSearchFocus(reopeningAutocomplete: false)
     }
 
@@ -493,7 +548,7 @@ struct FloatingSearchView: View {
             }
             writeComposedRawQuery()
             model.enterShellSearch()
-            model.refreshSearchAutocomplete(for: presentedSearchText)
+            model.scheduleSearchDebounced(autocompleteInput: presentedSearchText)
         case .app, .site, .dateValue:
             model.applyAutocompleteRow(row)
             synchronizePresentationFromRawQuery(model.searchQuery)
@@ -507,6 +562,7 @@ struct FloatingSearchView: View {
             model.shellFocusSearch = false
         } else {
             DispatchQueue.main.async {
+                guard model.libraryWorkspaceNavigation.contentMode == .search else { return }
                 searchFocused = true
                 model.shellFocusSearch = true
             }
@@ -641,6 +697,7 @@ struct FloatingSearchView: View {
     private func recognizedOperatorValues(
         from parsed: ParsedSearchQuery
     ) -> [SearchOperatorKind: String] {
+        guard parsed.validationIssue == nil else { return [:] }
         var values: [SearchOperatorKind: String] = [:]
 
         if let value = parsed.rawApp ?? parsed.appFilter,

@@ -10,6 +10,7 @@ PRODUCTS="${1:-$ROOT/build/DerivedData/Build/Products/Debug}"
 }
 
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/screenlogger-lifecycle.XXXXXX")"
+TEST_ROOT="$(cd "$TEST_ROOT" && pwd -P)"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
 # Path validation refuses traversal before creating roots and rejects a
@@ -76,6 +77,17 @@ sl_cli_receipt_matches \
   "$HOME_ONE/.local/bin/skill/$SL_CLI_SKILL_NAME"
 [[ "$(< "$HOME_ONE/Library/Application Support/dev.screenlog/keep.txt")" == "library sentinel" ]]
 [[ "$(< "$HOME_ONE/.local/bin/other-tool")" == "unrelated" ]]
+
+# Command Setup can publish a newer authenticated command without replacing the
+# app. Its independently updated receipt must permit the next app upgrade.
+printf '\n' >> "$HOME_ONE/.local/bin/screenlog"
+sl_write_cli_receipt "$HOME_ONE/.local/bin/$SL_CLI_RECEIPT_NAME" \
+  "$HOME_ONE/.local/bin/screenlog" "$HOME_ONE/.local/bin/ScreenlogCore.framework" \
+  "$HOME_ONE/.local/bin/skill/$SL_CLI_SKILL_NAME"
+install_into "$HOME_ONE"
+sl_receipt_matches "$HOME_ONE/Applications/$SL_RECEIPT_NAME" \
+  "$HOME_ONE/Applications/Screenlogger.app" "$HOME_ONE/.local/bin/screenlog" \
+  "$HOME_ONE/.local/bin/ScreenlogCore.framework"
 uninstall_from "$HOME_ONE"
 [[ ! -e "$HOME_ONE/Applications/Screenlogger.app" ]]
 [[ ! -e "$HOME_ONE/.local/bin/screenlog" ]]

@@ -41,8 +41,7 @@ struct GeneralSettingsPane: View {
                             .accessibilityHint(launchAccessibilityHint)
                             .accessibilityIdentifier("settings.general.open-at-login.toggle")
                         }
-                    }
-                    .padding(14)
+                    }.padding(SLDesign.space16)
 
                     Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
@@ -64,8 +63,7 @@ struct GeneralSettingsPane: View {
                                     : "Show Screenlogger in the Dock as well as the menu bar"
                             )
                             .accessibilityIdentifier("settings.general.dock-icon.toggle")
-                    }
-                    .padding(14)
+                    }.padding(SLDesign.space16)
                 }
             }
             .accessibilityIdentifier("settings.general.startup")
@@ -95,13 +93,13 @@ struct GeneralSettingsPane: View {
         case .disabling:
             return "Asking macOS to turn off Open at Login..."
         case .approvalRequired:
-            return "Off until Screenlogger is approved in Login Items."
+            return "Off until you approve Screenlogger in Login Items."
         case .failed(_, let isEnabled, let issue):
             switch issue {
             case .registrationFailed:
-                return "Still off because macOS couldn't turn it on."
+                return "Still off because macOS could not turn it on."
             case .removalFailed where isEnabled:
-                return "Still on because macOS couldn't turn it off."
+                return "Still on because macOS could not turn it off."
             case .removalFailed:
                 return "Off, but the Login Items entry still needs attention."
             case .serviceUnavailable:
@@ -125,7 +123,7 @@ struct GeneralSettingsPane: View {
         case .approvalRequired:
             launchRecoveryCard(
                 title: "Approval Needed",
-                message: "Open Login Items in System Settings and allow Screenlogger. The switch stays off until macOS reports approval.",
+                message: "Open Login Items in System Settings. Allow Screenlogger. The switch stays off until macOS reports approval.",
                 layout: .approvalRequired
             )
         case .failed(_, let isEnabled, let issue):
@@ -250,8 +248,8 @@ struct GeneralSettingsPane: View {
 
     private func launchFailureTitle(issue: LaunchAtLoginIssue) -> String {
         switch issue {
-        case .registrationFailed: return "Open at Login Couldn't Be Turned On"
-        case .removalFailed: return "Open at Login Couldn't Be Turned Off"
+        case .registrationFailed: return "Could Not Turn On Open at Login"
+        case .removalFailed: return "Could Not Turn Off Open at Login"
         case .serviceUnavailable: return "Open at Login Is Unavailable"
         }
     }
@@ -259,14 +257,15 @@ struct GeneralSettingsPane: View {
     private func launchFailureMessage(issue: LaunchAtLoginIssue, isEnabled: Bool) -> String {
         switch issue {
         case .registrationFailed:
-            return "macOS didn't enable Screenlogger, so the switch remains off. Try again or review Login Items in System Settings."
+            return "macOS did not enable Screenlogger. The switch remains off. Try again or review Login Items in System Settings."
         case .removalFailed where isEnabled:
-            return "macOS didn't disable Screenlogger, so the switch remains on. Try again or turn it off in Login Items."
+            return "macOS did not disable Screenlogger. The switch remains on. Try again or turn it off in Login Items."
         case .removalFailed:
             return
-                "Screenlogger is off, but macOS couldn't finish removing its Login Items entry. Try again or review it in System Settings."
+                "Screenlogger is off, but macOS could not remove its Login Items entry. Try again or review it in System Settings."
         case .serviceUnavailable:
-            return "macOS couldn't find Screenlogger's login item service. Keep Screenlogger in Applications, reopen it, and try again."
+            return
+                "macOS could not find the Screenlogger login item service. Keep Screenlogger in Applications. Open it again. Then try again."
         }
     }
 }

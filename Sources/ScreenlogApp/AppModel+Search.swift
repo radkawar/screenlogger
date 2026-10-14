@@ -33,6 +33,106 @@ extension AppModel {
 @MainActor
 extension AppModel {
     // MARK: - Search
+    func setLibrarySearchEngine(_ engine: LibrarySearchEngine, availabilityRevision: UInt? = nil) {
+        guard librarySearchEngineSelection.select(engine, availabilityRevision: availabilityRevision) else { return }
+        if engine == .related, !canSelectSearchContent(searchContent) {
+            searchContent = .all
+        }
+        semanticSearchHits.removeAll()
+        semanticSearchMessage = nil
+        startLibrarySearch()
+    }
+
+    func showSearchResultInSessions(_ result: FTSResult) async {
+        guard libraryRestoreState != .restoring else { return }
+        libraryWorkspaceNavigation.selectResult(result.frameID)
+        shellFocusSearch = false
+        showSearchOperatorMenu = false
+        showSearchDatePicker = false
+        let navigation = libraryWorkspaceNavigation
+        let searchGeneration = librarySearchGeneration
+        let libraryWasActive = shellSearchMode
+        if !sessions.contains(where: { $0.startMs <= result.timestampMs && result.timestampMs <= $0.endMs }) {
+            await loadSessions()
+        }
+        guard !Task.isCancelled,
+            librarySearchGeneration == searchGeneration,
+            shellSearchMode == libraryWasActive,
+            let session = sessions.first(where: { $0.startMs <= result.timestampMs && result.timestampMs <= $0.endMs })
+        else { return }
+        libraryWorkspaceNavigation.showSelectedResult(inSession: session.startMs, ifUnchangedSince: navigation)
+    }
+
+    private func startRelatedSearch(
+        raw: String, query: LibrarySearchQuery, generation: UInt, controller: SemanticSearchController
+    ) -> Task<Void, Never>? {
+        librarySearchState = .loading
+        semanticSearchMessage = nil
+        let request = SemanticSearchRequest(
+            query: raw, limit: LibrarySearchPagePresentation.maximumVisibleResults,
+            appBundleID: query.appBundleID, domain: query.domain,
+            fromTimestampMs: query.fromTimestampMs, toTimestampMs: query.toTimestampMs,
+            content: query.content
+        )
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.librarySearchWorkers[generation] = nil
+                if self.currentLibrarySearchGeneration == generation {
+                    self.searchTask = nil
+                    self.currentLibrarySearchGeneration = nil
+                }
+            }
+            do {
+                let response = try await controller.search(request)
+                guard
+                    LibrarySearchPublicationPolicy.allowsPublication(
+                        requestGeneration: generation, currentGeneration: self.librarySearchGeneration,
+                        isCancelled: Task.isCancelled
+                    )
+                else { return }
+                self.semanticSearchHits = Dictionary(
+                    response.hits.map { ($0.result.frameID, $0) }, uniquingKeysWith: { first, _ in first }
+                )
+                self.searchResults = response.hits.map(\.result)
+                self.searchFacetResults = self.searchResults
+                self.librarySearchNextCursor = nil
+                self.librarySearchResultsAreTruncated = false
+                self.librarySearchState = .complete
+                self.semanticSearchMessage = nil
+                self.recentSearchStore.record(raw)
+                self.recentSearchQueries = self.recentSearchStore.all()
+            } catch is CancellationError {
+            } catch {
+                guard
+                    LibrarySearchPublicationPolicy.allowsPublication(
+                        requestGeneration: generation, currentGeneration: self.librarySearchGeneration,
+                        isCancelled: Task.isCancelled
+                    )
+                else { return }
+                if let semanticError = error as? SemanticSearchError {
+                    switch semanticError {
+                    case .disabled, .modelMissing, .indexEmpty:
+                        self.setLibrarySearchEngine(.exact)
+                        _ = await controller.status()
+                        return
+                    case .unavailable, .invalidRequest:
+                        break
+                    }
+                }
+                if !self.relatedSearchIsAvailable {
+                    self.setLibrarySearchEngine(.exact)
+                    return
+                }
+                self.semanticSearchMessage = error.localizedDescription
+                self.librarySearchState = .failed(.queryFailed)
+            }
+        }
+        searchTask = task
+        currentLibrarySearchGeneration = generation
+        librarySearchWorkers[generation] = task
+        return task
+    }
 
     /// Visible hits after every committed constraint (drives chip counts).
     var scopedSearchResults: [FTSResult] {
@@ -83,14 +183,49 @@ extension AppModel {
     }
 
     var hasRunnableLibrarySearchCriteria: Bool {
-        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        return hasActiveLibrarySearchFilters
-            || (!query.isEmpty && Self.isRunnableSearchQuery(query))
+        canRunLibrarySearch(parsed: SearchOperatorParser.parse(searchQuery))
+    }
+
+    var relatedSearchNeedsDescription: Bool {
+        librarySearchEngine == .related
+            && !SemanticSearchPresentation.hasSearchDescription(SearchOperatorParser.parse(searchQuery))
+    }
+
+    var librarySearchValidationMessage: String? {
+        librarySearchValidationMessage(for: SearchOperatorParser.parse(searchQuery))
+    }
+
+    private func librarySearchValidationMessage(for parsed: ParsedSearchQuery) -> String? {
+        if let issue = parsed.validationIssue { return issue }
+        if !canSelectSearchContent(searchContent) {
+            return "Transcript search requires Text or Images and Text in Related Search settings."
+        }
+        let bounds = librarySearchTimeBounds(parsed: parsed)
+        guard LibrarySearchFilterRules.timeRangeIsValid(from: bounds.fromTimestampMs, to: bounds.toTimestampMs) else {
+            return "These time filters don't overlap. Change the date range or remove the session filter."
+        }
+        return nil
+    }
+
+    private func canRunLibrarySearch(parsed: ParsedSearchQuery) -> Bool {
+        guard librarySearchValidationMessage(for: parsed) == nil else { return false }
+        if librarySearchEngine == .related {
+            return SemanticSearchPresentation.hasSearchDescription(parsed)
+        }
+        return searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? hasActiveLibrarySearchFilters
+            : Self.isRunnableSearchQuery(searchQuery, parsed: parsed)
+    }
+
+    func canSelectSearchContent(_ content: LibrarySearchContent) -> Bool {
+        guard librarySearchEngine == .related else { return true }
+        guard let mode = librarySearchEngineSelection.relatedMode else { return false }
+        return SemanticSearchPresentation.allowsContent(content, mode: mode)
     }
 
     /// Distinct apps in the scoped hit set (for filter chips).
     var searchResultAppChips: [(bundleID: String, label: String, count: Int)] {
-        SearchResultFiltering.appChips(from: scopedSearchResults).map { chip in
+        var chips = SearchResultFiltering.appChips(from: scopedSearchResults).map { chip in
             // Prefer localized app name when store only gave a bundle tail.
             let friendly = SLAppIdentity.displayName(bundleID: chip.bundleID)
             let label = (chip.label == chip.bundleID || chip.label.count < 2) ? friendly : chip.label
@@ -100,19 +235,32 @@ extension AppModel {
             }
             return (chip.bundleID, label, chip.count)
         }
+        if let selected = searchAppFilter, !chips.contains(where: { $0.0 == selected }) {
+            chips.insert((selected, searchAppName(for: selected) ?? SLAppIdentity.displayName(bundleID: selected), 0), at: 0)
+        } else if let index = chips.firstIndex(where: { $0.0 == searchAppFilter }), index != 0 {
+            chips.insert(chips.remove(at: index), at: 0)
+        }
+        return chips
     }
 
     /// Distinct website domains in the scoped hit set (favicon chips).
     var searchResultDomainChips: [(domain: String, count: Int)] {
-        SearchResultFiltering.domainChips(from: scopedSearchResults)
+        var chips = SearchResultFiltering.domainChips(from: scopedSearchResults)
+        if let selected = searchDomainFilter, !chips.contains(where: { $0.domain == selected }) {
+            chips.insert((domain: selected, count: 0), at: 0)
+        } else if let index = chips.firstIndex(where: { $0.domain == searchDomainFilter }), index != 0 {
+            chips.insert(chips.remove(at: index), at: 0)
+        }
+        return chips
     }
 
     /// A non-empty query that is intentionally waiting for more input instead of searching.
     /// Keeping this rule in the model lets the Library distinguish 'keep typing' from a real
     /// zero-result search.
     var searchQueryNeedsMoreInput: Bool {
+        if librarySearchEngine == .related { return relatedSearchNeedsDescription }
         let raw = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !raw.isEmpty && !Self.isRunnableSearchQuery(searchQuery)
+        return !raw.isEmpty && !Self.isRunnableSearchQuery(searchQuery, parsed: SearchOperatorParser.parse(searchQuery))
     }
 
     /// Cancelable FTS - strips `app:`/`site:`/`date:`/... operators then MATCH.
@@ -139,22 +287,16 @@ extension AppModel {
             return nil
         }
         let raw = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !raw.isEmpty || hasActiveLibrarySearchFilters else {
+        let parsed = SearchOperatorParser.parse(raw)
+        lastParsedSearch = parsed
+        semanticSearchMessage = nil
+        guard canRunLibrarySearch(parsed: parsed) else {
             searchResults = []
             searchFacetResults = []
-            librarySearchResultsAreTruncated = false
-            lastParsedSearch = ParsedSearchQuery()
-            librarySearchState = .idle
-            showSearchOperatorMenu = false
-            return nil
-        }
-
-        guard raw.isEmpty || Self.isRunnableSearchQuery(searchQuery) else {
-            searchResults = []
-            searchFacetResults = []
+            semanticSearchHits.removeAll()
             librarySearchResultsAreTruncated = false
             librarySearchState = .idle
+            if raw.isEmpty { showSearchOperatorMenu = false }
             return nil
         }
         guard let store else {
@@ -166,8 +308,6 @@ extension AppModel {
             return nil
         }
 
-        let parsed = SearchOperatorParser.parse(raw)
-        lastParsedSearch = parsed
         guard let query = makeLibrarySearchQuery(parsed: parsed) else {
             searchResults = []
             searchFacetResults = []
@@ -176,6 +316,15 @@ extension AppModel {
             return nil
         }
 
+        if librarySearchEngine == .related,
+            let controller = semanticSearchController,
+            relatedSearchIsAvailable
+        {
+            return startRelatedSearch(raw: raw, query: query, generation: generation, controller: controller)
+        }
+        librarySearchEngineSelection.select(.exact)
+        semanticSearchHits.removeAll()
+        semanticSearchMessage = nil
         librarySearchState = .loading
 
         #if DEBUG
@@ -195,6 +344,12 @@ extension AppModel {
                 }
             }
             do {
+                #if DEBUG
+                    let delay = AppUITestFixture.librarySearchDelayMilliseconds
+                    if delay > 0 {
+                        try await Task.sleep(for: .milliseconds(delay))
+                    }
+                #endif
                 let page = try await store.readAsync { store in
                     try store.searchLibraryPage(
                         query: query,
@@ -211,6 +366,8 @@ extension AppModel {
                     return
                 }
                 self.searchResults = page.results
+                self.semanticSearchHits = [:]
+                self.semanticSearchMessage = nil
                 self.searchFacetResults = page.results
                 self.librarySearchNextCursor = page.nextCursor
                 self.librarySearchResultsAreTruncated = page.isTruncated
@@ -250,6 +407,10 @@ extension AppModel {
 
     func loadMoreLibrarySearchResults() {
         guard canLoadMoreLibrarySearchResults, !isSearching else { return }
+        guard hasRunnableLibrarySearchCriteria else {
+            startLibrarySearch()
+            return
+        }
         guard let store, let cursor = librarySearchNextCursor else { return }
         let parsed = SearchOperatorParser.parse(
             searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -334,14 +495,7 @@ extension AppModel {
 
         lastParsedSearch = SearchOperatorParser.parse(searchQuery)
         refreshSearchAutocomplete()
-        guard hasRunnableLibrarySearchCriteria else {
-            searchResults = []
-            searchFacetResults = []
-            librarySearchResultsAreTruncated = false
-            librarySearchState = .idle
-            return
-        }
-        librarySearchState = .loading
+        semanticSearchMessage = nil
         startLibrarySearch()
     }
 
@@ -359,75 +513,37 @@ extension AppModel {
     /// Refresh autocomplete immediately (no debounce) + debounced FTS.
     func scheduleSearchDebounced(autocompleteInput: String? = nil) {
         searchDebounceTask?.cancel()
+        searchDebounceTask = nil
         invalidateCurrentLibrarySearch()
         librarySearchNextCursor = nil
-        let q = searchQuery
-        let trimmed = q.trimmingCharacters(in: .whitespacesAndNewlines)
-        let queryWillRun =
-            trimmed.isEmpty
-            ? hasActiveLibrarySearchFilters
-            : Self.isRunnableSearchQuery(q)
-        // This synchronous state mutation is the input acknowledgement. Keep
-        // catalog parsing and every SQLite read after it so typing feedback is
-        // not coupled to Library size.
+        semanticSearchMessage = nil
+        let parsed = SearchOperatorParser.parse(searchQuery)
+        let queryWillRun = canRunLibrarySearch(parsed: parsed)
+        // Acknowledge the draft before any delayed query or catalog work.
         librarySearchState = queryWillRun ? .loading : .idle
         refreshSearchAutocomplete(for: autocompleteInput)
-
-        if trimmed.isEmpty {
-            lastParsedSearch = ParsedSearchQuery()
-            showSearchOperatorMenu = false
-            searchTask = nil
-            if hasActiveLibrarySearchFilters {
-                librarySearchState = .loading
-                searchDebounceTask = Task { @MainActor [weak self] in
-                    try? await Task.sleep(
-                        nanoseconds: LibrarySearchInteractionPolicy.debounceNanoseconds
-                    )
-                    guard let self, !Task.isCancelled else { return }
-                    self.searchDebounceTask = nil
-                    await self.runSearch()
-                }
-            } else {
-                searchResults = []
-                searchFacetResults = []
-                librarySearchResultsAreTruncated = false
-                librarySearchState = .idle
-                searchDebounceTask = nil
+        guard queryWillRun else {
+            searchResults = []
+            searchFacetResults = []
+            semanticSearchHits.removeAll()
+            librarySearchResultsAreTruncated = false
+            if searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                showSearchOperatorMenu = false
             }
             return
         }
-
-        // Results from the previous query are misleading while the current query is an
-        // incomplete operator or a single character, neither of which will be submitted.
-        if !Self.isRunnableSearchQuery(q) {
-            searchResults = []
-            searchFacetResults = []
-            librarySearchResultsAreTruncated = false
-            searchTask = nil
-            searchDebounceTask = nil
-            return
-        }
-
-        librarySearchState = .loading
         searchDebounceTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(
-                nanoseconds: LibrarySearchInteractionPolicy.debounceNanoseconds
-            )
+            try? await Task.sleep(nanoseconds: LibrarySearchInteractionPolicy.debounceNanoseconds)
             guard let self, !Task.isCancelled else { return }
-            // Clear our own handle before entering the authoritative search.
-            // `startLibrarySearch` cancels any *older* debounce task; retaining
-            // this task there would make it cancel itself and suppress the
-            // result publication that follows.
             self.searchDebounceTask = nil
             await self.runSearch()
         }
     }
 
-    private static func isRunnableSearchQuery(_ query: String) -> Bool {
+    private static func isRunnableSearchQuery(_ query: String, parsed: ParsedSearchQuery) -> Bool {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
+        guard !trimmed.isEmpty, parsed.validationIssue == nil else { return false }
 
-        let parsed = SearchOperatorParser.parse(trimmed)
         switch SearchOperatorParser.typingContext(for: query) {
         case .appValue(let prefix) where prefix.isEmpty:
             return false
@@ -452,21 +568,9 @@ extension AppModel {
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> LibrarySearchQuery? {
-        var bounds = SearchOperatorParser.sqlTimeBounds(from: parsed)
-
-        func intersect(from: Int64?, to: Int64?) {
-            if let from {
-                bounds.fromTimestampMs = bounds.fromTimestampMs.map { max($0, from) } ?? from
-            }
-            if let to {
-                bounds.toTimestampMs = bounds.toTimestampMs.map { min($0, to) } ?? to
-            }
-        }
-
-        let relativeBounds = relativeSearchTimeBounds(now: now, calendar: calendar)
-        intersect(from: relativeBounds.from, to: relativeBounds.to)
-        if searchSessionScoped, let session = selectedSession {
-            intersect(from: session.startMs, to: session.endMs)
+        let bounds = librarySearchTimeBounds(parsed: parsed, now: now, calendar: calendar)
+        guard LibrarySearchFilterRules.timeRangeIsValid(from: bounds.fromTimestampMs, to: bounds.toTimestampMs) else {
+            return nil
         }
 
         let results = LibrarySearchQuery(
@@ -482,6 +586,22 @@ extension AppModel {
         )
         guard Self.hasConstraint(results) else { return nil }
         return results
+    }
+
+    private func librarySearchTimeBounds(
+        parsed: ParsedSearchQuery,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> (fromTimestampMs: Int64?, toTimestampMs: Int64?) {
+        var bounds = SearchOperatorParser.sqlTimeBounds(from: parsed)
+        let relative = relativeSearchTimeBounds(now: now, calendar: calendar)
+        bounds.fromTimestampMs = SemanticSearchPresentation.lowerBound(bounds.fromTimestampMs, relative.from)
+        bounds.toTimestampMs = SemanticSearchPresentation.upperBound(bounds.toTimestampMs, relative.to)
+        if searchSessionScoped, let session = selectedSession {
+            bounds.fromTimestampMs = SemanticSearchPresentation.lowerBound(bounds.fromTimestampMs, session.startMs)
+            bounds.toTimestampMs = SemanticSearchPresentation.upperBound(bounds.toTimestampMs, session.endMs)
+        }
+        return bounds
     }
 
     private func relativeSearchTimeBounds(
@@ -548,7 +668,7 @@ extension AppModel {
     func insertSearchOperator(_ kind: SearchOperatorKind) {
         searchQuery = SearchOperatorParser.insertOperator(kind, into: searchQuery)
         enterShellSearch()
-        refreshSearchAutocomplete()
+        scheduleSearchDebounced()
     }
 
     func applyAutocompleteRow(_ row: SearchAutocompleteRow) {
@@ -580,7 +700,7 @@ extension AppModel {
             } else {
                 kind = .date
             }
-            searchQuery = SearchOperatorParser.applyValueSuggestion(kind, value: v, into: searchQuery)
+            searchQuery = LibrarySearchFilterRules.replacingTimeOperator(kind, value: v, in: searchQuery)
             enterShellSearch()
             refreshSearchAutocomplete()
             startLibrarySearch()
@@ -618,20 +738,7 @@ extension AppModel {
         df.dateFormat = "yyyy-MM-dd"
         let value = df.string(from: searchDatePickerSelection)
         let kind = searchDatePickerKind
-        // Ensure we are completing/inserting the right operator.
-        let ctx = SearchOperatorParser.typingContext(for: searchQuery)
-        switch ctx {
-        case .dateValue(let k, _) where k == kind:
-            searchQuery = SearchOperatorParser.applyValueSuggestion(kind, value: value, into: searchQuery)
-        default:
-            // Explicit picker choices add a filter without consuming the last
-            // ordinary search term, replacing only an existing filter of this kind.
-            searchQuery = SearchOperatorParser.replacingOperator(
-                kind,
-                value: value,
-                in: searchQuery
-            )
-        }
+        searchQuery = LibrarySearchFilterRules.replacingTimeOperator(kind, value: value, in: searchQuery)
         showSearchDatePicker = false
         enterShellSearch()
         refreshSearchAutocomplete()
@@ -722,21 +829,19 @@ extension AppModel {
     }
 
     func setSearchAppFilter(_ bundleID: String?) {
-        if searchAppFilter == bundleID {
-            searchAppFilter = nil
-        } else {
-            searchAppFilter = bundleID
-        }
+        var query = searchQuery
+        LibrarySearchFilterRules.selectingApp(
+            bundleID, name: bundleID.flatMap { searchAppName(for: $0) },
+            query: &query, selected: &searchAppFilter
+        )
+        searchQuery = query
         librarySearchFilterDidChange()
     }
 
     func setSearchDomainFilter(_ domain: String?) {
-        let normalized = domain.map { FaviconCache.normalizeDomain($0) }.flatMap { $0.isEmpty ? nil : $0 }
-        if searchDomainFilter == normalized {
-            searchDomainFilter = nil
-        } else {
-            searchDomainFilter = normalized
-        }
+        var query = searchQuery
+        LibrarySearchFilterRules.selectingDomain(domain, query: &query, selected: &searchDomainFilter)
+        searchQuery = query
         librarySearchFilterDidChange()
     }
 
@@ -751,17 +856,25 @@ extension AppModel {
             searchTimeFilter = nil
         } else {
             searchTimeFilter = filter
+            if filter != nil {
+                let bounds = relativeSearchTimeBounds(now: Date(), calendar: .current)
+                searchQuery = LibrarySearchFilterRules.removingConflictingTimeOperators(
+                    from: searchQuery, lower: bounds.from, upper: bounds.to
+                )
+                removeConflictingSearchSessionScope(from: bounds.from, to: bounds.to)
+            }
         }
         librarySearchFilterDidChange()
     }
 
     func setSearchSessionScoped(_ scoped: Bool) {
         searchSessionScoped = scoped && selectedSession != nil
+        if searchSessionScoped { reconcileSearchFiltersForSelectedSession() }
         librarySearchFilterDidChange()
     }
 
     func setSearchContent(_ content: LibrarySearchContent) {
-        guard searchContent != content else { return }
+        guard searchContent != content, canSelectSearchContent(content) else { return }
         searchContent = content
         librarySearchFilterDidChange()
     }
@@ -778,9 +891,63 @@ extension AppModel {
         clearLibrarySearch(.filters)
     }
 
+    private func searchAppName(for bundleID: String) -> String? {
+        searchAppCatalog.first(where: { $0.bundleID == bundleID })?.name
+            ?? searchFacetResults.first(where: { $0.bundleID == bundleID })?.displayName
+    }
+
+    /// Query edits are explicit choices too. Incomplete operators do not drop
+    /// facets, and editing prose does not change an existing refinement.
+    func reconcileSearchFiltersAfterQueryChange(from oldQuery: String) {
+        let old = SearchOperatorParser.parse(oldQuery)
+        let parsed = SearchOperatorParser.parse(searchQuery)
+        LibrarySearchFilterRules.reconcileQueryFacets(
+            from: old, to: parsed,
+            appName: searchAppFilter.flatMap { searchAppName(for: $0) },
+            app: &searchAppFilter, domain: &searchDomainFilter
+        )
+        let oldBounds = SearchOperatorParser.sqlTimeBounds(from: old)
+        let bounds = SearchOperatorParser.sqlTimeBounds(from: parsed)
+        guard oldBounds != bounds,
+            LibrarySearchFilterRules.timeRangeIsValid(from: bounds.fromTimestampMs, to: bounds.toTimestampMs)
+        else { return }
+        let relative = relativeSearchTimeBounds(now: Date(), calendar: .current)
+        if !LibrarySearchFilterRules.timeRangesOverlap(
+            from: bounds.fromTimestampMs, to: bounds.toTimestampMs,
+            otherFrom: relative.from, otherTo: relative.to
+        ) {
+            searchTimeFilter = nil
+        }
+        removeConflictingSearchSessionScope(from: bounds.fromTimestampMs, to: bounds.toTimestampMs)
+    }
+
+    private func removeConflictingSearchSessionScope(from: Int64?, to: Int64?) {
+        guard searchSessionScoped, let session = selectedSession else { return }
+        if !LibrarySearchFilterRules.timeRangesOverlap(
+            from: from, to: to, otherFrom: session.startMs, otherTo: session.endMs
+        ) {
+            searchSessionScoped = false
+        }
+    }
+
+    /// A newly selected session wins only over disjoint date constraints.
+    func reconcileSearchFiltersForSelectedSession() {
+        guard searchSessionScoped, let session = selectedSession else { return }
+        let relative = relativeSearchTimeBounds(now: Date(), calendar: .current)
+        if !LibrarySearchFilterRules.timeRangesOverlap(
+            from: relative.from, to: relative.to, otherFrom: session.startMs, otherTo: session.endMs
+        ) {
+            searchTimeFilter = nil
+        }
+        searchQuery = LibrarySearchFilterRules.removingConflictingTimeOperators(
+            from: searchQuery, lower: session.startMs, upper: session.endMs
+        )
+    }
+
     private func librarySearchFilterDidChange() {
         librarySearchNextCursor = nil
         librarySearchState = .loading
+        refreshSearchAutocomplete()
         startLibrarySearch()
     }
 

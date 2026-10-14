@@ -28,9 +28,8 @@ struct SupportSettingsPane: View {
                         .controlSize(.small)
                         .accessibilityHint("Open the offline Screenlogger user guide")
                         .accessibilityIdentifier("settings.support.user-guide")
-                    }
-                    .padding(14)
-                    .accessibilityIdentifier("settings.support.guide-summary")
+                    }.padding(SLDesign.space16)
+                        .accessibilityIdentifier("settings.support.guide-summary")
 
                     Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
@@ -48,9 +47,8 @@ struct SupportSettingsPane: View {
                         .disabled(model.diagnosticsExportState.isExporting)
                         .accessibilityHint("Choose where to save a privacy-safe support bundle")
                         .accessibilityIdentifier("settings.diagnostics.export")
-                    }
-                    .padding(14)
-                    .accessibilityIdentifier("settings.diagnostics.summary")
+                    }.padding(SLDesign.space16)
+                        .accessibilityIdentifier("settings.diagnostics.summary")
 
                     Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
@@ -58,7 +56,7 @@ struct SupportSettingsPane: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Label("Included", systemImage: "checkmark.circle")
                                 .font(.caption.weight(.semibold))
-                            Text("App and macOS versions, Library health, permission and capture states, and recent app status events.")
+                            Text("App and macOS versions, Library status, permission and capture states, and recent app status events.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -74,13 +72,11 @@ struct SupportSettingsPane: View {
                     } label: {
                         Label("Review bundle contents", systemImage: "doc.text.magnifyingglass")
                             .font(.callout.weight(.medium))
-                    }
-                    .padding(14)
-                    .accessibilityHint("Show what diagnostics include and what Screenlogger always leaves out")
-                    .accessibilityIdentifier("settings.diagnostics.contents")
+                    }.padding(SLDesign.space16)
+                        .accessibilityHint("Show what diagnostics include and what Screenlogger always leaves out")
+                        .accessibilityIdentifier("settings.diagnostics.contents")
 
-                    diagnosticsExportStatus
-                        .padding(.horizontal, 14)
+                    diagnosticsExportStatus.padding(.horizontal, SLDesign.space16)
                         .padding(.bottom, diagnosticsStatusIsVisible ? 14 : 0)
                 }
             }
@@ -101,8 +97,7 @@ struct SupportSettingsPane: View {
                         .disabled(!updates.canCheckForUpdates)
                         .accessibilityHint(updateCheckAccessibilityHint)
                         .accessibilityIdentifier("settings.support.updates.check")
-                    }
-                    .padding(14)
+                    }.padding(SLDesign.space16)
 
                     Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
@@ -132,8 +127,7 @@ struct SupportSettingsPane: View {
                                 : "Let Screenlogger check the signed update feed in the background"
                         )
                         .accessibilityIdentifier("settings.support.updates.automatic")
-                    }
-                    .padding(14)
+                    }.padding(SLDesign.space16)
                 }
             }
 
@@ -163,10 +157,9 @@ struct SupportSettingsPane: View {
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
                     }
-                }
-                .padding(14)
-                .accessibilityHint("Show detailed app and engine versions")
-                .accessibilityIdentifier("settings.support.versions")
+                }.padding(SLDesign.space16)
+                    .accessibilityHint("Show detailed app and engine versions")
+                    .accessibilityIdentifier("settings.support.versions")
             }
         }
         .sheet(isPresented: $showingUserGuide) {
@@ -208,13 +201,13 @@ struct SupportSettingsPane: View {
     private var diagnosticsSubtitle: String {
         switch model.diagnosticsExportState {
         case .idle:
-            return "Save app and system health to a location you choose. Screenlogger does not send the bundle."
+            return "Save app and system status to a location you choose. Screenlogger does not send the bundle."
         case .exporting:
-            return "Creating the bundle. Screenshots and recognized text stay out."
+            return "Screenlogger is creating the bundle. It does not include screenshots or recognized text."
         case .completed:
-            return "The bundle was saved and is ready to share if you choose."
+            return "Screenlogger saved the bundle. You can share it if necessary."
         case .failed:
-            return "Nothing was sent. Choose another location and try again."
+            return "Screenlogger did not send anything. Choose another location. Try again."
         }
     }
 
@@ -271,9 +264,11 @@ struct SupportSettingsPane: View {
                     .foregroundStyle(SLDesign.success)
                 HStack(spacing: 10) {
                     Button("Show in Finder") { model.revealDiagnosticsExport(destination) }
-                        .buttonStyle(.link)
+                        .buttonStyle(.borderless)
+                        .tint(.primary)
                     Button("Done") { model.dismissDiagnosticsExportStatus() }
-                        .buttonStyle(.link)
+                        .buttonStyle(.borderless)
+                        .tint(.primary)
                 }
             }
             .accessibilityElement(children: .contain)
@@ -286,9 +281,11 @@ struct SupportSettingsPane: View {
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {
                     Button("Try Again") { model.chooseDiagnosticsExportDestination() }
-                        .buttonStyle(.link)
+                        .buttonStyle(.borderless)
+                        .tint(.primary)
                     Button("Dismiss") { model.dismissDiagnosticsExportStatus() }
-                        .buttonStyle(.link)
+                        .buttonStyle(.borderless)
+                        .tint(.primary)
                 }
             }
             .accessibilityElement(children: .contain)

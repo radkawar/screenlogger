@@ -12,14 +12,13 @@ struct PrivacyLocalDataSettingsSection: View {
             PrivacySettingsRow(
                 icon: "folder",
                 title: "Screenlogger Library",
-                detail: "Captures, recognized text, and search data are stored in this folder."
+                detail: "Screenlogger stores captures, recognized text, and search data in this folder."
             ) {
                 Button("Show in Finder") { model.openDataFolder() }
                     .controlSize(.small)
                     .accessibilityHint("Opens the Screenlogger Library folder in Finder")
                     .accessibilityIdentifier("privacy.library.reveal")
-            }
-            .padding(14)
+            }.padding(SLDesign.space16)
 
             DisclosureGroup("Show Library location", isExpanded: $showsLibraryLocation) {
                 Text(model.libraryRootPath)
@@ -30,8 +29,7 @@ struct PrivacyLocalDataSettingsSection: View {
                     .padding(.top, 8)
                     .accessibilityLabel("Library location, \(model.libraryRootPath)")
             }
-            .font(.caption)
-            .padding(.horizontal, 14)
+            .font(.caption).padding(.horizontal, SLDesign.space16)
             .padding(.bottom, 12)
             .accessibilityIdentifier("privacy.library.location")
 
@@ -46,26 +44,28 @@ struct PrivacyLocalDataSettingsSection: View {
                     .controlSize(.small)
                     .accessibilityHint("Shows Library size and retention settings")
                     .accessibilityIdentifier("privacy.storage.open")
-            }
-            .padding(14)
+            }.padding(SLDesign.space16)
         }
         .accessibilityIdentifier("privacy.local-data")
     }
 
     private var storageSummary: String {
-        let size = AppModel.formatByteSize(model.librarySizeBytes)
+        let usage =
+            model.storageMeasurementState.measurement.map {
+                "Using about \(AppModel.formatByteSize($0.libraryBytes)). "
+            } ?? ""
         switch model.storageMode {
         case .off:
-            return "Using about \(size). History is kept until you remove it."
+            return "\(usage)History is kept until you remove it."
         case .compress:
-            return "Using about \(size). Older captures are compressed automatically."
+            return "\(usage)Older captures are compressed automatically."
         case .limit:
             let sizeLimit =
                 model.storageCapMB > 0
                 ? " or when the Library approaches \(AppModel.formatByteSize(model.storageCapMB * 1_000_000))"
                 : ""
             return
-                "Using about \(size). Older capture media is removed after \(model.retentionDays) days\(sizeLimit); searchable text remains."
+                "\(usage)Screenlogger removes capture media after \(model.retentionDays) days\(sizeLimit). Searchable text remains."
         }
     }
 }

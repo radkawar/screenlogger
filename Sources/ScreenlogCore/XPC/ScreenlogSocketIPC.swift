@@ -32,6 +32,9 @@ public enum IPCCommand: String, Codable, CaseIterable, Hashable, Sendable {
     case compact
     case retention
     case permissions
+    case semanticStatus
+    case semanticSearch
+    case semanticControl
     case unsupported = "__unsupported__"
 
     public init(from decoder: Decoder) throws {
@@ -65,16 +68,16 @@ public enum LocalToolCapability: String, Codable, CaseIterable, Sendable {
 extension IPCCommand {
     public var requiredLocalToolCapability: LocalToolCapability {
         switch self {
-        case .ping, .status, .stats, .permissions:
+        case .ping, .status, .stats, .permissions, .semanticStatus:
             return .inspectStatus
         case .fts, .topApplications, .topDomains, .sessions, .sample, .recent, .frame, .frames, .context,
-            .frameAt, .ocrBoxes, .listApplications, .listDomains, .axTree:
+            .frameAt, .ocrBoxes, .listApplications, .listDomains, .axTree, .semanticSearch:
             return .readLibrary
         case .extractImage:
             return .exportSnapshot
         case .startRecording, .stopRecording, .captureOnce:
             return .controlCapture
-        case .compact, .retention:
+        case .compact, .retention, .semanticControl:
             return .maintainLibrary
         case .unsupported:
             return .unsupported
@@ -90,7 +93,7 @@ public enum LocalToolAccessError: Error, LocalizedError, Equatable, Sendable {
         switch self {
         case .mutationAccessRequired:
             return
-                "Screenlogger local tool access is read-only. In Settings > Integrations, turn on Allow capture control and maintenance, then try again."
+                "Screenlogger local tool access is read-only. In Settings > Integrations, turn on Allow capture control and maintenance. Try again."
         }
     }
 }
@@ -128,8 +131,9 @@ public struct LocalToolAccessPolicy: Sendable {
 /// every request so a rolling app/CLI upgrade either selects a shared version or fails explicitly.
 public enum ScreenlogIPCProtocol {
     public static let minimumSupportedVersion = 1
-    public static let maximumSupportedVersion = 2
+    public static let maximumSupportedVersion = 3
     public static let boundedActivityVersion = 2
+    public static let semanticSearchVersion = 3
 
     static func negotiatedVersion(
         peerMinimum: Int, peerMaximum: Int, serverMinimum: Int = minimumSupportedVersion, serverMaximum: Int = maximumSupportedVersion
@@ -163,6 +167,8 @@ public struct IPCRequest: Codable, Sendable {
     public var contextAfterCount: Int?
     public var outPath: String?
     public var preferBase64: Bool?
+    public var semanticSearch: SemanticSearchRequest?
+    public var semanticControl: SemanticControlRequest?
 
     public init(
         id: String = UUID().uuidString, cmd: IPCCommand, protocolMinimumVersion: Int? = ScreenlogIPCProtocol.minimumSupportedVersion,
@@ -180,7 +186,9 @@ public struct IPCRequest: Codable, Sendable {
         contextBeforeCount: Int? = nil,
         contextAfterCount: Int? = nil,
         outPath: String? = nil,
-        preferBase64: Bool? = nil
+        preferBase64: Bool? = nil,
+        semanticSearch: SemanticSearchRequest? = nil,
+        semanticControl: SemanticControlRequest? = nil
     ) {
         self.id = id
         self.cmd = cmd
@@ -203,6 +211,8 @@ public struct IPCRequest: Codable, Sendable {
         self.contextAfterCount = contextAfterCount
         self.outPath = outPath
         self.preferBase64 = preferBase64
+        self.semanticSearch = semanticSearch
+        self.semanticControl = semanticControl
     }
 }
 
@@ -242,11 +252,17 @@ extension IPCRequest {
         }
 
         if let query, query.utf8.count > IPCRequestLimits.maximumQueryBytes {
-            throw IPCRequestValidationError.invalid("query exceeds 4096 bytes")
+            throw IPCRequestValidationError.invalid("query contains more than 4096 bytes")
         }
         if let outPath, outPath.utf8.count > IPCRequestLimits.maximumPathBytes {
-            throw IPCRequestValidationError.invalid("output path exceeds 4096 bytes")
+            throw IPCRequestValidationError.invalid("output path contains more than 4096 bytes")
         }
+        if let outPath, !outPath.isEmpty,
+            !outPath.hasPrefix("/") || outPath.utf8.contains(0)
+        {
+            throw IPCRequestValidationError.invalid("output path must be absolute and contain no NUL bytes")
+        }
+        try validateSemanticRequest()
 
         switch cmd {
         case .fts, .topApplications, .topDomains, .sample, .recent:
@@ -264,7 +280,7 @@ extension IPCRequest {
         }
 
         if let fromTimestampMs, let toTimestampMs, fromTimestampMs >= toTimestampMs {
-            throw IPCRequestValidationError.invalid("activity time range must have since before before")
+            throw IPCRequestValidationError.invalid("the activity range start must be earlier than its end")
         }
         if fromTimestampMs != nil || toTimestampMs != nil || sortOrder != nil
             || literalSearch == true
@@ -276,6 +292,10 @@ extension IPCRequest {
         }
 
         switch cmd {
+        case .frameAt:
+            guard timestampMs != nil else {
+                throw IPCRequestValidationError.invalid("a timestamp is required")
+            }
         case .frame, .ocrBoxes, .axTree:
             guard let frameID, frameID > 0 else { throw IPCRequestValidationError.invalid("a positive frame id is required") }
         case .frames:
@@ -306,6 +326,11 @@ extension IPCRequest {
 public enum IPCResponseErrorCode: String, Codable, Sendable {
     case incompatibleProtocol = "incompatible_protocol"
     case capabilityDenied = "capability_denied"
+    case semanticDisabled = "semantic_disabled"
+    case semanticModelMissing = "semantic_model_missing"
+    case semanticIndexEmpty = "semantic_index_empty"
+    case semanticUnavailable = "semantic_unavailable"
+    case semanticInvalidRequest = "semantic_invalid_request"
 }
 
 public struct IPCResponse: Codable, Sendable {
@@ -392,72 +417,97 @@ public enum ScreenlogSocketPaths {
 public final class ScreenlogSocketHost: @unchecked Sendable {
     public static let shared = ScreenlogSocketHost()
 
+    // This queue only owns listener state and admission. It must never wait for
+    // a client, a Store operation, or MainActor work.
     private let queue = DispatchQueue(label: "dev.screenlog.socket-host", qos: .userInitiated)
-    private let queueSpecificKey = DispatchSpecificKey<Void>()
-    private var store: Store?
-    private var root: URL?
+    private let clients = DispatchQueue(label: "dev.screenlog.socket-clients", qos: .userInitiated, attributes: .concurrent)
+    static let maximumClients = 16
+    static let maximumSemanticSearches = 4
+    private var clientCount = 0
+    private var semanticSearchCount = 0
+    private var current: Generation?
+    private var generations: [ObjectIdentifier: Generation] = [:]
     private let preferences: UserDefaults
-    public private(set) var isRunning = false
+
+    private final class Generation: @unchecked Sendable {
+        let store: Store
+        let root: URL
+        let semanticService: (any SemanticToolService)?
+        let fd: Int32
+        let source: DispatchSourceRead
+        let operations = DispatchGroup()
+        // Access only on the host state queue.
+        var clientCount = 0
+
+        init(store: Store, root: URL, semanticService: (any SemanticToolService)?, fd: Int32, source: DispatchSourceRead) {
+            self.store = store
+            self.root = root
+            self.semanticService = semanticService
+            self.fd = fd
+            self.source = source
+        }
+    }
+
+    public var isRunning: Bool { queue.sync { current != nil } }
 
     init(preferences: UserDefaults = ScreenlogProcessPreferences.current) {
         self.preferences = preferences
-        queue.setSpecific(key: queueSpecificKey, value: ())
     }
 
-    public func start(store: Store, root: URL) throws {
-        stop()
-        self.store = store
-        self.root = root
-        try ScreenlogPaths.ensureDirectories(root: root)
-
-        let sockURL = ScreenlogSocketPaths.socketURL(root: root)
-        try? FileManager.default.removeItem(at: sockURL)
-        try startBSD(store: store, socketPath: sockURL.path)
+    public func start(store: Store, root: URL, semanticService: (any SemanticToolService)? = nil) throws {
+        try queue.sync {
+            stopAdmission()
+            try ScreenlogPaths.ensureDirectories(root: root)
+            let socketURL = ScreenlogSocketPaths.socketURL(root: root)
+            try? FileManager.default.removeItem(at: socketURL)
+            try startBSD(store: store, root: root, semanticService: semanticService, socketPath: socketURL.path)
+        }
     }
 
+    /// Stop admission without waiting for accepted requests. Use stopAndDrain()
+    /// before closing or replacing a Store.
     public func stop() {
-        isRunning = false
-        if let root { try? FileManager.default.removeItem(at: ScreenlogSocketPaths.socketURL(root: root)) }
-        bsdStop()
-        // `acceptOne` performs each accepted request on this serial queue. A
-        // synchronous barrier makes the ordinary restart path release the old
-        // Store before `start` publishes a replacement one.
-        let releaseStore = {
-            self.store = nil
-            self.root = nil
-        }
-        if DispatchQueue.getSpecific(key: queueSpecificKey) != nil {
-            releaseStore()
-        } else {
-            queue.sync(execute: releaseStore)
-        }
+        queue.sync { stopAdmission() }
     }
 
-    /// Stop accepting clients, finish every request already serialized on the
-    /// host queue, and release Store before its SQLite connection is closed.
+    /// Stop admission and asynchronously finish all accepted requests, including
+    /// requests from an earlier listener generation that was stopped or restarted.
+    /// A later start creates a separate generation and does not extend this drain.
     public func stopAndDrain() async {
         await withCheckedContinuation { continuation in
             queue.async {
-                self.isRunning = false
-                if let root = self.root {
-                    try? FileManager.default.removeItem(at: ScreenlogSocketPaths.socketURL(root: root))
+                self.stopAdmission()
+                let drain = DispatchGroup()
+                for generation in self.generations.values {
+                    drain.enter()
+                    generation.operations.notify(queue: self.queue) { drain.leave() }
                 }
-                self.bsdStop()
-                self.store = nil
-                self.root = nil
-                continuation.resume()
+                drain.notify(queue: self.queue) { continuation.resume() }
             }
+        }
+    }
+
+    private func stopAdmission() {
+        guard let generation = current else { return }
+        current = nil
+        generation.source.cancel()
+        try? FileManager.default.removeItem(at: ScreenlogSocketPaths.socketURL(root: generation.root))
+        if generation.clientCount == 0 {
+            generations.removeValue(forKey: ObjectIdentifier(generation))
         }
     }
 
     // MARK: BSD AF_UNIX (reliable for local CLI)
 
-    private var serverFD: Int32 = -1
-    private var acceptSource: DispatchSourceRead?
-
-    private func startBSD(store: Store, socketPath: String) throws {
+    private func startBSD(store: Store, root: URL, semanticService: (any SemanticToolService)?, socketPath: String) throws {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw IPCError.socketCreate }
+        // A stale readiness notification must not block the admission queue.
+        let flags = fcntl(fd, F_GETFL)
+        guard flags >= 0, fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0 else {
+            close(fd)
+            throw IPCError.socketCreate
+        }
 
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
@@ -491,41 +541,74 @@ public final class ScreenlogSocketHost: @unchecked Sendable {
             throw error
         }
 
-        serverFD = fd
-        isRunning = true
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
-        source.setEventHandler { [weak self] in self?.acceptOne() }
+        let generation = Generation(store: store, root: root, semanticService: semanticService, fd: fd, source: source)
+        source.setEventHandler { [weak self, weak generation] in
+            guard let self, let generation, self.current === generation else { return }
+            self.acceptOne(generation)
+        }
         source.setCancelHandler { close(fd) }
-        acceptSource = source
+        generations[ObjectIdentifier(generation)] = generation
+        current = generation
         source.resume()
         log.info("socket IPC listening at \(socketPath, privacy: .private(mask: .hash))")
     }
 
-    private func bsdStop() {
-        if let acceptSource { acceptSource.cancel() } else if serverFD >= 0 { close(serverFD) }
-        acceptSource = nil
-        serverFD = -1
+    private func acceptOne(_ generation: Generation) {
+        let client = accept(generation.fd, nil, nil)
+        guard client >= 0 else { return }
+        guard clientCount < Self.maximumClients else {
+            close(client)
+            return
+        }
+        clientCount += 1
+        generation.clientCount += 1
+        // Enter before dispatch: neither stop nor a drain can overtake admission.
+        generation.operations.enter()
+        clients.async {
+            self.serve(client, generation: generation)
+            close(client)
+            self.queue.async {
+                self.clientCount -= 1
+                generation.clientCount -= 1
+                if self.current !== generation, generation.clientCount == 0 {
+                    self.generations.removeValue(forKey: ObjectIdentifier(generation))
+                }
+                generation.operations.leave()
+            }
+        }
     }
 
-    private func acceptOne() {
-        let client = accept(serverFD, nil, nil)
-        guard client >= 0 else { return }
-        // The DispatchSource invokes this method on `queue`; keep request work
-        // in that same block. Enqueuing a second block here would let a drain
-        // barrier overtake a just-accepted request.
-        defer { close(client) }
+    private func serve(_ client: Int32, generation: Generation) {
         do {
-            var noSigPipe: Int32 = 1
-            _ = setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
-            var clientTimeout = timeval(tv_sec: 10, tv_usec: 0)
-            _ = setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &clientTimeout, socklen_t(MemoryLayout<timeval>.size))
-            _ = setsockopt(client, SOL_SOCKET, SO_SNDTIMEO, &clientTimeout, socklen_t(MemoryLayout<timeval>.size))
+            let flags = fcntl(client, F_GETFL)
+            guard flags >= 0, fcntl(client, F_SETFL, flags & ~O_NONBLOCK) == 0 else { throw IPCError.read }
+            try Self.setTimeout(fd: client, seconds: 10)
             let reqData = try Self.readFrame(fd: client, maximumBytes: IPCRequestLimits.maximumRequestFrameBytes)
             let req = try IPCFrame.decodeRequest(from: reqData)
-            let resp = handle(req)
+            let resp = handle(req, generation: generation)
             let out = try IPCFrame.encode(resp)
             try Self.writeAll(fd: client, data: out)
         } catch { log.error("socket client error: \(error.localizedDescription)") }
+    }
+
+    private func beginSemanticSearch() -> Bool {
+        queue.sync {
+            guard semanticSearchCount < Self.maximumSemanticSearches else { return false }
+            semanticSearchCount += 1
+            return true
+        }
+    }
+
+    private func endSemanticSearch() {
+        queue.sync { semanticSearchCount -= 1 }
+    }
+
+    static func setTimeout(fd: Int32, seconds: Int) throws {
+        var timeout = timeval(tv_sec: seconds, tv_usec: 0)
+        guard setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size)) == 0,
+            setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size)) == 0
+        else { throw IPCError.socketCreate }
     }
 
     static func readFrame(fd: Int32, maximumBytes: Int) throws -> Data {
@@ -554,6 +637,12 @@ public final class ScreenlogSocketHost: @unchecked Sendable {
     }
 
     static func writeAll(fd: Int32, data: Data) throws {
+        // Enforce this at the write boundary, for host and client alike. A
+        // disconnected peer must return an error, never terminate the process.
+        var noSigPipe: Int32 = 1
+        guard setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size)) == 0 else {
+            throw IPCError.write
+        }
         var offset = 0
         let total = data.count
         while offset < total {
@@ -570,7 +659,10 @@ public final class ScreenlogSocketHost: @unchecked Sendable {
 
     // MARK: - Dispatch
 
-    private func handle(_ req: IPCRequest) -> IPCResponse {
+    private func handle(_ req: IPCRequest, generation: Generation) -> IPCResponse {
+        let store = generation.store
+        let root = generation.root
+        let semanticService = generation.semanticService
         guard let peerMinimum = req.protocolMinimumVersion, let peerMaximum = req.protocolMaximumVersion else {
             return .fail(
                 id: req.id, "incompatible IPC protocol: client did not declare a supported protocol range; update the Screenlogger CLI",
@@ -597,19 +689,33 @@ public final class ScreenlogSocketHost: @unchecked Sendable {
             let response: IPCResponse = try { () throws -> IPCResponse in
                 switch req.cmd {
                 case .ping: return .ok(id: req.id, protocolVersion: negotiatedVersion, string: "pong \(ScreenlogCore.version)")
-                case .status:
-                    guard let store else { return .fail(id: req.id, "store unavailable") }
-                    let sem = DispatchSemaphore(value: 0)
-                    var engineState: (recording: Bool, pauseReason: CapturePauseReason?)?
-                    Task { @MainActor in
-                        engineState = (
-                            RecordingEngine.shared.isRecording,
-                            RecordingEngine.shared.pauseReason
-                        )
-                        sem.signal()
+                case .semanticStatus:
+                    let status = try awaitSync { [semanticService] in
+                        await semanticService?.status()
+                            ?? SemanticFeatureStatus(phase: .unsupported, message: "Semantic search is unavailable in this app.")
                     }
-                    guard sem.wait(timeout: .now() + 2) == .success, let engineState else {
-                        return .fail(id: req.id, "recording status timed out")
+                    return .ok(id: req.id, data: try JSONEncoder().encode(status))
+                case .semanticSearch:
+                    guard let semanticService else { throw SemanticSearchError.unavailable("Semantic search is unavailable in this app.") }
+                    guard let request = req.semanticSearch else { throw SemanticSearchError.invalidRequest("A query is required.") }
+                    guard beginSemanticSearch() else {
+                        throw SemanticSearchError.unavailable("Semantic search is busy. Try again.")
+                    }
+                    defer { endSemanticSearch() }
+                    let result = try awaitSync { try await semanticService.search(request) }
+                    return .ok(id: req.id, data: try JSONEncoder().encode(result))
+                case .semanticControl:
+                    guard let semanticService else { throw SemanticSearchError.unavailable("Semantic search is unavailable in this app.") }
+                    guard let request = req.semanticControl else { throw SemanticSearchError.invalidRequest("An action is required.") }
+                    // The service accepts installation work and returns its current status.
+                    // It owns the download task, cancellation and progress.
+                    let status = try awaitSync { try await semanticService.control(request) }
+                    return .ok(id: req.id, data: try JSONEncoder().encode(status))
+                case .status:
+                    let engineState = try awaitSync {
+                        await MainActor.run {
+                            (recording: RecordingEngine.shared.isRecording, pauseReason: RecordingEngine.shared.pauseReason)
+                        }
                     }
                     let permissions = try awaitSync { await PermissionsSnapshot.current() }
                     let stats = try store.stats()
@@ -624,33 +730,28 @@ public final class ScreenlogSocketHost: @unchecked Sendable {
                         maxTimestampMs: stats.maxTimestampMs,
                         screenRecording: permissions.screenRecording,
                         accessibility: permissions.accessibility,
-                        dataRoot: root?.path ?? store.root.path
+                        dataRoot: root.path
                     )
                     return .ok(id: req.id, data: try JSONEncoder().encode(status))
                 case .startRecording:
-                    let sem = DispatchSemaphore(value: 0)
-                    var outcome: (recording: Bool, error: String?)?
-                    Task { @MainActor in
-                        RecordingEngine.shared.start()
-                        outcome = (RecordingEngine.shared.isRecording, RecordingEngine.shared.lastError)
-                        sem.signal()
-                    }
-                    guard sem.wait(timeout: .now() + 5) == .success, let outcome else {
-                        return .fail(id: req.id, "start recording timed out")
+                    let outcome = try awaitSync {
+                        await MainActor.run {
+                            RecordingEngine.shared.start()
+                            return (recording: RecordingEngine.shared.isRecording, error: RecordingEngine.shared.lastError)
+                        }
                     }
                     guard outcome.recording else { return .fail(id: req.id, outcome.error ?? "recording did not start") }
                     TimedCapturePausePreference.clear(from: ScreenlogProcessPreferences.current)
                     CaptureIntentPreference.save(true, to: ScreenlogProcessPreferences.current)
                     return .ok(id: req.id, string: "started")
                 case .stopRecording:
-                    let sem = DispatchSemaphore(value: 0)
-                    var stopped = false
-                    Task { @MainActor in
-                        RecordingEngine.shared.stop()
-                        stopped = !RecordingEngine.shared.isRecording
-                        sem.signal()
+                    let stopped = try awaitSync {
+                        await MainActor.run {
+                            RecordingEngine.shared.stop()
+                            return !RecordingEngine.shared.isRecording
+                        }
                     }
-                    guard sem.wait(timeout: .now() + 5) == .success, stopped else { return .fail(id: req.id, "stop recording timed out") }
+                    guard stopped else { return .fail(id: req.id, "recording did not stop") }
                     TimedCapturePausePreference.clear(from: ScreenlogProcessPreferences.current)
                     CaptureIntentPreference.save(false, to: ScreenlogProcessPreferences.current)
                     return .ok(id: req.id, string: "stopped")
@@ -658,7 +759,6 @@ public final class ScreenlogSocketHost: @unchecked Sendable {
                     let id: Int64 = try awaitSync { try await RecordingEngine.shared.captureOneNow() }
                     return .ok(id: req.id, intValue: id)
                 case .fts:
-                    guard let store else { return .fail(id: req.id, "store unavailable") }
                     let data = try JSONEncoder().encode(
                         try store.searchLibrary(
                             query: req.query ?? "",
@@ -669,7 +769,6 @@ public final class ScreenlogSocketHost: @unchecked Sendable {
                     )
                     return .ok(id: req.id, data: data)
                 case .stats:
-                    guard let store else { return .fail(id: req.id, "store unavailable") }
                     return .ok(
                         id: req.id,
                         data: try JSONEncoder().encode(
@@ -680,7 +779,6 @@ public final class ScreenlogSocketHost: @unchecked Sendable {
                         )
                     )
                 case .topApplications:
-                    guard let store else { return .fail(id: req.id, "store unavailable") }
                     return .ok(
                         id: req.id,
                         data: try JSONEncoder().encode(
@@ -692,7 +790,6 @@ public final class ScreenlogSocketHost: @unchecked Sendable {
                         )
                     )
                 case .topDomains:
-                    guard let store else { return .fail(id: req.id, "store unavailable") }
                     return .ok(
                         id: req.id,
                         data: try JSONEncoder().encode(
@@ -704,7 +801,6 @@ public final class ScreenlogSocketHost: @unchecked Sendable {
                         )
                     )
                 case .sessions:
-                    guard let store else { return .fail(id: req.id, "store unavailable") }
                     let gap = Int64(max(1, req.gapMinutes ?? 5)) * 60_000
                     return .ok(
                         id: req.id,
@@ -717,7 +813,6 @@ public final class ScreenlogSocketHost: @unchecked Sendable {
                         )
                     )
                 case .sample:
-                    guard let store else { return .fail(id: req.id, "store unavailable") }
                     return .ok(
                         id: req.id,
                         data: try JSONEncoder().encode(
@@ -731,7 +826,6 @@ public final class ScreenlogSocketHost: @unchecked Sendable {
                         )
                     )
                 case .recent:
-                    guard let store else { return .fail(id: req.id, "store unavailable") }
                     return .ok(
                         id: req.id,
                         data: try JSONEncoder().encode(
@@ -739,19 +833,16 @@ public final class ScreenlogSocketHost: @unchecked Sendable {
                         )
                     )
                 case .frame:
-                    guard let store else { return .fail(id: req.id, "store unavailable") }
                     guard let fid = req.frameID, let f = try store.frames(ids: [fid]).first else {
                         return .fail(id: req.id, "not found")
                     }
                     return .ok(id: req.id, data: try JSONEncoder().encode(f))
                 case .frames:
-                    guard let store else { return .fail(id: req.id, "store unavailable") }
                     return .ok(
                         id: req.id,
                         data: try JSONEncoder().encode(try store.frames(ids: req.frameIDs ?? []))
                     )
                 case .context:
-                    guard let store else { return .fail(id: req.id, "store unavailable") }
                     guard let frameID = req.frameID else {
                         return .fail(id: req.id, "frameID required")
                     }
@@ -766,7 +857,6 @@ public final class ScreenlogSocketHost: @unchecked Sendable {
                         )
                     )
                 case .frameAt:
-                    guard let store else { return .fail(id: req.id, "store unavailable") }
                     guard let ts = req.timestampMs,
                         let nearest = try store.frameNearest(timestampMs: ts),
                         let f = try store.frames(ids: [nearest.id]).first
@@ -775,22 +865,17 @@ public final class ScreenlogSocketHost: @unchecked Sendable {
                     }
                     return .ok(id: req.id, data: try JSONEncoder().encode(f))
                 case .ocrBoxes:
-                    guard let store else { return .fail(id: req.id, "store unavailable") }
                     guard let fid = req.frameID else { return .fail(id: req.id, "frameID required") }
                     return .ok(id: req.id, data: try JSONEncoder().encode(try store.ocrBoxes(frameID: fid)))
                 case .listApplications:
-                    guard let store else { return .fail(id: req.id, "store unavailable") }
                     return .ok(id: req.id, data: try JSONEncoder().encode(try store.listApplications()))
                 case .listDomains:
-                    guard let store else { return .fail(id: req.id, "store unavailable") }
                     return .ok(id: req.id, data: try JSONEncoder().encode(try store.listDomains()))
                 case .axTree:
-                    guard let store else { return .fail(id: req.id, "store unavailable") }
                     guard let fid = req.frameID else { return .fail(id: req.id, "frameID required") }
                     let xml = try store.axTreeXML(frameID: fid) ?? ""
                     return .ok(id: req.id, string: xml)
                 case .extractImage:
-                    guard let store else { return .fail(id: req.id, "store unavailable") }
                     let frame: FrameRow
                     if let fid = req.frameID, fid > 0 {
                         guard let f = try store.frame(id: fid) else { return .fail(id: req.id, "not found") }
@@ -811,7 +896,7 @@ public final class ScreenlogSocketHost: @unchecked Sendable {
                     } else if still.source == "still", let existing = frame.imagePath, FileManager.default.fileExists(atPath: existing) {
                         path = existing
                     } else {
-                        let dir = (root ?? store.root).appendingPathComponent("exports", isDirectory: true)
+                        let dir = root.appendingPathComponent("exports", isDirectory: true)
                         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                         let url = dir.appendingPathComponent("frame_\(frame.id).\(still.fileExtension)")
                         try still.data.write(to: url, options: .atomic)
@@ -823,11 +908,9 @@ public final class ScreenlogSocketHost: @unchecked Sendable {
                         byteCount: still.data.count, source: still.source)
                     return .ok(id: req.id, data: try JSONEncoder().encode(result))
                 case .compact:
-                    guard let store else { return .fail(id: req.id, "store unavailable") }
                     let n = try VideoCompactionService().compactIfNeeded(store: store)
                     return .ok(id: req.id, intValue: Int64(n))
                 case .retention:
-                    guard let store else { return .fail(id: req.id, "store unavailable") }
                     let report = try RetentionService().run(store: store)
                     return .ok(id: req.id, string: report)
                 case .permissions:
@@ -837,7 +920,12 @@ public final class ScreenlogSocketHost: @unchecked Sendable {
                 }
             }()
             return response.finalized(protocolVersion: negotiatedVersion)
-        } catch { return .fail(id: req.id, error.localizedDescription).finalized(protocolVersion: negotiatedVersion) }
+        } catch let error as SemanticSearchError {
+            return .fail(id: req.id, error.localizedDescription, errorCode: error.ipcErrorCode)
+                .finalized(protocolVersion: negotiatedVersion)
+        } catch {
+            return .fail(id: req.id, error.localizedDescription).finalized(protocolVersion: negotiatedVersion)
+        }
     }
 }
 
@@ -875,13 +963,7 @@ public final class ScreenlogSocketClient: @unchecked Sendable {
         }
         guard ok == 0 else { throw XPCClientError.appNotRunning }
 
-        var noSigPipe: Int32 = 1
-        _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
-
-        // Optional timeout via SO_RCVTIMEO
-        var tv = timeval(tv_sec: Int(timeout), tv_usec: 0)
-        _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-        _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        try ScreenlogSocketHost.setTimeout(fd: fd, seconds: Int(timeout))
 
         let out = try IPCFrame.encode(req)
         try ScreenlogSocketHost.writeAll(fd: fd, data: out)
@@ -891,6 +973,9 @@ public final class ScreenlogSocketClient: @unchecked Sendable {
         try validateCompatibility(response: resp, request: req)
         if resp.errorCode == IPCResponseErrorCode.capabilityDenied.rawValue {
             throw XPCClientError.mutationAccessDenied
+        }
+        if !resp.ok, let semanticError = resp.semanticError {
+            throw semanticError
         }
         if !resp.ok { throw XPCClientError.remote(resp.error ?? "unknown error") }
         return resp

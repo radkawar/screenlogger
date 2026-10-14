@@ -60,6 +60,13 @@ extension AppModel {
         keyboardShortcutBinding(for: actionID)?.accessibilityLabel ?? fallback
     }
 
+    /// Numbered navigation changes only the visible Library section.
+    /// Queries, filters, result selection, and session selection stay retained.
+    func showLibrarySection(_ mode: LibraryContentMode) {
+        libraryWorkspaceNavigation.contentMode = mode
+        openSearchWindow(intent: .show)
+    }
+
     func performKeyboardShortcutCaptureToggle() {
         if isRecording {
             _ = stopCapture()

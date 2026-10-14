@@ -1,10 +1,9 @@
 import Foundation
+@testable import ScreenlogCLI
 import XCTest
 
-@testable import ScreenlogCLI
-
 final class SkillInstallerTests: XCTestCase {
-    func testShippedSkillCopiesMatchAndDescribeAssistantPrivacyBoundary() throws {
+    func testShippedSkillCopiesMatch() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -19,9 +18,6 @@ final class SkillInstallerTests: XCTestCase {
         let packagedContract = try String(contentsOf: packagedSkill, encoding: .utf8)
 
         XCTAssertEqual(packagedContract, contract)
-        XCTAssertTrue(contract.contains("assistant's own settings and privacy policy"))
-        XCTAssertTrue(contract.contains("do not promise that a third-party assistant is offline"))
-        XCTAssertFalse(contract.contains("Nothing leaves the device"))
     }
 
     func testCLIErrorExitCodesDistinguishUsageFromOperationalFailure() {

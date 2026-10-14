@@ -1,19 +1,21 @@
 # Assistant Integrations
 
 Screenlogger supports Claude Code, Codex, Cursor, Grok Build, and OpenClaw.
-Integrations install a small skill that teaches the assistant to call the local
+Integrations install a skill that tells the assistant how to use the local
 `screenlog` command.
 
 ## Setup
 
-1. Open Settings and choose Integrations.
-2. Complete Terminal Access and command verification.
-3. Connect an installed assistant.
-4. Restart that assistant if Screenlogger requests it.
-5. Run Test Search to verify Screenlogger's local command path.
-6. Try a small Library search from each connected assistant before relying on it.
+1. Open Settings.
+2. Choose Integrations.
+3. Complete Terminal Access.
+4. Complete command verification.
+5. Connect an installed assistant.
+6. Restart that assistant if Screenlogger requests it.
+7. Run Test Search to check Screenlogger's local command path.
+8. Test a small Library search from each connected assistant before you use it for other work.
 
-The same lifecycle is available from Terminal:
+Terminal also provides these integration commands:
 
 ```sh
 screenlog skill install
@@ -22,31 +24,32 @@ screenlog skill upgrade grok
 screenlog skill remove codex
 ```
 
-Install is idempotent. Upgrade replaces only authenticated stale content. Remove
-does not delete unrelated files and stops on conflicts unless the user explicitly
-chooses a recovery action.
+Install does not change a current installation. Upgrade replaces only older
+content that Screenlogger can authenticate. Remove preserves unrelated files.
+It stops on conflicts unless you explicitly choose a recovery action.
 
-After an integration has been installed, launching a newer Screenlogger build
-updates its Screenlogger-owned skill copy automatically. Missing integrations
-are not installed implicitly, and unrelated or blocked destinations are left
-for explicit review in Settings.
+A newer Screenlogger build automatically updates existing skill copies that
+Screenlogger owns. It does not install missing integrations.
+It leaves unrelated files and blocked locations unchanged for review in Settings.
 
 ## Search handoff
 
-Command-Return from Library search opens the configured assistant. If one ready
-assistant exists, Screenlogger can route directly. If several are ready, the
-routing preference can ask every time or select a preferred target.
+Command-Return from Library search opens the configured assistant.
+Screenlogger can select the assistant directly when only one assistant is ready.
+With several ready assistants, the routing preference can request a choice or
+select a preferred assistant.
 
-Terminal-based assistants launch in Apple Terminal through macOS Automation.
-Each target receives an isolated working directory so
-project pickers and unrelated repository context do not intercept the request.
+Terminal assistants start in Apple Terminal through macOS Automation.
+Each assistant receives a separate working directory. This prevents project
+selection dialogs and unrelated repository content from changing the request.
 
 ## Activity reconstruction
 
-The bundled skill now starts broad questions such as "what did I do last month?"
-with a coverage check and one date-bounded digest. It then samples across the
-requested interval and batch-checks supporting moments instead of issuing one
-command per frame or treating adjacent search hits as time spent.
+For broad questions, the bundled skill first checks coverage.
+It then requests one digest for the specified date range.
+It samples that range and checks supporting moments in batches.
+It does not send one command per frame.
+It does not treat adjacent search results as time spent.
 
 Useful direct commands include:
 
@@ -57,13 +60,14 @@ screenlog query frame --ids 123,456,789 --show-ocr --max-ocr-chars 1000 --json
 screenlog query context --id 456 --before 3 --after 3 --show-ocr --json
 ```
 
-All usage commands and sampling accept the same half-open `--since` and
-`--before` bounds. Application and domain totals describe captured exposure;
-they are not exclusive attention or project-time measurements.
+Usage commands and sampling include `--since` and exclude `--before`.
+Application and domain totals describe captured screen exposure.
+They do not measure exclusive attention or project time.
 
 ## Privacy boundary
 
-Screenlogger sends the assistant a request to search the local Library. The
-assistant decides how to execute tools and may send retrieved material to its AI
-provider. Review the assistant's privacy settings. External command access is
-read-only unless Allow capture control and maintenance is enabled separately.
+Screenlogger sends the assistant a request to search the local Library.
+The assistant controls tool use and may send retrieved content to its AI provider.
+Review the assistant's privacy settings.
+External command access only reads data unless you separately enable
+Allow capture control and maintenance.

@@ -66,7 +66,7 @@ struct LibraryDeletionReviewSheet: View {
             if review.plan.affectedMomentCount > review.plan.requestedMomentCount {
                 let neighborCount = review.plan.affectedMomentCount - review.plan.requestedMomentCount
                 Label(
-                    "Some selected moments share a compressed video. Deleting it also removes \(neighborCount) neighboring \(neighborCount == 1 ? "moment" : "moments").",
+                    "Some selected moments share a compressed video. If you delete this video, Screenlogger also removes \(neighborCount) adjacent \(neighborCount == 1 ? "moment" : "moments").",
                     systemImage: "exclamationmark.triangle.fill"
                 )
                 .foregroundStyle(SLDesign.warning)
@@ -85,7 +85,7 @@ struct LibraryDeletionReviewSheet: View {
 
             if review.captureWasPaused {
                 Label(
-                    "Capture is paused until you finish this review.",
+                    "Capture is paused until you complete this review.",
                     systemImage: "pause.circle"
                 )
                 .font(.callout)
@@ -94,7 +94,7 @@ struct LibraryDeletionReviewSheet: View {
             }
 
             Label(
-                "Review the details carefully. This deletion cannot be undone.",
+                "Review the details carefully. You cannot undo this deletion.",
                 systemImage: "exclamationmark.circle"
             )
             .font(.callout.weight(.medium))
@@ -235,15 +235,15 @@ struct LibraryDeletionReviewSheet: View {
         var parts: [String] = []
         if review.plan.missingFileCount > 0 {
             parts.append(
-                "\(review.plan.missingFileCount) missing local \(review.plan.missingFileCount == 1 ? "file" : "files") will be cleaned from the index"
+                "Screenlogger will remove index entries for \(review.plan.missingFileCount) missing local \(review.plan.missingFileCount == 1 ? "file" : "files")"
             )
         }
         if review.plan.unmanagedFileCount > 0 {
             parts.append(
-                "\(review.plan.unmanagedFileCount) file \(review.plan.unmanagedFileCount == 1 ? "is" : "are") outside Screenlogger's library and will not be removed"
+                "Screenlogger will not remove \(review.plan.unmanagedFileCount) \(review.plan.unmanagedFileCount == 1 ? "file" : "files") outside its Library"
             )
         }
-        return parts.joined(separator: "; ") + "."
+        return parts.joined(separator: ". ") + "."
     }
 }
 

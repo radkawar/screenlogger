@@ -51,7 +51,7 @@ struct TimelineActivityRibbon: View {
                 expectedCaptureIntervalMs: Int64((model.intervalSeconds * 1_000).rounded())
             )
             let contextFrame = hoveredFrame ?? model.selectedTimelineFrame
-            VStack(spacing: 4) {
+            VStack(spacing: SLDesign.space4) {
                 timelineRibbonHeader(
                     frames: frames,
                     window: window,
@@ -62,9 +62,9 @@ struct TimelineActivityRibbon: View {
                 )
 
                 ZStack(alignment: .leading) {
-                    Capsule(style: .continuous)
-                        .fill(Color.white.opacity(trackBackgroundOpacity))
-                        .frame(height: 8)
+                    Rectangle()
+                        .fill(Color.primary.opacity(trackBackgroundOpacity))
+                        .frame(height: 1)
                         .accessibilityHidden(true)
 
                     if model.selectedSession != nil,
@@ -81,10 +81,10 @@ struct TimelineActivityRibbon: View {
                             in: window,
                             width: w
                         )
-                        Capsule(style: .continuous)
-                            .fill(Color.white.opacity(0.11))
-                            .frame(width: max(3, loadedEndX - loadedX), height: 14)
-                            .position(x: loadedX + max(3, loadedEndX - loadedX) / 2, y: 14)
+                        RoundedRectangle(cornerRadius: SLDesign.space4, style: .continuous)
+                            .fill(Color.primary.opacity(0.04))
+                            .frame(width: max(3, loadedEndX - loadedX), height: 32)
+                            .position(x: loadedX + max(3, loadedEndX - loadedX) / 2, y: 22)
                             .accessibilityHidden(true)
                     }
 
@@ -101,10 +101,14 @@ struct TimelineActivityRibbon: View {
                         let x = Self.timelineX(timestampMs: interval.startMs, in: window, width: w)
                         let endX = Self.timelineX(timestampMs: interval.endMs, in: window, width: w)
                         let runW = max(3, endX - x - 1.5)
-                        Capsule(style: .continuous)
-                            .fill(segmentColor(for: interval.source).opacity(0.9))
-                            .frame(width: runW, height: 8)
-                            .position(x: x + runW / 2, y: 14)
+                        let isSelected =
+                            model.selectedTimelineFrame.map {
+                                $0.timestampMs >= interval.startMs && $0.timestampMs <= interval.endMs
+                            } ?? false
+                        RoundedRectangle(cornerRadius: SLDesign.space4, style: .continuous)
+                            .fill(isSelected ? model.accentSwiftUIColor.opacity(0.16) : Color.primary.opacity(trackBackgroundOpacity))
+                            .frame(width: runW, height: 24)
+                            .position(x: x + runW / 2, y: 22)
                             .help(Self.intervalHelp(interval))
                             .accessibilityElement()
                             .accessibilityLabel("\(interval.source.appLabel) captured activity")
@@ -124,16 +128,15 @@ struct TimelineActivityRibbon: View {
                         let endX = Self.timelineX(timestampMs: interval.endMs, in: window, width: w)
                         let runW = max(3, endX - x - 1.5)
                         if runW >= 24 {
-                            TimelineRunIdentityBadge(
+                            TimelineRunIdentityLabel(
                                 source: interval.source,
                                 momentCount: interval.momentCount,
-                                showsLabel: runW >= 78,
-                                maximumWidth: max(20, runW - 4),
-                                strokeOpacity: controlStrokeOpacity
+                                showsLabel: runW >= 96,
+                                maximumWidth: max(20, runW - 8)
                             )
                             .position(
                                 x: min(w - 10, max(10, x + runW / 2)),
-                                y: 14
+                                y: 22
                             )
                             .accessibilityHidden(true)
                         }
@@ -146,14 +149,14 @@ struct TimelineActivityRibbon: View {
                         Rectangle()
                             .fill(Color.clear)
                             .contentShape(Rectangle())
-                            .frame(width: gapWidth, height: 28)
-                            .position(x: x + gapWidth / 2, y: 14)
+                            .frame(width: gapWidth, height: 44)
+                            .position(x: x + gapWidth / 2, y: 22)
                             .help(Self.gapHelp(gap))
                             .accessibilityElement()
                             .accessibilityLabel("No captures")
                             .accessibilityValue(Self.gapAccessibilityValue(gap))
                             .accessibilityHint(
-                                "Activate to choose the closest captured moment; a tie chooses the earlier one"
+                                "Select the nearest captured moment. If two moments are equally near, Screenlogger selects the earlier one."
                             )
                             .accessibilityAddTraits(.isButton)
                             .accessibilityAction {
@@ -165,11 +168,11 @@ struct TimelineActivityRibbon: View {
 
                         if gapWidth >= 90 {
                             Text("No captures")
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundStyle(.white.opacity(secondaryTextOpacity))
-                                .padding(.horizontal, 5)
-                                .background(Color.black.opacity(0.72))
-                                .position(x: x + gapWidth / 2, y: 14)
+                                .font(SLDesign.metadataFont)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, SLDesign.space4)
+                                .background(Color(nsColor: .windowBackgroundColor))
+                                .position(x: x + gapWidth / 2, y: 22)
                                 .allowsHitTesting(false)
                                 .accessibilityHidden(true)
                         }
@@ -178,18 +181,17 @@ struct TimelineActivityRibbon: View {
                     if let selected = model.selectedTimelineFrame, frames.count > 1 {
                         let x = Self.timelineX(timestampMs: selected.timestampMs, in: window, width: w)
                         RoundedRectangle(cornerRadius: 2, style: .continuous)
-                            .fill(Color.white)
-                            .frame(width: 4, height: 24)
+                            .fill(model.accentSwiftUIColor)
+                            .frame(width: 3, height: 32)
                             .overlay {
                                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                                    .strokeBorder(Color.black.opacity(0.25), lineWidth: 1)
+                                    .strokeBorder(Color.primary.opacity(0.15), lineWidth: 0.5)
                             }
-                            .shadow(color: .black.opacity(0.45), radius: 4, y: 1)
-                            .position(x: x, y: 14)
+                            .position(x: min(w - 2, max(2, x)), y: 22)
                             .accessibilityHidden(true)
                     }
                 }
-                .frame(height: 28)
+                .frame(height: 44)
                 .contentShape(Rectangle())
                 .gesture(
                     DragGesture(minimumDistance: 0)
@@ -255,7 +257,7 @@ struct TimelineActivityRibbon: View {
                         if let selected = model.selectedTimelineFrame {
                             Text(SLTimeFormat.shortTime(selected.timestampMs))
                                 .fontWeight(.semibold)
-                                .foregroundStyle(.white.opacity(0.92))
+                                .foregroundStyle(.primary)
                                 .accessibilityLabel("Selected moment")
                                 .accessibilityValue(timelinePositionAccessibilityValue)
                                 .accessibilityIdentifier("timeline.navigation.position")
@@ -263,12 +265,12 @@ struct TimelineActivityRibbon: View {
                         Spacer()
                         Text(SLTimeFormat.shortTime(window.endMs))
                     }
-                    .font(.system(size: 10, design: .rounded).monospacedDigit())
-                    .foregroundStyle(.white.opacity(secondaryTextOpacity))
+                    .font(SLDesign.metadataFont.monospacedDigit())
+                    .foregroundStyle(.secondary)
                 }
             }
         }
-        .frame(height: 76)
+        .frame(height: 96)
         // The pointer can rest still while a session page loads. Drop the
         // remembered moment rather than describing rows that are gone.
         .onChange(of: fingerprint) { _, _ in
@@ -286,7 +288,7 @@ struct TimelineActivityRibbon: View {
         .accessibilityLabel("Timeline navigation")
         .accessibilityValue(timelineAccessibilityValue)
         .accessibilityHint(
-            "Drag to scrub, scroll horizontally to browse, or adjust to move one moment at a time"
+            "Drag to move through moments. Scroll horizontally to browse. Adjust to move one moment at a time."
         )
         .accessibilityIdentifier("timeline.navigation")
         .accessibilityAdjustableAction { direction in
@@ -324,20 +326,19 @@ struct TimelineActivityRibbon: View {
             if let contextFrame {
                 TimelineSourceIcon(frame: contextFrame, size: 16)
                     .accessibilityHidden(true)
-                HStack(spacing: 5) {
-                    Text(SLTimeFormat.shortTime(contextFrame.timestampMs))
-                        .fontWeight(.semibold)
-                        .monospacedDigit()
-                    Divider()
-                        .frame(height: 10)
-                        .overlay(.white.opacity(secondaryTextOpacity))
-                        .accessibilityHidden(true)
+                HStack(spacing: SLDesign.space8) {
                     Text(contextFrame.appLabel)
+                        .fontWeight(.medium)
                         .lineLimit(1)
+                    if hoveredFrame != nil {
+                        Text(SLTimeFormat.shortTime(contextFrame.timestampMs))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
                     if let domain = contextFrame.domain, !domain.isEmpty {
                         Text(domain)
                             .lineLimit(1)
-                            .foregroundStyle(.white.opacity(secondaryTextOpacity))
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .accessibilityElement(children: .combine)
@@ -346,7 +347,7 @@ struct TimelineActivityRibbon: View {
                 .accessibilityIdentifier("timeline.navigation.context")
                 .help(hoveredFrame == nil ? "Selected moment" : "Moment under the pointer")
             } else {
-                Label("Time scale", systemImage: "clock")
+                Text("Activity")
             }
 
             Spacer(minLength: 8)
@@ -366,8 +367,8 @@ struct TimelineActivityRibbon: View {
                 }
             }
         }
-        .font(.system(size: 10.5, weight: .medium))
-        .foregroundStyle(.white.opacity(primaryTimelineTextOpacity))
+        .font(SLDesign.bodyFont)
+        .foregroundStyle(.primary)
     }
 
     private func timelineRangeMenu(
@@ -411,18 +412,18 @@ struct TimelineActivityRibbon: View {
                 .accessibilityIdentifier("timeline.navigation.range.option.\(option.step)")
             }
         } label: {
-            HStack(spacing: 5) {
-                Label("Range", systemImage: "arrow.left.and.right")
+            HStack(spacing: SLDesign.space4) {
+                Text("View:")
                 Text(visibleLabel)
-                    .fontWeight(.semibold)
                     .monospacedDigit()
-                    .foregroundStyle(.white.opacity(secondaryTextOpacity))
             }
             .contentShape(Rectangle())
             .frame(minHeight: 28)
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+        .font(SLDesign.metadataFont)
+        .foregroundStyle(.secondary)
         .help("Choose how much time is visible in the activity ribbon")
         .accessibilityLabel("Timeline range")
         .accessibilityValue(
@@ -605,13 +606,6 @@ struct TimelineActivityRibbon: View {
         return "\(source), \(SLTimeFormat.full(frame.timestampMs))"
     }
 
-    private func segmentColor(for _: TimelineActivityPresentation.Source) -> Color {
-        // The ribbon communicates captured activity, not an arbitrary app
-        // category. Source identity remains available through the icon and
-        // hover/VoiceOver context without assigning every app a random hue.
-        model.accentSwiftUIColor
-    }
-
     /// Resolve the moment under the pointer when it actually changes. Pointer
     /// motion delivers a continuous stream of positions that mostly land on the
     /// moment already shown, so the list scan stays out of the redraw path.
@@ -624,20 +618,8 @@ struct TimelineActivityRibbon: View {
         hoveredFrame = frames.first(where: { $0.id == id })
     }
 
-    private var controlStrokeOpacity: Double {
-        colorSchemeContrast == .increased ? 0.48 : 0.22
-    }
-
-    private var primaryTimelineTextOpacity: Double {
-        colorSchemeContrast == .increased ? 1 : 0.82
-    }
-
-    private var secondaryTextOpacity: Double {
-        colorSchemeContrast == .increased ? 0.92 : 0.72
-    }
-
     private var trackBackgroundOpacity: Double {
-        colorSchemeContrast == .increased ? 0.28 : 0.16
+        colorSchemeContrast == .increased ? 0.22 : 0.09
     }
 }
 
@@ -799,7 +781,7 @@ private struct TimelineSpeechMarkers: View {
                 x: timelineX(max(visibleStartMs, passage.startTimestampMs)),
                 endX: timelineX(min(visibleEndMs, passage.endTimestampMs)),
                 isActive: selectedTimestampMs.map { passage.contains(timestampMs: $0) } ?? false,
-                color: passage.source == .microphone ? .white : computerColor
+                color: passage.source == .microphone ? .secondary : computerColor
             )
         }
     }
@@ -829,11 +811,7 @@ private struct TimelineSpeechMarker: View {
         Capsule(style: .continuous)
             .fill(color.opacity(isActive ? 1 : 0.62))
             .frame(width: markerWidth, height: isActive ? 5 : 3)
-            .shadow(
-                color: isActive ? color.opacity(0.55) : .clear,
-                radius: 3
-            )
-            .position(x: x + markerWidth / 2, y: 3)
+            .position(x: x + markerWidth / 2, y: 4)
             .help(
                 "\(passage.source.label) transcript, \(SLTimeFormat.shortTime(passage.startTimestampMs))"
             )
@@ -878,34 +856,24 @@ private struct TimelineSourceIcon: View {
     }
 }
 
-private struct TimelineRunIdentityBadge: View {
+private struct TimelineRunIdentityLabel: View {
     let source: TimelineActivityPresentation.Source
     let momentCount: Int
     let showsLabel: Bool
     let maximumWidth: CGFloat
-    let strokeOpacity: Double
 
     var body: some View {
-        HStack(spacing: 4) {
-            TimelineSourceIcon(source: source, size: 13)
+        HStack(spacing: SLDesign.space4) {
+            TimelineSourceIcon(source: source, size: 16)
             if showsLabel {
                 Text(source.appLabel)
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(SLDesign.metadataFont)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
         }
-        .padding(3)
         .frame(maxWidth: maximumWidth)
-        .background(
-            .regularMaterial,
-            in: RoundedRectangle(cornerRadius: 5, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .strokeBorder(Color.white.opacity(strokeOpacity), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
+        .foregroundStyle(.primary)
         .help("\(source.appLabel), \(momentCount) captured moment\(momentCount == 1 ? "" : "s")")
         .accessibilityHidden(true)
     }

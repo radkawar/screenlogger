@@ -42,7 +42,7 @@ struct MainShellView: View {
                 }
                 Spacer()
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, SLDesign.space16)
             .padding(.top, 8)
             .animation(
                 reduceMotion ? nil : .easeOut(duration: 0.18),
@@ -54,7 +54,8 @@ struct MainShellView: View {
             minHeight: SLDesign.workspaceMinimumHeight
         )
         .tint(model.accentSwiftUIColor)
-        .background(Color.black)
+        .accentColor(model.accentSwiftUIColor)
+        .background(.background)
         .onAppear {
             model.shellSearchMode = false
             Task {
@@ -200,7 +201,9 @@ struct TimelineToolbarContextView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    if let title = frame.title, !title.isEmpty {
+                    if let title = frame.title, !title.isEmpty,
+                        title.compare(frame.appLabel, options: [.caseInsensitive, .diacriticInsensitive]) != .orderedSame
+                    {
                         Text(title)
                             .font(.system(size: 10.5))
                             .foregroundStyle(.secondary)

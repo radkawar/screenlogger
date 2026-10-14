@@ -50,9 +50,11 @@ final class AppModel: ObservableObject {
     /// Primary Timeline query lifecycle. Empty content is only first-run content
     /// after a full query has completed successfully.
     @Published var timelineLoadState: TimelineLoadState = .awaitingInitialLoad
+    var timelineLoadPublication = TimelineLoadPublicationState()
     @Published var selectedTimelineID: Int64? {
         didSet {
             guard oldValue != selectedTimelineID else { return }
+            timelineLoadPublication.selectionDidChange()
             scheduleSelectedFrameExtract()
             loadOCRBoxesForSelection()
         }
@@ -66,13 +68,17 @@ final class AppModel: ObservableObject {
     @Published var previewMediaGeneration: UInt64 = 0
     /// Auto-step through the loaded timeline.
     @Published var isReplaying = false
-    @Published var searchQuery = ""
+    @Published var searchQuery = "" {
+        didSet {
+            guard oldValue != searchQuery else { return }
+            reconcileSearchFiltersAfterQueryChange(from: oldValue)
+        }
+    }
     /// Final Library hits after every active text, operator, time, session,
     /// application, and website constraint has been applied by the Store.
     @Published var searchResults: [FTSResult] = []
-    /// Facet source constrained by text, operators, time, and session but not
-    /// the optional application/website chips. This keeps alternative filters
-    /// discoverable without using a post-LIMIT result set for final matches.
+    /// Facets from the committed result page. Selected facets are retained by
+    /// the presentation even when the current query returns no matches.
     @Published var searchFacetResults: [FTSResult] = []
     /// Loading and typed recovery for Library search, independent of capture,
     /// Timeline navigation, bootstrap, and the app's global status text.
@@ -116,7 +122,13 @@ final class AppModel: ObservableObject {
     @Published var searchAppCatalog: [(name: String, bundleID: String)] = []
     /// Domain catalog for `site:` autocomplete.
     @Published var searchSiteCatalog: [String] = []
-    @Published var timelineNavigationOrigin: TimelineNavigationOrigin = .direct
+    @Published var timelineNavigationOrigin: TimelineNavigationOrigin = .direct {
+        didSet {
+            if oldValue != timelineNavigationOrigin {
+                timelineLoadPublication.selectionDidChange()
+            }
+        }
+    }
     /// Selection, preview, and restoration anchor for the retained Library
     /// workspace. Search text and committed filters remain in their dedicated
     /// AppModel properties above.
@@ -185,6 +197,7 @@ final class AppModel: ObservableObject {
             guard !isLoadingSettings else { return }
             preferences.set(airgapMode, forKey: ProductPreferenceKey.airgapMode)
             FaviconCache.shared.airgapMode = airgapMode
+            scheduleSemanticNetworkPolicyChange()
         }
     }
     /// Explicit opt-in for sending website domains to the favicon provider.
@@ -362,7 +375,9 @@ final class AppModel: ObservableObject {
     /// Read-only consequence estimate for the currently configured limits.
     @Published var storageCleanupPreflightState: StorageCleanupPreflightLoadState = .idle
     @Published var storageMaintenanceState: StorageMaintenanceOperationState = .idle
-    var storageMaintenanceInProgress: Bool { storageMaintenanceState.isRunning }
+    var storageMaintenanceInProgress: Bool {
+        storageMaintenanceState.isRunning || isDatabaseReclamationRunning
+    }
     /// Explicit, user-chosen Library export. The service never mutates or
     /// replaces the live Library.
     @Published var libraryExportState: LibraryExportOperationState = .idle
@@ -490,6 +505,25 @@ final class AppModel: ObservableObject {
     private var refreshTask: Task<Void, Never>?
     private var bootstrapRefreshTask: Task<Void, Never>?
     private var libraryBootstrapTask: Task<Void, Never>?
+    var databaseMigrationTask: Task<Void, Never>?
+    @Published var databaseMigrationStatus: String?
+    @Published var isDatabaseReclamationRunning = false
+    var isPreparingForShutdown = false
+    var databaseReclamationRestartsSocket = false
+    var databaseReclamationRestartsXPC = false
+    var databaseReclamationQuiescedEngine = false
+    @Published var semanticSearchController: SemanticSearchController? {
+        didSet { observeSemanticSearchAvailability() }
+    }
+    @Published var librarySearchEngineSelection = LibrarySearchEngineSelection()
+    var librarySearchEngine: LibrarySearchEngine { librarySearchEngineSelection.engine }
+    var relatedSearchIsAvailable: Bool { librarySearchEngineSelection.relatedAvailable }
+    var semanticAvailabilitySubscription: AnyCancellable?
+    @Published var semanticSearchHits: [Int64: SemanticSearchHit] = [:]
+    @Published var semanticSearchMessage: String?
+    var semanticStartupTask: Task<Void, Never>?
+    var semanticInvalidationTask: Task<Void, Never>?
+    var semanticPolicyTask: Task<Void, Never>?
     private var capturedFrameRefreshTask: Task<Void, Never>?
     var libraryPresentationRefreshTask: Task<Void, Never>?
     private var engineCancellables: Set<AnyCancellable> = []
@@ -564,6 +598,9 @@ final class AppModel: ObservableObject {
             recordDiagnostic(.bootstrap, .started)
             writeBootstrapLog("bootstrap root=\(root.path)")
             let store = try Store(root: root)
+            #if DEBUG
+                try AppUITestFixture.seedLegacyDatabaseIfRequested(in: store)
+            #endif
             self.store = store
             libraryStartupIssue = nil
             timelineIssue = nil
@@ -579,6 +616,7 @@ final class AppModel: ObservableObject {
             bindEngineState()
             writeBootstrapLog("store open ok")
             recordDiagnostic(.localStore, .succeeded)
+            configureSemanticSearch(for: store)
 
             // CLI bridge: Unix domain socket at <root>/cli.sock (app owns SQLite).
             applyCLIEnabled()
@@ -614,6 +652,7 @@ final class AppModel: ObservableObject {
                 self.updateStatusMessage()
                 self.recordDiagnostic(.bootstrap, .succeeded)
             }
+            startAutomaticDatabaseMigration()
             refreshTask = Task {
                 var tick = 0
                 while !Task.isCancelled {
@@ -708,6 +747,8 @@ final class AppModel: ObservableObject {
             statusMessage = "Retrying Library"
         } else if let libraryStartupIssue {
             statusMessage = libraryStartupIssue.statusTitle
+        } else if isDatabaseReclamationRunning {
+            statusMessage = "Reclaiming database space. Capture is unavailable until this finishes."
         } else if let until = recordingPausedUntil, until > Date() {
             statusMessage = "Paused until \(Self.shortTimeFormatter.string(from: until))"
         } else if let capturePauseReason {
@@ -755,6 +796,7 @@ final class AppModel: ObservableObject {
     /// method returns.
     func quiesceForLibraryRestore() async throws {
         stopReplay()
+        timelineLoadPublication.invalidate()
         // A one-shot capture runs directly on the pipeline rather than the
         // recording loop. Let an already-started write finish, while the
         // restoring state prevents another one from entering.
@@ -763,10 +805,12 @@ final class AppModel: ObservableObject {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
         await previewImagePipeline.suspendAndDrain()
+        await suspendSemanticSearch()
         let tasks =
             [
                 refreshTask,
                 bootstrapRefreshTask,
+                databaseMigrationTask,
                 libraryBootstrapTask,
                 capturedFrameRefreshTask,
                 libraryPresentationRefreshTask,
@@ -784,6 +828,12 @@ final class AppModel: ObservableObject {
         for task in tasks { _ = await task.result }
         refreshTask = nil
         bootstrapRefreshTask = nil
+        databaseMigrationTask = nil
+        databaseMigrationStatus = nil
+        isDatabaseReclamationRunning = false
+        databaseReclamationRestartsSocket = false
+        databaseReclamationRestartsXPC = false
+        databaseReclamationQuiescedEngine = false
         libraryBootstrapTask = nil
         capturedFrameRefreshTask = nil
         libraryPresentationRefreshTask = nil
@@ -819,6 +869,9 @@ final class AppModel: ObservableObject {
             throw error
         }
         store = nil
+        semanticSearchController = nil
+        semanticSearchHits.removeAll()
+        semanticSearchMessage = nil
         previewCache.removeAllObjects()
         selectedFrameImage = nil
         selectedFrameOCRBoxes = []
@@ -826,6 +879,11 @@ final class AppModel: ObservableObject {
     }
 
     func shutdown() {
+        isPreparingForShutdown = true
+        databaseMigrationTask?.cancel()
+        semanticStartupTask?.cancel()
+        semanticInvalidationTask?.cancel()
+        semanticPolicyTask?.cancel()
         engine.stop()
         ScreenlogSocketHost.shared.stop()
         ScreenlogXPCHost.shared.stop()
@@ -911,6 +969,7 @@ final class AppModel: ObservableObject {
                         changedStore === self.store
                     else { return }
                     self.invalidateRetainedPreviewMedia()
+                    self.scheduleSemanticInvalidation()
                 }
             }
             .store(in: &engineCancellables)

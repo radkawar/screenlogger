@@ -11,9 +11,9 @@ extension SchemaMigrationError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .unsupportedVersion(let found, let supported):
-            return "This library was created by a newer Screenlogger version (schema \(found); supported through \(supported))."
+            return "A newer Screenlogger version created this Library. Schema: \(found). Maximum supported schema: \(supported)."
         case .invalidSchema:
-            return "The Screenlogger library schema is incomplete or inconsistent."
+            return "The Screenlogger Library schema is incomplete or inconsistent."
         }
     }
 }
@@ -21,320 +21,321 @@ extension SchemaMigrationError: LocalizedError {
 /// Screenlogger schema and migrations for frames, OCR, segments, FTS5, and AX context.
 /// Uses plain SQLite3 (not SQLCipher). Bookkeeping via `schema_migrations` (not grdb_migrations).
 public enum Schema {
-    public static let currentVersion = 7
+    public static let currentVersion = 9
 
-    public static let createStatements: [String] = [
-        // ---- Core activity graph ----
-        """
-        CREATE TABLE IF NOT EXISTS metadata (
-            key TEXT PRIMARY KEY NOT NULL,
-            value TEXT,
-            updated_at INTEGER
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS application (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            bundle_id TEXT NOT NULL,
-            version TEXT NOT NULL DEFAULT '',
-            icon_path TEXT,
-            display_name TEXT,
-            is_user_app INTEGER,
-            dominant_color INTEGER,
-            UNIQUE(bundle_id, version)
-        )
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_application_bundle_id ON application(bundle_id)
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS domain (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            normalized_domain TEXT NOT NULL UNIQUE,
-            common_name TEXT,
-            icon_path TEXT,
-            dominant_color INTEGER
-        )
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_domain_normalized ON domain(normalized_domain)
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS video (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            height INTEGER NOT NULL,
-            width INTEGER NOT NULL,
-            path TEXT NOT NULL,
-            num_frames INTEGER NOT NULL,
-            size_bytes INTEGER,
-            status INTEGER NOT NULL DEFAULT 0
-        )
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_video_status ON video(status)
-            WHERE status != 0
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS segment (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            start_frame_id INTEGER NOT NULL,
-            application INTEGER REFERENCES application(id),
-            domain INTEGER REFERENCES domain(id),
-            url TEXT
-        )
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_segment_start_frame ON segment(start_frame_id)
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_segment_application ON segment(application)
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_segment_domain ON segment(domain)
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS frame (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp INTEGER NOT NULL,
-            video INTEGER REFERENCES video(id),
-            video_index INTEGER,
-            image_path TEXT,
-            width INTEGER,
-            height INTEGER,
-            foreground TEXT,
-            background TEXT,
-            title TEXT,
-            tree BLOB,
-            segment INTEGER REFERENCES segment(id),
-            is_inactive INTEGER NOT NULL DEFAULT 0,
-            ax_root_hash BLOB,
-            capture_display_x REAL,
-            capture_display_y REAL,
-            capture_display_width REAL,
-            capture_display_height REAL,
-            index_search INTEGER NOT NULL DEFAULT 1
-        )
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_frame_timestamp ON frame(timestamp)
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_frame_segment ON frame(segment)
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_frame_video ON frame(video)
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_frame_timestamp_segment
-            ON frame(timestamp, segment) WHERE segment IS NOT NULL
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_frame_window_covering
-            ON frame(id, video, video_index, timestamp, image_path, title, segment)
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_frame_video_timestamp
-            ON frame(video, timestamp) WHERE video IS NOT NULL
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS ocr (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            frame INTEGER NOT NULL REFERENCES frame(id) ON DELETE CASCADE,
-            x INTEGER NOT NULL,
-            y INTEGER NOT NULL,
-            width INTEGER NOT NULL,
-            height INTEGER NOT NULL,
-            text_offset INTEGER NOT NULL,
-            text_length INTEGER NOT NULL
-        )
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_ocr_frame ON ocr(frame)
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS window_bound (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            frame INTEGER NOT NULL REFERENCES frame(id) ON DELETE CASCADE,
-            application INTEGER NOT NULL REFERENCES application(id),
-            window_title TEXT,
-            x INTEGER NOT NULL,
-            y INTEGER NOT NULL,
-            width INTEGER NOT NULL,
-            height INTEGER NOT NULL,
-            window_layer INTEGER NOT NULL DEFAULT 0,
-            z_order INTEGER NOT NULL DEFAULT 0,
-            url TEXT
-        )
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_window_bound_frame ON window_bound(frame)
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_window_bound_application ON window_bound(application)
-        """,
+    public static let createStatements: [String] =
+        [
+            // ---- Core activity graph ----
+            """
+            CREATE TABLE IF NOT EXISTS metadata (
+                key TEXT PRIMARY KEY NOT NULL,
+                value TEXT,
+                updated_at INTEGER
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS application (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                bundle_id TEXT NOT NULL,
+                version TEXT NOT NULL DEFAULT '',
+                icon_path TEXT,
+                display_name TEXT,
+                is_user_app INTEGER,
+                dominant_color INTEGER,
+                UNIQUE(bundle_id, version)
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_application_bundle_id ON application(bundle_id)
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS domain (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                normalized_domain TEXT NOT NULL UNIQUE,
+                common_name TEXT,
+                icon_path TEXT,
+                dominant_color INTEGER
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_domain_normalized ON domain(normalized_domain)
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS video (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                height INTEGER NOT NULL,
+                width INTEGER NOT NULL,
+                path TEXT NOT NULL,
+                num_frames INTEGER NOT NULL,
+                size_bytes INTEGER,
+                status INTEGER NOT NULL DEFAULT 0
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_video_status ON video(status)
+                WHERE status != 0
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS segment (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                start_frame_id INTEGER NOT NULL,
+                application INTEGER REFERENCES application(id),
+                domain INTEGER REFERENCES domain(id),
+                url TEXT
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_segment_start_frame ON segment(start_frame_id)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_segment_application ON segment(application)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_segment_domain ON segment(domain)
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS frame (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp INTEGER NOT NULL,
+                video INTEGER REFERENCES video(id),
+                video_index INTEGER,
+                image_path TEXT,
+                width INTEGER,
+                height INTEGER,
+                foreground TEXT,
+                background TEXT,
+                title TEXT,
+                tree BLOB,
+                segment INTEGER REFERENCES segment(id),
+                is_inactive INTEGER NOT NULL DEFAULT 0,
+                ax_root_hash BLOB,
+                capture_display_x REAL,
+                capture_display_y REAL,
+                capture_display_width REAL,
+                capture_display_height REAL,
+                index_search INTEGER NOT NULL DEFAULT 1
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_frame_timestamp ON frame(timestamp)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_frame_segment ON frame(segment)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_frame_video ON frame(video)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_frame_timestamp_segment
+                ON frame(timestamp, segment) WHERE segment IS NOT NULL
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_frame_window_covering
+                ON frame(id, video, video_index, timestamp, image_path, title, segment)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_frame_video_timestamp
+                ON frame(video, timestamp) WHERE video IS NOT NULL
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS ocr (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                frame INTEGER NOT NULL REFERENCES frame(id) ON DELETE CASCADE,
+                x INTEGER NOT NULL,
+                y INTEGER NOT NULL,
+                width INTEGER NOT NULL,
+                height INTEGER NOT NULL,
+                text_offset INTEGER NOT NULL,
+                text_length INTEGER NOT NULL
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_ocr_frame ON ocr(frame)
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS window_bound (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                frame INTEGER NOT NULL REFERENCES frame(id) ON DELETE CASCADE,
+                application INTEGER NOT NULL REFERENCES application(id),
+                window_title TEXT,
+                x INTEGER NOT NULL,
+                y INTEGER NOT NULL,
+                width INTEGER NOT NULL,
+                height INTEGER NOT NULL,
+                window_layer INTEGER NOT NULL DEFAULT 0,
+                z_order INTEGER NOT NULL DEFAULT 0,
+                url TEXT
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_window_bound_frame ON window_bound(frame)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_window_bound_application ON window_bound(application)
+            """,
 
-        // ---- FTS5 external content on frame ----
-        """
-        CREATE VIRTUAL TABLE IF NOT EXISTS ocr_fts USING fts5(
-            foreground,
-            background,
-            title,
-            content='frame',
-            content_rowid='id',
-            tokenize='porter unicode61 remove_diacritics 2'
-        )
-        """,
-        """
-        CREATE TRIGGER IF NOT EXISTS frame_ai AFTER INSERT ON frame
-        WHEN COALESCE(new.index_search, 1) != 0
-        BEGIN
-            INSERT INTO ocr_fts(rowid, foreground, background, title)
-            VALUES (new.id, new.foreground, new.background, new.title);
-        END
-        """,
-        """
-        CREATE TRIGGER IF NOT EXISTS frame_ad AFTER DELETE ON frame
-        WHEN COALESCE(old.index_search, 1) != 0
-        BEGIN
-            INSERT INTO ocr_fts(ocr_fts, rowid, foreground, background, title)
-            VALUES('delete', old.id, old.foreground, old.background, old.title);
-        END
-        """,
-        """
-        CREATE TRIGGER IF NOT EXISTS frame_au AFTER UPDATE ON frame
-        WHEN OLD.foreground IS NOT NEW.foreground
-          OR OLD.background IS NOT NEW.background
-          OR OLD.title IS NOT NEW.title
-        BEGIN
-            INSERT INTO ocr_fts(ocr_fts, rowid, foreground, background, title)
-            VALUES('delete', old.id, old.foreground, old.background, old.title);
-            INSERT INTO ocr_fts(rowid, foreground, background, title)
-            VALUES (new.id, new.foreground, new.background, new.title);
-        END
-        """,
+            // ---- FTS5 external content on frame ----
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS ocr_fts USING fts5(
+                foreground,
+                background,
+                title,
+                content='frame',
+                content_rowid='id',
+                tokenize='porter unicode61 remove_diacritics 2'
+            )
+            """,
+            """
+            CREATE TRIGGER IF NOT EXISTS frame_ai AFTER INSERT ON frame
+            WHEN COALESCE(new.index_search, 1) != 0
+            BEGIN
+                INSERT INTO ocr_fts(rowid, foreground, background, title)
+                VALUES (new.id, new.foreground, new.background, new.title);
+            END
+            """,
+            """
+            CREATE TRIGGER IF NOT EXISTS frame_ad AFTER DELETE ON frame
+            WHEN COALESCE(old.index_search, 1) != 0
+            BEGIN
+                INSERT INTO ocr_fts(ocr_fts, rowid, foreground, background, title)
+                VALUES('delete', old.id, old.foreground, old.background, old.title);
+            END
+            """,
+            """
+            CREATE TRIGGER IF NOT EXISTS frame_au AFTER UPDATE ON frame
+            WHEN OLD.foreground IS NOT NEW.foreground
+              OR OLD.background IS NOT NEW.background
+              OR OLD.title IS NOT NEW.title
+            BEGIN
+                INSERT INTO ocr_fts(ocr_fts, rowid, foreground, background, title)
+                VALUES('delete', old.id, old.foreground, old.background, old.title);
+                INSERT INTO ocr_fts(rowid, foreground, background, title)
+                VALUES (new.id, new.foreground, new.background, new.title);
+            END
+            """,
 
-        // ---- On-device audio transcripts (no retained audio) ----
-        """
-        CREATE TABLE IF NOT EXISTS transcript_segment (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            frame_id INTEGER NOT NULL REFERENCES frame(id) ON DELETE CASCADE,
-            start_timestamp INTEGER NOT NULL,
-            end_timestamp INTEGER NOT NULL,
-            source TEXT NOT NULL CHECK(source IN ('microphone', 'computer')),
-            text TEXT NOT NULL,
-            locale_identifier TEXT,
-            confidence REAL,
-            CHECK(end_timestamp >= start_timestamp)
-        )
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_transcript_segment_frame
-            ON transcript_segment(frame_id)
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_transcript_segment_time
-            ON transcript_segment(start_timestamp, end_timestamp)
-        """,
-        """
-        CREATE VIRTUAL TABLE IF NOT EXISTS transcript_fts USING fts5(
-            text,
-            content='transcript_segment',
-            content_rowid='id',
-            tokenize='porter unicode61 remove_diacritics 2'
-        )
-        """,
-        """
-        CREATE TRIGGER IF NOT EXISTS transcript_segment_ai AFTER INSERT ON transcript_segment BEGIN
-            INSERT INTO transcript_fts(rowid, text) VALUES (new.id, new.text);
-        END
-        """,
-        """
-        CREATE TRIGGER IF NOT EXISTS transcript_segment_ad AFTER DELETE ON transcript_segment BEGIN
-            INSERT INTO transcript_fts(transcript_fts, rowid, text)
-            VALUES('delete', old.id, old.text);
-        END
-        """,
-        """
-        CREATE TRIGGER IF NOT EXISTS transcript_segment_au AFTER UPDATE OF text ON transcript_segment BEGIN
-            INSERT INTO transcript_fts(transcript_fts, rowid, text)
-            VALUES('delete', old.id, old.text);
-            INSERT INTO transcript_fts(rowid, text) VALUES (new.id, new.text);
-        END
-        """,
+            // ---- On-device audio transcripts (no retained audio) ----
+            """
+            CREATE TABLE IF NOT EXISTS transcript_segment (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                frame_id INTEGER NOT NULL REFERENCES frame(id) ON DELETE CASCADE,
+                start_timestamp INTEGER NOT NULL,
+                end_timestamp INTEGER NOT NULL,
+                source TEXT NOT NULL CHECK(source IN ('microphone', 'computer')),
+                text TEXT NOT NULL,
+                locale_identifier TEXT,
+                confidence REAL,
+                CHECK(end_timestamp >= start_timestamp)
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_transcript_segment_frame
+                ON transcript_segment(frame_id)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_transcript_segment_time
+                ON transcript_segment(start_timestamp, end_timestamp)
+            """,
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS transcript_fts USING fts5(
+                text,
+                content='transcript_segment',
+                content_rowid='id',
+                tokenize='porter unicode61 remove_diacritics 2'
+            )
+            """,
+            """
+            CREATE TRIGGER IF NOT EXISTS transcript_segment_ai AFTER INSERT ON transcript_segment BEGIN
+                INSERT INTO transcript_fts(rowid, text) VALUES (new.id, new.text);
+            END
+            """,
+            """
+            CREATE TRIGGER IF NOT EXISTS transcript_segment_ad AFTER DELETE ON transcript_segment BEGIN
+                INSERT INTO transcript_fts(transcript_fts, rowid, text)
+                VALUES('delete', old.id, old.text);
+            END
+            """,
+            """
+            CREATE TRIGGER IF NOT EXISTS transcript_segment_au AFTER UPDATE OF text ON transcript_segment BEGIN
+                INSERT INTO transcript_fts(transcript_fts, rowid, text)
+                VALUES('delete', old.id, old.text);
+                INSERT INTO transcript_fts(rowid, text) VALUES (new.id, new.text);
+            END
+            """,
 
-        // ---- Persistent accessibility tree (content-addressed) ----
-        """
-        CREATE TABLE IF NOT EXISTS ax_node (
-            hash BLOB PRIMARY KEY,
-            payload BLOB NOT NULL,
-            first_seen_frame_id INTEGER
-        )
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_ax_node_first_seen_frame_id
-            ON ax_node(first_seen_frame_id)
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS ax_node_edge (
-            parent_hash BLOB NOT NULL,
-            child_hash BLOB NOT NULL,
-            PRIMARY KEY (parent_hash, child_hash)
-        ) WITHOUT ROWID
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_ax_node_edge_child ON ax_node_edge(child_hash)
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS ax_snapshot (
-            frame_id INTEGER PRIMARY KEY REFERENCES frame(id) ON DELETE CASCADE,
-            root_hash BLOB NOT NULL REFERENCES ax_node(hash),
-            timestamp_ms INTEGER NOT NULL,
-            application_name TEXT NOT NULL,
-            bundle_id TEXT NOT NULL,
-            process_identifier INTEGER NOT NULL,
-            extraction_mode TEXT NOT NULL DEFAULT 'unknown',
-            is_partial_tree INTEGER NOT NULL DEFAULT 0
-        )
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_ax_snapshot_root_hash ON ax_snapshot(root_hash)
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS ax_legacy_tree (
-            frame_id INTEGER PRIMARY KEY REFERENCES frame(id) ON DELETE CASCADE,
-            payload BLOB NOT NULL
-        ) WITHOUT ROWID
-        """,
+            // ---- Persistent accessibility tree (content-addressed) ----
+            """
+            CREATE TABLE IF NOT EXISTS ax_node (
+                hash BLOB PRIMARY KEY,
+                payload BLOB NOT NULL,
+                first_seen_frame_id INTEGER
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_ax_node_first_seen_frame_id
+                ON ax_node(first_seen_frame_id)
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS ax_node_edge (
+                parent_hash BLOB NOT NULL,
+                child_hash BLOB NOT NULL,
+                PRIMARY KEY (parent_hash, child_hash)
+            ) WITHOUT ROWID
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_ax_node_edge_child ON ax_node_edge(child_hash)
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS ax_snapshot (
+                frame_id INTEGER PRIMARY KEY REFERENCES frame(id) ON DELETE CASCADE,
+                root_hash BLOB NOT NULL REFERENCES ax_node(hash),
+                timestamp_ms INTEGER NOT NULL,
+                application_name TEXT NOT NULL,
+                bundle_id TEXT NOT NULL,
+                process_identifier INTEGER NOT NULL,
+                extraction_mode TEXT NOT NULL DEFAULT 'unknown',
+                is_partial_tree INTEGER NOT NULL DEFAULT 0
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_ax_snapshot_root_hash ON ax_snapshot(root_hash)
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS ax_legacy_tree (
+                frame_id INTEGER PRIMARY KEY REFERENCES frame(id) ON DELETE CASCADE,
+                payload BLOB NOT NULL
+            ) WITHOUT ROWID
+            """,
 
-        // ---- Aux tables ----
-        """
-        CREATE TABLE IF NOT EXISTS app_version (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            version TEXT NOT NULL,
-            observed_at INTEGER NOT NULL
-        )
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_app_version_observed_at ON app_version(observed_at)
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS timezone (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            identifier TEXT NOT NULL,
-            observed_at INTEGER NOT NULL
-        )
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_timezone_observed_at ON timezone(observed_at)
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS once_tasks (
-            task_id TEXT PRIMARY KEY,
-            completed INTEGER NOT NULL DEFAULT 0,
-            completed_at REAL
-        )
-        """,
-    ]
+            // ---- Aux tables ----
+            """
+            CREATE TABLE IF NOT EXISTS app_version (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                version TEXT NOT NULL,
+                observed_at INTEGER NOT NULL
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_app_version_observed_at ON app_version(observed_at)
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS timezone (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                identifier TEXT NOT NULL,
+                observed_at INTEGER NOT NULL
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_timezone_observed_at ON timezone(observed_at)
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS once_tasks (
+                task_id TEXT PRIMARY KEY,
+                completed INTEGER NOT NULL DEFAULT 0,
+                completed_at REAL
+            )
+            """,
+        ] + SemanticSchema.statements
 
     public static func migrate(_ db: SQLiteDatabase) throws {
         let hasVersionTable = try tableExists(db, "schema_migrations")
@@ -398,6 +399,20 @@ public enum Schema {
             if try userVersion(db) < 7 {
                 try migrateToV7(db)
                 try setUserVersion(db, 7)
+            }
+
+            if try userVersion(db) < 8 {
+                for sql in SemanticSchema.statements {
+                    try db.exec(sql)
+                }
+                try setUserVersion(db, 8)
+            }
+
+            if try userVersion(db) < 9 {
+                for sql in SemanticSchema.revisionAndAdmissionMigration {
+                    try db.exec(sql)
+                }
+                try setUserVersion(db, 9)
             }
 
             if try userVersion(db) < currentVersion {
@@ -464,6 +479,17 @@ public enum Schema {
             "app_version": ["id", "version", "observed_at"],
             "timezone": ["id", "identifier", "observed_at"],
             "once_tasks": ["task_id", "completed", "completed_at"],
+            "semantic_config": [
+                "id", "enabled", "mode", "pipeline_id", "images_watermark", "text_watermark",
+                "transcripts_watermark", "images_initialized", "text_initialized",
+            ],
+            "semantic_source": [
+                "id", "frame_id", "transcript_id", "kind", "revision", "pipeline_id",
+                "state", "content_hash", "error",
+            ],
+            "semantic_occurrence": ["frame_id", "kind", "source_id"],
+            "semantic_vector": ["pipeline_id", "hash", "dimensions", "value"],
+            "semantic_chunk": ["source_id", "ordinal", "pipeline_id", "hash"],
         ]
 
         for table in requiredColumns.keys.sorted() {
@@ -479,6 +505,9 @@ public enum Schema {
         for trigger in [
             "frame_ai", "frame_ad", "frame_au",
             "transcript_segment_ai", "transcript_segment_ad", "transcript_segment_au",
+            "semantic_chunk_ad", "semantic_frame_bd", "semantic_frame_ai",
+            "semantic_frame_text_au", "semantic_frame_media_au", "semantic_video_au",
+            "semantic_transcript_ai", "semantic_transcript_au",
         ] where try !triggerExists(db, trigger) {
             failures.append("missing trigger \(trigger)")
         }

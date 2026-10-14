@@ -20,11 +20,48 @@ final class SettingsDestinationTests: XCTestCase {
 
     func testShortcutsAreAFirstClassAppSettingsDestination() {
         XCTAssertEqual(SettingsDestination.shortcuts.section, .shortcuts)
-        XCTAssertEqual(SettingsSidebarItem.shortcuts.title, "Keyboard Shortcuts")
         XCTAssertEqual(
             SettingsSidebarSection.all.first(where: { $0.id == "app" })?.items,
             [.general, .appearance, .shortcuts]
         )
+    }
+
+    func testMeaningSearchHasADedicatedSearchDestination() {
+        XCTAssertEqual(SettingsDestination.search.section, .search)
+        XCTAssertEqual(SettingsDestination.searchSemanticSearch.section, .search)
+        XCTAssertEqual(
+            SettingsSidebarSection.all.first(where: { $0.id == "capture-and-data" })?.items,
+            [.capture, .privacy, .exclusions, .search, .storage]
+        )
+        XCTAssertEqual(SettingsSearchResult.matching("Search").map(\.destination), [.search])
+        for query in ["Meaning Search", "semantic", "related", "model download", "sources", "indexing"] {
+            XCTAssertEqual(
+                SettingsSearchResult.matching(query).map(\.destination),
+                [.searchSemanticSearch],
+                query
+            )
+        }
+        XCTAssertEqual(
+            SettingsDestination.searchSemanticSearch.anchor?.accessibilityIdentifier,
+            "settings.destination.search-semantic-search"
+        )
+        XCTAssertEqual(
+            SettingsDestination.searchSemanticSearch.anchor?.searchResultAccessibilityIdentifier,
+            "settings.search-result.search-semantic-search"
+        )
+    }
+
+    func testMeaningSearchDeepLinkPreservesFocusedControlAndRepeatNavigation() {
+        let first = SettingsNavigationRequest(
+            destination: .searchSemanticSearch,
+            focusedElementIdentifier: "settings.semantic.mode"
+        )
+        let second = SettingsNavigationRequest(destination: .searchSemanticSearch)
+        XCTAssertEqual(first.destination.section, .search)
+        XCTAssertEqual(first.focusedElementIdentifier, "settings.semantic.mode")
+        XCTAssertNotEqual(first.id, second.id)
+        XCTAssertEqual(SettingsDestination.storageManagement.section, .storage)
+        XCTAssertEqual(SettingsDestination.storageLibraryTools.section, .storage)
     }
 
     func testAssistantSearchTermsReturnAnExplicitAssistantConnectionsResult() {
@@ -103,28 +140,9 @@ final class SettingsDestinationTests: XCTestCase {
         )
     }
 
-    func testCaptureDisplayCopyExplainsCoverageAndCost() {
-        XCTAssertEqual(
-            CaptureDisplaySettingsCopy.summary(.active),
-            "Follows the display containing the app you are using."
-        )
-        XCTAssertTrue(
-            CaptureDisplaySettingsCopy.connectionNote(.all, count: 2).contains(
-                "one Timeline moment with 2 display images"
-            )
-        )
-        XCTAssertTrue(
-            CaptureDisplaySettingsCopy.connectionNote(.all, count: 1).contains(
-                "included automatically"
-            )
-        )
-    }
-
     func testSearchResultsExposeStableActivationIdentifiers() throws {
         let result = try XCTUnwrap(SettingsSearchResult.matching("Claude").first)
 
-        XCTAssertEqual(result.title, "Assistant Connections")
-        XCTAssertEqual(result.subtitle, "Integrations settings")
         XCTAssertEqual(
             result.accessibilityIdentifier,
             "settings.search-result.integrations-assistant-connections"
@@ -134,14 +152,6 @@ final class SettingsDestinationTests: XCTestCase {
     func testIntegrationAnchorsExposeStableProductLanguageAndIdentifiers() {
         XCTAssertEqual(SettingsDestination.integrationsLocalTools.section, .integrations)
         XCTAssertEqual(SettingsDestination.integrationsAssistantConnections.section, .integrations)
-        XCTAssertEqual(
-            SettingsDestination.integrationsLocalTools.anchor?.accessibilityLabel,
-            "Command Setup"
-        )
-        XCTAssertEqual(
-            SettingsDestination.integrationsAssistantConnections.anchor?.accessibilityLabel,
-            "Assistant Connections"
-        )
         XCTAssertEqual(
             SettingsDestination.integrationsLocalTools.anchor?.accessibilityIdentifier,
             "settings.destination.integrations-local-tools"

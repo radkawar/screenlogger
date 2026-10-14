@@ -29,7 +29,7 @@ struct AssistantOperationalReadinessPresentation: Equatable {
             return Self(
                 badge: "Connection verified",
                 detail:
-                    "Screenlogger's connection files and Terminal command are verified. Screenlogger has not tested a search inside \(target.label); restart it after installation, then try a small search there.",
+                    "Screenlogger verified its connection files and Terminal command. Screenlogger has not tested a search inside \(target.label). Restart \(target.label) after installation. Then try a small search there.",
                 tone: .success,
                 actionTitle: nil,
                 primaryAction: .none
@@ -99,7 +99,7 @@ struct AssistantOperationalReadinessPresentation: Equatable {
     private static func setupFiles(badge: String, actionTitle: String) -> Self {
         Self(
             badge: badge,
-            detail: "Install Screenlogger's connection files, then finish Command Setup.",
+            detail: "Install the Screenlogger connection files. Then complete Command Setup.",
             tone: .attention,
             actionTitle: actionTitle,
             primaryAction: .installIntegration
@@ -112,9 +112,9 @@ struct AssistantOperationalReadinessPresentation: Equatable {
         case .notInstalled:
             detail = "The managed Terminal command is not installed."
         case .installing:
-            detail = "The managed Terminal command is being installed."
+            detail = "Screenlogger is installing the managed Terminal command."
         case .removing:
-            detail = "The managed Terminal command is being removed."
+            detail = "Screenlogger is removing the managed Terminal command."
         case .updateAvailable:
             detail = "The managed Terminal command needs an update."
         case .verificationUnavailable:
@@ -150,7 +150,7 @@ struct AssistantOperationalReadinessPresentation: Equatable {
         case .starting:
             detail = "The private connection is starting."
         case .unavailable:
-            detail = "The private connection is unavailable and needs a retry."
+            detail = "The private connection is unavailable. Try again."
         }
         return localTools(detail: detail)
     }
@@ -188,7 +188,7 @@ struct AssistantOperationalReadinessPresentation: Equatable {
             detail = "The managed command returned a response Screenlogger could not verify."
         case .failed(.commandFailed):
             badge = "Verification failed"
-            detail = "The managed command reached an unhealthy Library or could not complete its check."
+            detail = "The managed command found a Library problem or could not complete its check."
         }
         return localTools(detail: detail, badge: badge)
     }

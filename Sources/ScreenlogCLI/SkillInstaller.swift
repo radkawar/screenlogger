@@ -325,10 +325,10 @@ enum SkillInstaller {
             let argument = args[index]
             switch argument {
             case "--force":
-                guard !force else { throw CLIError.message("--force may only be provided once") }
+                guard !force else { throw CLIError.message("Provide --force only once") }
                 force = true
             case "--json":
-                guard !jsonOutput else { throw CLIError.message("--json may only be provided once") }
+                guard !jsonOutput else { throw CLIError.message("Provide --json only once") }
                 jsonOutput = true
             case "--directory", "--target":
                 guard index + 1 < args.count, !args[index + 1].hasPrefix("-") else {
@@ -337,13 +337,13 @@ enum SkillInstaller {
                 let value = args[index + 1]
                 let maximumBytes = argument == "--directory" ? 4_096 : 32
                 guard !value.isEmpty, value.utf8.count <= maximumBytes else {
-                    throw CLIError.message("\(argument) is empty or exceeds \(maximumBytes) bytes")
+                    throw CLIError.message("\(argument) is empty or contains more than \(maximumBytes) bytes")
                 }
                 if argument == "--directory" {
-                    guard directory == nil else { throw CLIError.message("--directory may only be provided once") }
+                    guard directory == nil else { throw CLIError.message("Provide --directory only once") }
                     directory = value
                 } else {
-                    guard targetFromFlag == nil else { throw CLIError.message("--target may only be provided once") }
+                    guard targetFromFlag == nil else { throw CLIError.message("Provide --target only once") }
                     targetFromFlag = value
                 }
                 index += 1
@@ -406,7 +406,7 @@ enum SkillInstaller {
                 issues: [.sourceUnavailable]
             )
             try printJSON(document)
-            throw CLIError.message("Screenlogger integration resources are unavailable; reinstall Screenlogger")
+            throw CLIError.message("Screenlogger integration resources are unavailable. Reinstall Screenlogger.")
         }
 
         let service = AssistantIntegrationService()
@@ -436,7 +436,7 @@ enum SkillInstaller {
         )
         try printJSON(document)
         guard document.health == .ok else {
-            throw CLIError.message("skill status found one or more integrations that need attention")
+            throw CLIError.message("One or more integrations need action. Review the skill status results.")
         }
         return LifecycleResult(inspected: [])
     }
@@ -547,7 +547,7 @@ enum SkillInstaller {
 
         guard let skillSource else {
             throw CLIError.message(
-                "Screenlogger integration resources are unavailable; reinstall Screenlogger"
+                "Screenlogger integration resources are unavailable. Reinstall Screenlogger."
             )
         }
         let inspection = try service.inspect(
@@ -590,7 +590,7 @@ enum SkillInstaller {
             )
             let note =
                 assistantTarget == .openclaw
-                ? "OpenClaw will pick up the integration on the next agent turn."
+                ? "OpenClaw will load the integration on the next agent turn."
                 : "Restart \(assistantTarget.label) sessions to load the integration."
             print("\(target.rawValue): installed \(destination.path)")
             print("  \(note)")
@@ -616,7 +616,7 @@ enum SkillInstaller {
         case .updateAvailable, .setupIncomplete:
             return "run `screenlog skill upgrade \(target.rawValue)`"
         case .blocked:
-            return "review the reported path; use `screenlog skill install \(target.rawValue) --force` only if you intend to replace it"
+            return "Review the reported path. Use `screenlog skill install \(target.rawValue) --force` only if you intend to replace it."
         }
     }
 
@@ -627,15 +627,15 @@ enum SkillInstaller {
     static func lifecycleFailureDescription(_ error: Error) -> String {
         guard let integrationError = error as? AssistantIntegrationError else {
             if let cliError = error as? CLIError { return cliError.description }
-            return "the integration could not be changed; existing files were preserved"
+            return "Screenlogger could not change the integration. It preserved existing files."
         }
         switch integrationError {
         case .sourceMissing:
-            return "Screenlogger integration resources are unavailable; reinstall Screenlogger"
+            return "Screenlogger integration resources are unavailable. Reinstall Screenlogger."
         case .configMissing:
-            return "OpenClaw configuration is unavailable; install or open OpenClaw first"
+            return "OpenClaw configuration is unavailable. Install or open OpenClaw first."
         case .malformedConfiguration:
-            return "OpenClaw configuration is invalid and was left unchanged"
+            return "OpenClaw configuration is invalid. Screenlogger left it unchanged."
         case .destinationNeedsUpgrade:
             return "the installed Screenlogger integration needs an explicit upgrade"
         case .destinationNotOwned:
@@ -643,7 +643,7 @@ enum SkillInstaller {
         case .unsafeDestination:
             return "Screenlogger refused an unsafe integration location"
         case .replacementFailed:
-            return "the integration could not be replaced; the previous installation was preserved"
+            return "Screenlogger could not replace the integration. It preserved the previous installation."
         }
     }
 
@@ -844,13 +844,13 @@ enum SkillInstaller {
                     return try service.verifiedSkillSource(candidate)
                 } catch {
                     throw CLIError.message(
-                        "Screenlogger integration resources could not be verified; reinstall Screenlogger"
+                        "Screenlogger could not verify its integration resources. Reinstall Screenlogger."
                     )
                 }
             }
         }
         throw CLIError.message(
-            "could not find \(skillFolderName)/SKILL.md; reinstall Screenlogger or set SCREENLOG_SKILL_DIR"
+            "Screenlogger could not find \(skillFolderName)/SKILL.md. Reinstall Screenlogger or set SCREENLOG_SKILL_DIR."
         )
     }
 
@@ -873,13 +873,15 @@ enum SkillInstaller {
           ~/.grok/skills/screenlog-cli-skill (Grok Build user skills)
           OpenClaw: Application Support + skills.load.extraDirs in ~/.openclaw/openclaw.json
 
-        `all` acts only on detected assistants and fails when none are detected.
+        `all` acts only on detected assistants. It fails if it detects none.
         --directory is a skills directory or an exact agent root such as ~/.claude.
-        Install is idempotent. Upgrade replaces authenticated stale content. Remove refuses
-        unrelated content and unauthenticated broken links unless --force is explicit.
-        Status exits unsuccessfully unless every selected installation is current and registered.
-        JSON status exits 0 when every target is ready, 1 for operational/readiness
-        failures (after emitting JSON), and 2 for invalid usage.
+        Install does not change a current installation.
+        Upgrade replaces only older content that Screenlogger can authenticate.
+        Remove refuses unrelated content and unauthenticated broken links unless you specify --force.
+        Status fails unless every selected installation is current and registered.
+        JSON status returns exit code 0 when every target is ready.
+        It returns code 1 for operational or readiness failures after it emits JSON.
+        It returns code 2 for invalid usage.
 
         These commands do not require Screenlogger.app to be running.
         """

@@ -44,22 +44,18 @@ struct CaptureStatusSettingsSection: View {
     }
 
     private var statusSummary: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: SLDesign.space16) {
             Image(systemName: status.symbolName)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(status.tone.swiftUIColor)
-                .frame(width: 34, height: 34)
-                .background(
-                    status.tone.swiftUIColor.opacity(0.12),
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                )
+                .font(SLDesign.bodyFont)
+                .foregroundStyle(status.tone == .warning ? SLDesign.warning : .secondary)
+                .frame(width: SettingsChrome.iconSize, height: SettingsChrome.iconSize)
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: SLDesign.space4) {
                 Text(status.headline)
-                    .font(.body.weight(.semibold))
+                    .font(SLDesign.bodyFont.weight(.medium))
                 Text(status.detail)
-                    .font(.caption)
+                    .font(SLDesign.metadataFont)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

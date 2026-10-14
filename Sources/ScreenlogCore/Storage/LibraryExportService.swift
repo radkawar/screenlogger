@@ -97,9 +97,9 @@ public enum LibraryExportError: Error, LocalizedError, Equatable, Sendable {
         case .sourceUnavailable: return "The Screenlogger Library is unavailable."
         case .unsafeDestination: return "Choose a location outside the live Screenlogger Library."
         case .destinationExists: return "A file or folder already exists at that location. Choose another name."
-        case .snapshotFailed: return "Screenlogger couldn't create a complete Library snapshot. Your live Library was not changed."
-        case .verificationFailed(let issue): return "The Library export could not be verified. \(issue.localizedDescription)"
-        case .publishFailed: return "Screenlogger couldn't finish saving the verified Library export."
+        case .snapshotFailed: return "Screenlogger could not create a complete Library snapshot. It did not change your current Library."
+        case .verificationFailed(let issue): return "Screenlogger could not verify the Library export. \(issue.localizedDescription)"
+        case .publishFailed: return "Screenlogger could not finish saving the verified Library export."
         }
     }
 }

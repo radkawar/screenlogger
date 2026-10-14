@@ -80,12 +80,18 @@ if [[ "$OUTPUT" != *.xml || "$OUTPUT" == *$'\n'* ]]; then
   exit 1
 fi
 
-for command_name in curl ditto hdiutil plutil shasum; do
+for command_name in codesign curl ditto hdiutil plutil shasum spctl xcrun; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "error: required tool is unavailable: $command_name" >&2
     exit 1
   fi
 done
+
+# Never turn engineering/ad-hoc output into a trusted update. Check the final
+# stapled container before using the update signing key.
+/usr/bin/codesign --verify --strict --verbose=2 "$ARCHIVE"
+xcrun stapler validate "$ARCHIVE"
+/usr/sbin/spctl --assess --type open --context context:primary-signature "$ARCHIVE"
 
 WORK_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/screenlogger-appcast.XXXXXX")"
 MOUNT_POINT="$WORK_ROOT/mount"
@@ -140,6 +146,17 @@ if [[ "$VERIFY_BEFORE_EXTRACTION" != "true" || "$REQUIRE_SIGNED_FEED" != "true" 
   echo "error: app does not require signed pre-extraction update verification" >&2
   exit 1
 fi
+
+APP="$MOUNT_POINT/Screenlogger.app"
+/usr/bin/codesign --verify --deep --strict --verbose=2 "$APP"
+APP_SIGNATURE_DETAILS="$(/usr/bin/codesign -dvvv "$APP" 2>&1)"
+if ! /usr/bin/grep -q '^Authority=Developer ID Application:' <<<"$APP_SIGNATURE_DETAILS" \
+  || ! /usr/bin/grep -q '^TeamIdentifier=3UX5N7Y8TY$' <<<"$APP_SIGNATURE_DETAILS"; then
+  echo "error: update app must use Screenlogger's Developer ID team" >&2
+  exit 1
+fi
+xcrun stapler validate "$APP"
+/usr/sbin/spctl --assess --type execute "$APP"
 
 /usr/bin/hdiutil detach "$MOUNT_POINT" >/dev/null
 MOUNTED=0

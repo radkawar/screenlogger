@@ -2,9 +2,8 @@ import AVFoundation
 import Foundation
 import SQLite3
 import ScreenCaptureKit
-import XCTest
-
 @testable import ScreenlogCore
+import XCTest
 
 final class AudioTranscriptionTests: XCTestCase {
     func testAllowedAppChangesDoNotFinalizeContinuousSpeech() {

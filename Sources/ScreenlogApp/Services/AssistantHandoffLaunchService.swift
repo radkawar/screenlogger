@@ -83,13 +83,13 @@ enum AssistantHandoffLaunchError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .invalidLink:
-            return "Screenlogger couldn't create a safe assistant link."
+            return "Screenlogger could not create a safe assistant link."
         case .invalidTerminalCommand:
-            return "Screenlogger couldn't prepare a safe Terminal handoff."
+            return "Screenlogger could not prepare a safe Terminal handoff."
         case .couldNotPrepareWorkspace:
-            return "Screenlogger couldn't prepare its private assistant handoff workspace. Nothing was sent."
+            return "Screenlogger could not prepare its private assistant handoff workspace. Screenlogger did not send anything."
         case .couldNotOpenAssistant:
-            return "The assistant couldn't be opened. Nothing was sent."
+            return "Screenlogger could not open the assistant. Screenlogger did not send anything."
         }
     }
 }

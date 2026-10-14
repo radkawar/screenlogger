@@ -9,9 +9,10 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 1
 fi
 
-non_ascii="$(git grep -n -I -P '[^\x00-\x7F]' -- . || true)"
+# Preserve upstream license notices verbatim, including their copyright symbols.
+non_ascii="$(git grep -n -I -P '[^\x00-\x7F]' -- . ':!Resources/SemanticLicenses' || true)"
 if [[ -n "$non_ascii" ]]; then
-  echo "error: tracked text must be ASCII-only:" >&2
+  echo "error: tracked text outside upstream license notices must be ASCII-only:" >&2
   echo "$non_ascii" >&2
   exit 1
 fi

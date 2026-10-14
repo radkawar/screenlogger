@@ -15,6 +15,8 @@ struct SettingsView: View {
     @State private var destinationFocusRequest: SettingsDestinationFocusRequest?
     @State private var selectedSearchResultID: String?
     @State private var activatedSearchRequest: SettingsNavigationRequest?
+    // Do not publish AppModel changes from a native List update.
+    @State private var pendingSidebarSelection: SettingsSidebarSelection?
 
     var body: some View {
         NavigationSplitView {
@@ -26,19 +28,24 @@ struct SettingsView: View {
                     onEscape: clearSearch
                 )
                 .frame(height: 28)
-                .padding(.horizontal, 10)
-                .padding(.top, 8)
-                .padding(.bottom, 7)
+                .padding(.horizontal, SLDesign.space8)
+                .padding(.top, SLDesign.space8)
+                .padding(.bottom, SLDesign.space8)
 
                 List(selection: sidebarSelection) {
                     if normalizedSearchQuery.isEmpty {
                         ForEach(SettingsSidebarSection.all) { section in
                             Section(section.title) {
                                 ForEach(section.items) { item in
-                                    Label(item.title, systemImage: item.systemImage)
-                                        .tag(SettingsSidebarSelection.section(item))
-                                        .accessibilityHint(item.accessibilityHint)
-                                        .accessibilityIdentifier("settings.sidebar.\(item.rawValue)")
+                                    Label {
+                                        Text(item.title)
+                                    } icon: {
+                                        Image(systemName: item.systemImage)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .tag(SettingsSidebarSelection.section(item))
+                                    .accessibilityHint(item.accessibilityHint)
+                                    .accessibilityIdentifier("settings.sidebar.\(item.rawValue)")
                                 }
                             }
                         }
@@ -58,7 +65,7 @@ struct SettingsView: View {
                         Section("Search Results") {
                             ForEach(searchResults) { result in
                                 Label {
-                                    VStack(alignment: .leading, spacing: 1) {
+                                    VStack(alignment: .leading, spacing: SLDesign.space4) {
                                         Text(result.title)
                                         Text(result.subtitle)
                                             .font(.caption2)
@@ -67,6 +74,7 @@ struct SettingsView: View {
                                     }
                                 } icon: {
                                     Image(systemName: result.systemImage)
+                                        .foregroundStyle(.secondary)
                                 }
                                 .tag(SettingsSidebarSelection.searchResult(result.id))
                                 .accessibilityElement(children: .ignore)
@@ -80,7 +88,7 @@ struct SettingsView: View {
                 }
                 .listStyle(.sidebar)
             }
-            .navigationSplitViewColumnWidth(min: 176, ideal: 190, max: 224)
+            .navigationSplitViewColumnWidth(min: 184, ideal: 208, max: 240)
             .accessibilityLabel("Settings sections and search results")
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 Divider()
@@ -101,6 +109,7 @@ struct SettingsView: View {
             }
         } detail: {
             settingsDetail
+                .buttonStyle(SettingsSecondaryButtonStyle())
                 .environment(\.settingsHighlightedAnchor, highlightedAnchor)
                 .environment(\.settingsDestinationFocusRequest, destinationFocusRequest)
         }
@@ -112,6 +121,7 @@ struct SettingsView: View {
             idealHeight: SettingsWindowLayout.defaultContentSize.height
         )
         .tint(model.accentSwiftUIColor)
+        .accentColor(model.accentSwiftUIColor)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
@@ -140,6 +150,17 @@ struct SettingsView: View {
         }
         .onExitCommand {
             _ = clearSearch()
+        }
+        .onChange(of: pendingSidebarSelection) { _, selection in
+            guard let selection else { return }
+            pendingSidebarSelection = nil
+            switch selection {
+            case .section(let section):
+                model.settingsSelection = section
+            case .searchResult(let id):
+                guard let result = searchResults.first(where: { $0.id == id }) else { return }
+                activate(result)
+            }
         }
         .onChange(of: model.settingsSelection) { _, selection in
             if destinationFocusRequest?.anchor.section != selection {
@@ -224,14 +245,15 @@ struct SettingsView: View {
                             openStorage: { navigate(to: .storageManagement) }
                         )
                     case .storage: StorageSettingsPane()
+                    case .search: SearchSettingsPane()
                     case .exclusions: ExclusionsSettingsPane()
                     case .integrations: IntegrationsSettingsPane()
                     case .support: SupportSettingsPane()
                     }
                 }
-                .padding(24)
-                .frame(maxWidth: 700, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .top)
+                .padding(SLDesign.space24)
+                .frame(maxWidth: 720, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
                 .id(SettingsScrollTarget.top(model.settingsSelection))
             }
             .onReceive(model.$settingsNavigationRequest.compactMap { $0 }) { request in
@@ -265,23 +287,13 @@ struct SettingsView: View {
     private var sidebarSelection: Binding<SettingsSidebarSelection?> {
         Binding(
             get: {
+                if let pendingSidebarSelection { return pendingSidebarSelection }
                 if normalizedSearchQuery.isEmpty {
                     return .section(model.settingsSelection)
                 }
                 return selectedSearchResultID.map(SettingsSidebarSelection.searchResult)
             },
-            set: { selection in
-                guard let selection else { return }
-                switch selection {
-                case .section(let section):
-                    model.settingsSelection = section
-                case .searchResult(let id):
-                    guard let result = searchResults.first(where: { $0.id == id }) else {
-                        return
-                    }
-                    activate(result)
-                }
-            }
+            set: { pendingSidebarSelection = $0 }
         )
     }
 
@@ -420,14 +432,14 @@ private struct SettingsSidebarCaptureState: View {
         Button {
             action(destination)
         } label: {
-            HStack(spacing: 9) {
+            HStack(spacing: SLDesign.space8) {
                 Image(systemName: presentation.symbolName)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(presentation.tone.swiftUIColor)
-                    .frame(width: 20)
+                    .font(SLDesign.bodyFont)
+                    .foregroundStyle(.secondary)
+                    .frame(width: SettingsChrome.iconSize)
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: SLDesign.space4) {
                     Text(presentation.compactLabel)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.primary)
@@ -446,8 +458,7 @@ private struct SettingsSidebarCaptureState: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(SLDesign.space16)
         .background(.bar)
         .accessibilityLabel(presentation.compactLabel)
         .accessibilityValue(presentation.compactDetail ?? presentation.detail)
@@ -479,53 +490,40 @@ private struct SettingsPaneHeader: View {
 
     var body: some View {
         identity
-            .padding(.horizontal, 24)
-            .padding(.vertical, 12)
+            .padding(.horizontal, SLDesign.space24)
+            .padding(.vertical, SLDesign.space16)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("settings.pane.\(item.rawValue)")
     }
 
     private var identity: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Image(systemName: item.systemImage)
-                .font(.system(size: 17, weight: .medium))
+        VStack(alignment: .leading, spacing: SLDesign.space4) {
+            Text(item.title)
+                .font(SLDesign.titleFont)
+            Text(item.subtitle)
+                .font(SLDesign.metadataFont)
                 .foregroundStyle(.secondary)
-                .frame(width: 22)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.title)
-                    .font(.title3.weight(.semibold))
-                Text(item.subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-            .layoutPriority(1)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(item.title)
-            .accessibilityValue(item.subtitle)
-            .accessibilityAddTraits(.isHeader)
-            .accessibilityIdentifier("settings.pane.\(item.rawValue).heading")
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(item.title)
+        .accessibilityValue(item.subtitle)
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityIdentifier("settings.pane.\(item.rawValue).heading")
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
 // MARK: - Chrome tokens
 
 enum SettingsChrome {
-    static let cardRadius: CGFloat = 9
+    static let cardRadius: CGFloat = 8
     static let iconSize: CGFloat = 24
-    static let cardSpacing: CGFloat = 12
-    static let sectionSpacing: CGFloat = 20
-    static let rowSeparatorInset: CGFloat = 50
+    static let cardSpacing = SLDesign.space16
+    static let sectionSpacing = SLDesign.space24
+    static let rowSeparatorInset: CGFloat = 56
 
-    static func cardFill(_ scheme: ColorScheme) -> Color {
-        Color(nsColor: .controlBackgroundColor)
-    }
-
-    static func iconFill(_ scheme: ColorScheme) -> Color {
-        Color(nsColor: .quaternaryLabelColor).opacity(0.12)
-    }
 }
 
 private struct SettingsHighlightedAnchorKey: EnvironmentKey {
@@ -572,13 +570,10 @@ private struct SettingsDestinationAnchorModifier: ViewModifier {
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .leading) {
+        .overlay {
             if highlightedAnchor == anchor {
-                Capsule(style: .continuous)
-                    .fill(model.accentSwiftUIColor)
-                    .frame(width: 3)
-                    .padding(.vertical, 4)
-                    .offset(x: -10)
+                RoundedRectangle(cornerRadius: SettingsChrome.cardRadius)
+                    .strokeBorder(model.accentSwiftUIColor.opacity(0.5), lineWidth: 2)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
@@ -634,7 +629,7 @@ extension View {
     }
 }
 
-// MARK: - Card helpers
+// MARK: - Grouped form helpers
 
 /// The shared vertical rhythm for a Settings destination made from several
 /// titled groups. Use this instead of repeating pane-local `VStack` geometry.
@@ -651,20 +646,21 @@ struct SettingsSectionStack<Content: View>: View {
 
 /// Native grouped container for a related set of preferences.
 struct SettingsCard<Content: View>: View {
-    var padding: CGFloat = 14
+    var padding: CGFloat = SLDesign.space16
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        GroupBox {
-            content()
-                .padding(padding)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .groupBoxStyle(.automatic)
+        content()
+            .padding(padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                Color(nsColor: .controlBackgroundColor),
+                in: RoundedRectangle(cornerRadius: SettingsChrome.cardRadius)
+            )
     }
 }
 
-/// Icon-in-soft-square + title/subtitle + trailing control row.
+/// A compact form row with a quiet symbol and a trailing native control.
 struct SettingsCardRow<Trailing: View>: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -689,14 +685,14 @@ struct SettingsCardRow<Trailing: View>: View {
     }
 
     private var horizontalContent: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: SLDesign.space16) {
             identity
             trailingControl
         }
     }
 
     private var stackedContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: SLDesign.space8) {
             identity
             trailingControl
                 .frame(maxWidth: .infinity, alignment: .trailing)
@@ -704,20 +700,20 @@ struct SettingsCardRow<Trailing: View>: View {
     }
 
     private var identity: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: SLDesign.space16) {
             Image(systemName: icon)
-                .font(.system(size: 14, weight: .medium))
+                .font(SLDesign.bodyFont)
                 .foregroundStyle(iconColor)
                 .frame(width: SettingsChrome.iconSize, height: SettingsChrome.iconSize)
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: SLDesign.space4) {
                 Text(title)
-                    .font(.body.weight(.semibold))
+                    .font(SLDesign.bodyFont.weight(.medium))
                     .foregroundStyle(.primary)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.caption)
+                        .font(SLDesign.metadataFont)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -746,8 +742,8 @@ struct SettingsRow<Trailing: View>: View {
         SettingsCardRow(icon: icon, iconColor: iconColor, title: title, subtitle: subtitle) {
             trailing()
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 6)
+        .padding(.horizontal, SLDesign.space4)
+        .padding(.vertical, SLDesign.space8)
     }
 }
 
@@ -757,7 +753,7 @@ struct SettingsShortcutBadge: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11, weight: .medium, design: .rounded))
+            .font(SLDesign.metadataFont.monospaced())
             .foregroundStyle(.secondary)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -778,5 +774,15 @@ struct SettingsShortcutBadge: View {
             .replacingOccurrences(of: "Option-", with: "Option ")
             .replacingOccurrences(of: "Control-", with: "Control ")
             .replacingOccurrences(of: "Shift-", with: "Shift ")
+    }
+}
+
+/// Secondary actions retain native button behavior without competing with
+/// selected controls and explicitly prominent primary actions.
+private struct SettingsSecondaryButtonStyle: PrimitiveButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button(configuration)
+            .buttonStyle(.bordered)
+            .tint(.primary)
     }
 }

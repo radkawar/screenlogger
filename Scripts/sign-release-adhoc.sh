@@ -27,6 +27,7 @@ CLI_DIRECTORY="$(dirname "$CLI")"
 APP_FRAMEWORK="$APP/Contents/Frameworks/ScreenlogCore.framework"
 SPARKLE_FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
 BUNDLED_CLI="$APP/Contents/MacOS/screenlog"
+SEMANTIC_WORKER="$APP/Contents/MacOS/screenlog-semantic-worker"
 CLI_FRAMEWORK="$CLI_DIRECTORY/ScreenlogCore.framework"
 
 if ! command -v codesign >/dev/null 2>&1; then
@@ -56,6 +57,7 @@ require_directory "$APP" "app bundle"
 require_directory "$APP_FRAMEWORK" "embedded framework"
 require_directory "$SPARKLE_FRAMEWORK" "embedded Sparkle framework"
 require_executable "$BUNDLED_CLI" "bundled CLI"
+require_executable "$SEMANTIC_WORKER" "semantic worker"
 require_directory "$CLI_FRAMEWORK" "standalone CLI framework"
 require_executable "$CLI" "standalone CLI"
 if [[ ! -f "$ENTITLEMENTS" || -L "$ENTITLEMENTS" ]]; then
@@ -87,6 +89,7 @@ sign_artifact "$APP_FRAMEWORK" "dev.screenlog.core"
   --preserve-metadata=identifier,entitlements,flags \
   "$SPARKLE_FRAMEWORK/Versions/Current"
 sign_artifact "$BUNDLED_CLI" "dev.screenlog.cli"
+sign_artifact "$SEMANTIC_WORKER" "dev.screenlog.semantic-worker"
 /usr/bin/codesign \
   --force \
   --sign - \

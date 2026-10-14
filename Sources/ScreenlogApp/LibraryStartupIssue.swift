@@ -39,29 +39,29 @@ enum LibraryStartupIssue: Equatable, Sendable {
         case .integrityCheckFailed, .schemaValidationFailed:
             return "Your Library Needs Attention"
         case .schemaMigrationFailed:
-            return "Your Library Couldn't Be Updated"
+            return "Screenlogger Could Not Update Your Library"
         case .recoveryFailed:
-            return "Library Recovery Didn't Finish"
+            return "Library Recovery Did Not Finish"
         case .databaseUnavailable, .unavailable:
-            return "Your Library Couldn't Open"
+            return "Your Library Could Not Open"
         }
     }
 
     var message: String {
         switch self {
         case .databaseUnavailable:
-            return "Screenlogger couldn't open the Library database. Capture is off to protect your saved history."
+            return "Screenlogger could not open the Library database. Capture is off to protect your saved history."
         case .integrityCheckFailed:
             return
                 "Screenlogger found a problem with the Library and stopped before making changes. Your saved files remain on this Mac."
         case .schemaMigrationFailed:
-            return "Screenlogger couldn't safely update the Library. Capture is off, and your saved files haven't been replaced."
+            return "Screenlogger could not safely update the Library. Capture is off. Screenlogger has not replaced your saved files."
         case .schemaValidationFailed:
-            return "The Library has inconsistent data. Capture is off to avoid making the problem worse."
+            return "The Library has inconsistent data. Capture is off to prevent changes to this data."
         case .recoveryFailed:
-            return "Screenlogger couldn't finish recovering the Library after an interrupted operation. Capture is off for now."
+            return "Screenlogger could not complete Library recovery after an interrupted operation. Capture is off."
         case .unavailable:
-            return "Screenlogger couldn't prepare the Library. Capture is off, and details were saved for troubleshooting."
+            return "Screenlogger could not prepare the Library. Capture is off. Screenlogger saved details for troubleshooting."
         }
     }
 

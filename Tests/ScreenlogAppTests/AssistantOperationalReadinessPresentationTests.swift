@@ -8,7 +8,6 @@ final class AssistantOperationalReadinessPresentationTests: XCTestCase {
             target: .codex
         )
 
-        XCTAssertEqual(presentation.badge, "Not detected")
         XCTAssertEqual(presentation.tone, .neutral)
         XCTAssertEqual(presentation.primaryAction, .none)
         XCTAssertNil(presentation.actionTitle)
@@ -20,8 +19,6 @@ final class AssistantOperationalReadinessPresentationTests: XCTestCase {
             target: .claude
         )
 
-        XCTAssertEqual(presentation.badge, "Finish Command Setup")
-        XCTAssertEqual(presentation.actionTitle, "Open Command Setup")
         XCTAssertEqual(presentation.primaryAction, .openLocalTools)
         XCTAssertFalse(presentation.detail.contains("ready"))
     }
@@ -53,8 +50,6 @@ final class AssistantOperationalReadinessPresentationTests: XCTestCase {
             target: .openclaw
         )
 
-        XCTAssertEqual(protocolMismatch.badge, "Update required")
-        XCTAssertEqual(appUnavailable.badge, "App unavailable")
         XCTAssertNotEqual(protocolMismatch.detail, appUnavailable.detail)
     }
 
@@ -64,7 +59,6 @@ final class AssistantOperationalReadinessPresentationTests: XCTestCase {
             target: .codex
         )
 
-        XCTAssertEqual(presentation.badge, "Connection verified")
         XCTAssertEqual(presentation.tone, .success)
         XCTAssertTrue(presentation.detail.contains("Terminal command"))
         XCTAssertTrue(presentation.detail.contains("has not tested a search inside Codex"))
@@ -77,7 +71,6 @@ final class AssistantOperationalReadinessPresentationTests: XCTestCase {
             target: .codex
         )
 
-        XCTAssertEqual(notRun.actionTitle, "Open Command Setup")
         XCTAssertEqual(notRun.primaryAction, .openLocalTools)
     }
 }

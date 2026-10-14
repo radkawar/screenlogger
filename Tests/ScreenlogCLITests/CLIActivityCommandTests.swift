@@ -1,8 +1,7 @@
 import Foundation
+@testable import ScreenlogCLI
 import ScreenlogCore
 import XCTest
-
-@testable import ScreenlogCLI
 
 final class CLIActivityCommandTests: XCTestCase {
     func testRelativeAndAbsoluteActivityBoundsAreHalfOpenAndDeterministic() throws {
@@ -98,6 +97,31 @@ final class CLIActivityCommandTests: XCTestCase {
         try await ScreenlogCLIMain.run(args: ["usage", "sessions", "--help"])
         try await ScreenlogCLIMain.run(args: ["query", "sample", "--help"])
         try await ScreenlogCLIMain.run(args: ["skill", "remove", "--help"])
+    }
+
+    func testMutationCommandsRejectExtraArgumentsBeforeConnecting() async throws {
+        let root = "/tmp/screenlog-cli-invalid-\(UUID().uuidString)"
+        for arguments in [
+            ["compact", "--dry-run"],
+            ["retention", "--dry-run"],
+            ["compact", "unexpected"],
+            ["retention", "unexpected"],
+            ["record", "start", "--dry-run"],
+            ["record", "stop", "--dry-run"],
+            ["record", "once", "unexpected"],
+        ] {
+            do {
+                try await ScreenlogCLIMain.run(args: ["--data-dir", root] + arguments)
+                XCTFail("Expected usage error for \(arguments)")
+            } catch let error as CLIError {
+                guard case .usage = error else {
+                    return XCTFail("Expected usage error, got \(error)")
+                }
+                XCTAssertEqual(error.exitCode, 2)
+            } catch {
+                XCTFail("Malformed mutation reached the bridge: \(error)")
+            }
+        }
     }
 
     func testFrameDocumentBoundsOCRAndNeverSerializesMediaPaths() throws {

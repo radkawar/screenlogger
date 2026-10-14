@@ -21,6 +21,9 @@ struct SettingsSearchField: NSViewRepresentable {
     func makeNSView(context: Context) -> NSSearchField {
         let field = NSSearchField()
         field.placeholderString = "Search Settings"
+        field.controlSize = .regular
+        field.font = .systemFont(ofSize: NSFont.systemFontSize)
+        field.focusRingType = .default
         // The binding is kept current by `controlTextDidChange`. The field's
         // action is reserved for an explicit Return/Enter or search-button
         // activation; sending it for every keystroke would open a result while
@@ -32,7 +35,7 @@ struct SettingsSearchField: NSViewRepresentable {
         field.action = #selector(Coordinator.submitFromSearchField(_:))
         field.setAccessibilityIdentifier("settings.search.field")
         field.setAccessibilityHelp(
-            "Type to find a setting. Use the arrow keys to select a result, Return to open it, and Escape to clear the search."
+            "Type to find a setting. Use the arrow keys to select a result. Press Return to open it. Press Escape to clear the search."
         )
         return field
     }
@@ -126,6 +129,9 @@ struct NativeFilterSearchField: NSViewRepresentable {
     func makeNSView(context: Context) -> NSSearchField {
         let field = NSSearchField()
         field.placeholderString = placeholder
+        field.controlSize = .regular
+        field.font = .systemFont(ofSize: NSFont.systemFontSize)
+        field.focusRingType = .default
         field.sendsSearchStringImmediately = true
         field.sendsWholeSearchString = false
         field.delegate = context.coordinator

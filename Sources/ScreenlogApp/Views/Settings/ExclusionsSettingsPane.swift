@@ -20,13 +20,13 @@ struct ExclusionsSettingsPane: View {
     @State private var applicationSearchFocusRequested = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: SLDesign.space16) {
             selectionControl
             scopeFootnote
 
             switch selection {
             case .applications:
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: SLDesign.space24) {
                     applicationSearch
                     ExcludedApplicationsSettingsContent(
                         query: applicationQuery,
@@ -85,7 +85,7 @@ struct ExclusionsSettingsPane: View {
 
     private var scopeFootnote: some View {
         Label(
-            "Exclusions apply before a new moment is saved. Existing Library moments are unchanged.",
+            "Screenlogger applies exclusions before it saves a new moment. Existing Library moments are unchanged.",
             systemImage: "hand.raised.fill"
         )
         .font(.caption)
@@ -93,7 +93,7 @@ struct ExclusionsSettingsPane: View {
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("How exclusions work")
-        .accessibilityHint("Excluded content is skipped before a new moment is saved. Existing Library moments are unchanged.")
+        .accessibilityHint("Screenlogger skips excluded content before it saves a new moment. Existing Library moments are unchanged.")
         .accessibilityIdentifier("exclusions.scope-summary")
     }
 
@@ -105,7 +105,7 @@ struct ExclusionsSettingsPane: View {
         .pickerStyle(.segmented)
         .labelsHidden()
         .frame(maxWidth: 300)
-        .frame(maxWidth: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityHint("Choose whether to manage application or website exclusions")
         .accessibilityIdentifier("exclusions.type")
     }

@@ -26,22 +26,22 @@ public enum AssistantIntegrationActionNotice: Equatable, Sendable {
     public var message: String {
         switch self {
         case .installed(let target):
-            return "Installed the \(target.label) integration files. Restart \(target.label) if it was already open."
+            return "Screenlogger installed the \(target.label) integration files. Restart \(target.label) if it was already open."
         case .verified(let target):
             return "The \(target.label) integration files are current."
         case .removed(let target):
-            return "Removed the \(target.label) integration."
+            return "Screenlogger removed the \(target.label) integration."
         case .alreadyRemoved(let target):
-            return "The \(target.label) integration was already removed."
+            return "The \(target.label) integration is already absent."
         case .inspectionUnavailable(let target):
             return
-                "The \(target.label) integration is still unavailable. Reinstall Screenlogger if this persists."
+                "The \(target.label) integration is still unavailable. Reinstall Screenlogger if the problem continues."
         case .inspectionAvailableAgain(let target):
             return "The \(target.label) integration is available again."
         case .inspectionCurrent(let target):
             return "The \(target.label) integration files are current."
         case .inspectionUnchanged:
-            return "Checked the integration again. No files were changed."
+            return "Screenlogger checked the integration again. It changed no files."
         case .failed(let failure):
             return failure.message
         }
@@ -97,21 +97,21 @@ public enum AssistantIntegrationActionFailure: Equatable, Sendable {
     public var message: String {
         switch self {
         case .resourcesUnavailable:
-            return "Screenlogger's integration resources are unavailable. Reinstall the app and try again."
+            return "Screenlogger's integration resources are unavailable. Reinstall the app. Try again."
         case .configurationUnavailable:
-            return "OpenClaw's configuration isn't available. Install or open OpenClaw, then try again."
+            return "OpenClaw's configuration is unavailable. Install or open OpenClaw. Try again."
         case .malformedConfiguration:
-            return "OpenClaw's integration settings couldn't be read. Screenlogger left the file unchanged."
+            return "Screenlogger could not read OpenClaw's integration settings. It left the file unchanged."
         case .updateRequired:
-            return "This Screenlogger integration needs an update. Choose Resolve to review and update it."
+            return "This Screenlogger integration needs an update. Choose Resolve to review the update."
         case .destinationConflict:
             return "Another item is using the integration location. Screenlogger left it unchanged."
         case .unsafeDestination:
-            return "Screenlogger refused an unsafe integration location. No files were changed."
+            return "Screenlogger refused an unsafe integration location. It changed no files."
         case .replacementFailed:
-            return "The integration couldn't be replaced. The previous installation was preserved."
+            return "Screenlogger could not replace the integration. It preserved the previous installation."
         case .unknown:
-            return "The integration couldn't be changed. No unrelated files were replaced."
+            return "Screenlogger could not change the integration. It replaced no unrelated files."
         }
     }
 }

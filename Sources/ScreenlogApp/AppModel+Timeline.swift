@@ -10,17 +10,27 @@ import ScreenlogCore
 extension AppModel {
     // MARK: - Timeline and replay
 
+    /// A canceled current load must release its progress presentation, while an
+    /// obsolete worker must never finish a newer request's loading state.
+    func finishTimelineLoad(_ generation: UInt) {
+        guard timelineLoadPublication.finishLoad(generation) else { return }
+        if timelineLoadState == .loading { timelineLoadState = .ready }
+    }
+
     /// Load recent Timeline content without coupling navigation errors to the
     /// capture engine's global diagnostics.
     func refreshTimeline(
         announceResult: Bool = false,
         selectRecentActivity: Bool = false
     ) async {
+        guard libraryRestoreState != .restoring else { return }
+        let generation = timelineLoadPublication.beginLoad()
+        defer { finishTimelineLoad(generation) }
         let issue =
             selectRecentActivity
             ? TimelineIssue.showRecentActivity
             : TimelineIssue.refreshTimeline
-        if timelineIssue == issue { timelineIssue = nil }
+        if timelineIssue != .refreshSessions { timelineIssue = nil }
         dismissTimelineNotice()
         timelineLoadState = .loading
         guard let store else {
@@ -60,6 +70,7 @@ extension AppModel {
                 return try store.recentTimeline(limit: 100)
                     .sorted(by: TimelineFrame.chronologicalAscending)
             }
+            guard !Task.isCancelled, timelineLoadPublication.allowsLoad(generation) else { return }
             let previousSelection = selectedTimelineID
             if selectRecentActivity {
                 let clearsSearchSessionScope = searchSessionScoped
@@ -92,6 +103,7 @@ extension AppModel {
                 )
             }
         } catch {
+            guard !Task.isCancelled, timelineLoadPublication.allowsLoad(generation) else { return }
             timelineLoadState = .failed
             timelineIssue = issue
         }
@@ -140,16 +152,16 @@ extension AppModel {
                 announceResult: true,
                 selectRecentActivity: true
             )
-        case .reloadSession(let startMs):
+        case .reloadSession(let startMs, let day, let preferLatestMoment):
             if let session = sessions.first(where: { $0.startMs == startMs }) {
-                await loadSession(session)
+                await loadSession(session, on: day, preferLatestMoment: preferLatestMoment)
                 return
             }
 
             await loadSessions()
             guard timelineIssue == nil else { return }
             if let session = sessions.first(where: { $0.startMs == startMs }) {
-                await loadSession(session)
+                await loadSession(session, on: day, preferLatestMoment: preferLatestMoment)
             } else {
                 // Retention may have removed this session while the banner was
                 // visible. That is an expected state, not another error.
@@ -237,7 +249,7 @@ extension AppModel {
             publishTimelineNotice(.dayHasNoCaptures)
             return
         }
-        await loadSession(session)
+        await loadSession(session, on: day, preferLatestMoment: preferLatestSession)
     }
 
     var selectedTimelineFrame: TimelineFrame? {
@@ -574,8 +586,6 @@ extension AppModel {
     /// Open a search hit in the timeline viewer.
     func openSearchResult(_ result: FTSResult) {
         stopReplay()
-        searchTask?.cancel()
-        searchDebounceTask?.cancel()
         if !searchSessionScoped {
             selectedSessionIndex = nil
         }
@@ -624,8 +634,11 @@ extension AppModel {
 
     /// Load a window of frames around an id and select it for replay.
     func jumpToFrame(id: Int64, timestampMs: Int64? = nil) async {
+        guard libraryRestoreState != .restoring else { return }
+        let generation = timelineLoadPublication.beginLoad()
+        defer { finishTimelineLoad(generation) }
         let issue = TimelineIssue.reopenMoment(frameID: id, timestampMs: timestampMs)
-        if timelineIssue == issue { timelineIssue = nil }
+        if timelineIssue != .refreshSessions { timelineIssue = nil }
         dismissTimelineNotice()
         timelineLoadState = .loading
         guard let store else {
@@ -654,6 +667,7 @@ extension AppModel {
                 }
                 return window.sorted(by: TimelineFrame.chronologicalAscending)
             }
+            guard !Task.isCancelled, timelineLoadPublication.allowsLoad(generation) else { return }
             timeline = built
             timelineLoadState = .ready
             let openedRequestedMoment = timeline.contains(where: { $0.id == id })
@@ -684,6 +698,7 @@ extension AppModel {
             rememberTimelineDisplayPreference(frameID: selectedTimelineID)
             publishTimelineNotice(resolution.noticeEvent)
         } catch {
+            guard !Task.isCancelled, timelineLoadPublication.allowsLoad(generation) else { return }
             timelineLoadState = .failed
             timelineIssue = issue
         }

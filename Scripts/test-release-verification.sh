@@ -74,4 +74,22 @@ if "$ROOT/Scripts/check-release.sh" --structure "$THIN_APP" "$TEST_CLI" >/dev/nu
   exit 1
 fi
 
+# Optional model weights are not bundled, but the worker and compiled Metal
+# runtime must be: otherwise a successful download still cannot enable search.
+MISSING_WORKER_APP="$CONTRACT_ROOT/MissingWorker.app"
+ditto "$APP" "$MISSING_WORKER_APP"
+rm "$MISSING_WORKER_APP/Contents/MacOS/screenlog-semantic-worker"
+if "$ROOT/Scripts/check-release.sh" --structure "$MISSING_WORKER_APP" "$TEST_CLI" >/dev/null 2>&1; then
+  echo "error: structural verification accepted an app without its semantic worker" >&2
+  exit 1
+fi
+
+MISSING_METAL_APP="$CONTRACT_ROOT/MissingMetal.app"
+ditto "$APP" "$MISSING_METAL_APP"
+rm -rf "$MISSING_METAL_APP/Contents/Resources/mlx-swift_Cmlx.bundle"
+if "$ROOT/Scripts/check-release.sh" --structure "$MISSING_METAL_APP" "$TEST_CLI" >/dev/null 2>&1; then
+  echo "error: structural verification accepted an app without its MLX Metal resources" >&2
+  exit 1
+fi
+
 echo "release verification contracts: passed"

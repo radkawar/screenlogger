@@ -40,18 +40,25 @@ private struct ScreenloggerCommands: Commands {
         CommandGroup(after: .windowList) {
             Divider()
             shortcutButton(
-                "Show Library",
+                "Show Search",
                 actionID: .showLibrary,
                 accessibilityIdentifier: "commands.show-library"
             ) {
-                model.openSearchWindow(intent: .show)
+                model.showLibrarySection(.search)
+            }
+            shortcutButton(
+                "Show Sessions",
+                actionID: .showSessions,
+                accessibilityIdentifier: "commands.show-sessions"
+            ) {
+                model.showLibrarySection(.sessions)
             }
             shortcutButton(
                 "Search Library",
                 actionID: .searchLibrary,
                 accessibilityIdentifier: "commands.search-library"
             ) {
-                model.openSearchWindow(intent: .show)
+                model.showLibrarySection(.search)
             }
             shortcutButton(
                 "Show Timeline",
@@ -70,6 +77,7 @@ private struct ScreenloggerCommands: Commands {
             ) {
                 model.performKeyboardShortcutCaptureToggle()
             }
+            .disabled(model.isDatabaseReclamationRunning && !model.isRecording)
         }
 
         CommandGroup(replacing: .appSettings) {
@@ -143,6 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusMenuController: StatusMenuController?
     private var instanceLockFD: Int32 = -1
     private var updaterNetworkPolicyCancellable: AnyCancellable?
+    private var terminationTask: Task<Void, Never>?
 
     /// Typed window intents relayed by a second process to the already-running
     /// menu bar app. Reopen is intentionally not a launch argument: it is the
@@ -282,6 +291,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appModel.applyAppearancePreference()
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard terminationTask == nil else { return .terminateLater }
+        terminationTask = Task { @MainActor in
+            await appModel.prepareForShutdown()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         DistributedNotificationCenter.default().removeObserver(self)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
@@ -343,7 +361,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.alertStyle = .informational
         alert.messageText = "Install Screenlogger First"
         alert.informativeText =
-            "Drag Screenlogger to Applications, then open that installed copy. macOS permissions belong to the installed app."
+            "Drag Screenlogger to Applications. Open the installed copy. macOS permissions apply to the installed app."
         alert.addButton(withTitle: "Show Installer")
         alert.addButton(withTitle: "Quit")
 

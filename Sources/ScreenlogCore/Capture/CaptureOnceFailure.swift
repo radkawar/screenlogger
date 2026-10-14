@@ -46,31 +46,31 @@ public enum CaptureOnceFailure: Equatable, Sendable {
         case .lowDiskSpace: return "Not enough free storage"
         case .excludedContent: return "This activity is excluded"
         case .privateBrowsing: return "Private Browsing is excluded"
-        case .browserAddressUnavailable: return "The active website couldn't be identified"
+        case .browserAddressUnavailable: return "Unknown active website"
         case .displayUnavailable: return "No display is available"
-        case .encodingFailed: return "Capture couldn't be processed"
-        case .captureFailed: return "Capture couldn't be saved"
+        case .encodingFailed: return "Image processing failed"
+        case .captureFailed: return "Capture save failed"
         }
     }
 
     public var userMessage: String {
         switch self {
         case .permissionRequired:
-            return "Allow Screen Recording and Accessibility in Permissions & Privacy, then try again."
+            return "Allow Screen Recording and Accessibility in Permissions & Privacy. Try again."
         case .lowDiskSpace:
-            return "Free up storage on this Mac, then retry the capture."
+            return "Make more storage space available on this Mac. Retry the capture."
         case .excludedContent:
-            return "Switch to an app or website that is not excluded, then try again."
+            return "Switch to an application or website without an exclusion. Try again."
         case .privateBrowsing:
-            return "Leave the private window or tab, then try again."
+            return "Leave the private window or tab. Try again."
         case .browserAddressUnavailable:
             return "Allow Accessibility access, switch away from the browser, or review strict website protection."
         case .displayUnavailable:
-            return "Screenlogger couldn't find a display to capture. Reconnect or wake the display, then try again."
+            return "Screenlogger could not find a display to capture. Reconnect or wake the display. Try again."
         case .encodingFailed:
-            return "Screenlogger couldn't process this image. Your existing Library remains available. Try again."
+            return "Screenlogger could not process this image. Your existing Library remains available. Try again."
         case .captureFailed:
-            return "Screenlogger couldn't save this capture. Your existing Library remains available. Try again."
+            return "Screenlogger could not save this capture. Your existing Library remains available. Try again."
         }
     }
 }

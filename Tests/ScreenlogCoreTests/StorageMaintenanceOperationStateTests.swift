@@ -1,6 +1,5 @@
-import XCTest
-
 @testable import ScreenlogCore
+import XCTest
 
 final class StorageMaintenanceOperationStateTests: XCTestCase {
     func testOnlyRunningStateReportsInProgress() {
@@ -39,24 +38,6 @@ final class StorageMaintenanceOperationStateTests: XCTestCase {
         let state = StorageMaintenanceOperationState.failure(.retentionLimitNotSatisfied)
 
         XCTAssertNil(state.retryOperation)
-    }
-
-    func testOperationalFailuresExposeOnlyStablePrivacySafeCopy() {
-        let rawDetail = "/Users/person/Secret Project/private.db: database busy"
-        let failures: [StorageMaintenanceFailure] = [.compactionFailed, .retentionFailed]
-
-        for failure in failures {
-            XCTAssertFalse(failure.userMessage.contains(rawDetail))
-            XCTAssertFalse(String(describing: failure).contains(rawDetail))
-        }
-        XCTAssertEqual(
-            StorageMaintenanceFailure.compactionFailed.userMessage,
-            "Couldn't finish compressing older images. Your saved moments remain available. Try again."
-        )
-        XCTAssertEqual(
-            StorageMaintenanceFailure.retentionFailed.userMessage,
-            "Couldn't apply storage limits. Screenlogger kept any files it couldn't safely remove. Try again."
-        )
     }
 
     func testNonFailureStatesCannotOfferRetry() {

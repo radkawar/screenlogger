@@ -14,14 +14,16 @@ extension AppModel {
             recordDiagnostic(.socketBridge, .stopped)
             return
         }
-        guard let store else {
+        guard let store, !isPreparingForShutdown, !isDatabaseReclamationRunning else {
             cliBridgeState = .unavailable(.libraryUnavailable)
             return
         }
         cliBridgeState = .starting
         do {
             if !ScreenlogSocketHost.shared.isRunning {
-                try ScreenlogSocketHost.shared.start(store: store, root: root)
+                try ScreenlogSocketHost.shared.start(
+                    store: store, root: root, semanticService: semanticSearchController
+                )
             }
             synchronizeCLIBridgeStateFromHost()
             recordDiagnostic(.socketBridge, .succeeded)
@@ -894,7 +896,7 @@ extension AppModel {
     ) -> String {
         switch issue {
         case .configMissing:
-            return "Open OpenClaw once to create its settings, then check again"
+            return "Open OpenClaw once to create its settings. Then check again."
         case .malformedConfiguration:
             return "OpenClaw settings need repair before setup can continue"
         case .sourceMissing:
@@ -904,9 +906,9 @@ extension AppModel {
         case .destinationNotOwned:
             return "Integration location is already in use"
         case .unsafeDestination:
-            return "Unsafe integration location was left unchanged"
+            return "Screenlogger did not change the unsafe integration location"
         case .replacementFailed:
-            return "Integration check failed; existing files were preserved"
+            return "Integration check failed. Screenlogger kept the existing files."
         }
     }
 

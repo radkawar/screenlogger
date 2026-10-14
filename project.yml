@@ -36,6 +36,12 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     exactVersion: 2.9.5
+  Transformers:
+    url: https://github.com/huggingface/swift-transformers
+    exactVersion: 1.3.0
+  MLX:
+    url: https://github.com/ml-explore/mlx-swift
+    exactVersion: 0.32.3
 # Public Apple system frameworks required by Screenlogger's local capture,
 # recognition, storage, and interface stack.
 #
@@ -119,6 +125,9 @@ targets:
       # Ship attribution beside the product marks that appear in Settings.
       - path: THIRD_PARTY_NOTICES.md
         buildPhase: resources
+      - path: Resources/SemanticLicenses
+        type: folder
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.screenlog.app
@@ -140,6 +149,9 @@ targets:
       # not only from a developer checkout. This build-order dependency makes
       # the signed CLI available to the app's copy phase below.
       - target: ScreenlogCLI
+        embed: false
+        link: false
+      - target: ScreenlogSemanticWorker
         embed: false
         link: false
       - sdk: libsqlite3.tbd
@@ -190,6 +202,38 @@ targets:
           install -m 755 \
             "${BUILT_PRODUCTS_DIR}/screenlog" \
             "${TARGET_BUILD_DIR}/${WRAPPER_NAME}/Contents/MacOS/screenlog"
+      - name: Embed isolated semantic worker and package resources
+        basedOnDependencyAnalysis: false
+        script: |
+          /bin/bash "${SRCROOT}/Scripts/embed-semantic-runtime.sh"
+
+  ScreenlogSemanticWorker:
+    type: tool
+    productName: screenlog-semantic-worker
+    platform: macOS
+    sources:
+      - path: Sources/ScreenlogSemanticWorker
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.screenlog.semantic-worker
+        PRODUCT_NAME: screenlog-semantic-worker
+        SWIFT_VERSION: "6.0"
+        ARCHS: arm64
+        EXCLUDED_ARCHS: x86_64
+        ONLY_ACTIVE_ARCH: NO
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks @executable_path"
+        SKIP_INSTALL: YES
+    dependencies:
+      - target: ScreenlogCore
+        embed: false
+      - package: Transformers
+        product: Tokenizers
+      - package: MLX
+        product: MLX
+      - package: MLX
+        product: MLXNN
+      - sdk: CryptoKit.framework
+      - sdk: Metal.framework
 
   ScreenlogCLI:
     type: tool
@@ -235,6 +279,35 @@ targets:
             echo "CLI skill embed: skill/screenlog-cli-skill ready next to screenlog"
           fi
           echo "CLI rpath embed: Frameworks/ScreenlogCore.framework ready next to screenlog"
+
+  ScreenlogSemanticTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/ScreenlogSemanticTests
+      # Compile the same owned model sources without an executable test host.
+      - path: Sources/ScreenlogSemanticWorker/EmbeddingWeights.swift
+      - path: Sources/ScreenlogSemanticWorker/EmbeddingTextModel.swift
+      - path: Sources/ScreenlogSemanticWorker/EmbeddingVisionModel.swift
+      - path: Sources/ScreenlogSemanticWorker/EmbeddingImageProcessor.swift
+      - path: Sources/ScreenlogSemanticWorker/SemanticWorkerInput.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.screenlog.semantic-tests
+        PRODUCT_NAME: ScreenlogSemanticTests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
+        ARCHS: arm64
+        EXCLUDED_ARCHS: x86_64
+        ONLY_ACTIVE_ARCH: YES
+    dependencies:
+      - package: MLX
+        product: MLX
+      - package: MLX
+        product: MLXNN
+    scheme:
+      testTargets:
+        - ScreenlogSemanticTests
 
   ScreenlogCoreTests:
     type: bundle.unit-test
@@ -290,8 +363,13 @@ targets:
       - path: Sources/ScreenlogApp/SettingsRecoveryPresentation.swift
       - path: Sources/ScreenlogApp/TimelineNotice.swift
       - path: Sources/ScreenlogApp/TimelineDisplayPresentation.swift
+      - path: Sources/ScreenlogApp/TimelineLoadPublicationState.swift
       - path: Sources/ScreenlogApp/TimelineTranscriptPresentation.swift
       - path: Sources/ScreenlogApp/SLTimeFormat.swift
+      - path: Sources/ScreenlogApp/SemanticSearchPresentation.swift
+      - path: Sources/ScreenlogApp/SemanticSearchController.swift
+      - path: Sources/ScreenlogApp/Services/SemanticModelManager.swift
+      - path: Sources/ScreenlogApp/Services/SemanticWorkerClient.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.screenlog.app-tests
@@ -328,12 +406,15 @@ schemes:
         ScreenlogCore: all
         ScreenlogApp: all
         ScreenlogCLI: all
+        ScreenlogSemanticWorker: all
         ScreenlogCoreTests: [test]
         ScreenlogAppTests: [test]
+        ScreenlogSemanticTests: [test]
     test:
       targets:
         - ScreenlogCoreTests
         - ScreenlogAppTests
+        - ScreenlogSemanticTests
     run:
       config: Debug
 

@@ -24,14 +24,14 @@ enum CaptureDisplaySettingsCopy {
         let count = max(1, count)
         switch mode {
         case .active:
-            if count == 1 { return "1 display connected. One moment is saved per interval." }
-            return "\(count) displays connected. One moment is saved per interval as focus moves."
+            if count == 1 { return "1 display connected. Screenlogger saves one moment per interval." }
+            return "\(count) displays connected. Screenlogger saves one moment per interval from the active display."
         case .all:
             if count == 1 {
-                return "1 display connected. Displays connected later are included automatically."
+                return "1 display connected. Screenlogger automatically includes displays that you connect later."
             }
             return
-                "\(count) displays connected. Each interval saves one Timeline moment with \(count) display images and uses roughly \(count)x the processing and storage."
+                "\(count) displays connected. Each interval saves one Timeline moment with \(count) display images. Processing and storage use are approximately \(count) times higher."
         }
     }
 }
@@ -52,6 +52,7 @@ enum SettingsDestination: Hashable {
     static let privacy = section(SettingsSidebarItem.privacy)
     static let exclusions = section(SettingsSidebarItem.exclusions)
     static let storage = section(SettingsSidebarItem.storage)
+    static let search = section(SettingsSidebarItem.search)
     static let integrations = section(SettingsSidebarItem.integrations)
     static let support = section(SettingsSidebarItem.support)
 
@@ -68,6 +69,7 @@ enum SettingsDestination: Hashable {
     static let exclusionsWebsites = anchor(SettingsAnchor.exclusionsWebsites)
     static let storageOverview = anchor(SettingsAnchor.storageOverview)
     static let storageManagement = anchor(SettingsAnchor.storageManagement)
+    static let searchSemanticSearch = anchor(SettingsAnchor.searchSemanticSearch)
     static let storageLibraryTools = anchor(SettingsAnchor.storageLibraryTools)
     static let integrationsLocalTools = anchor(SettingsAnchor.integrationsLocalTools)
     static let integrationsAssistantConnections =
@@ -103,6 +105,7 @@ enum SettingsAnchor: String, CaseIterable, Hashable {
     case exclusionsWebsites = "exclusions-websites"
     case storageOverview = "storage-overview"
     case storageManagement = "storage-management"
+    case searchSemanticSearch = "search-semantic-search"
     case storageLibraryTools = "storage-library-tools"
     case integrationsLocalTools = "integrations-local-tools"
     case integrationsAssistantConnections = "integrations-assistant-connections"
@@ -117,6 +120,8 @@ enum SettingsAnchor: String, CaseIterable, Hashable {
             return .privacy
         case .exclusionsApplications, .exclusionsWebsites:
             return .exclusions
+        case .searchSemanticSearch:
+            return .search
         case .storageOverview, .storageManagement, .storageLibraryTools:
             return .storage
         case .integrationsLocalTools, .integrationsAssistantConnections:
@@ -145,6 +150,7 @@ enum SettingsAnchor: String, CaseIterable, Hashable {
             return "hand.raised"
         case .exclusionsApplications, .exclusionsWebsites: return "eye.slash"
         case .storageOverview, .storageManagement, .storageLibraryTools: return "internaldrive"
+        case .searchSemanticSearch: return "sparkle.magnifyingglass"
         case .supportGuide, .supportDiagnostics: return "lifepreserver"
         }
     }
@@ -165,6 +171,7 @@ enum SettingsAnchor: String, CaseIterable, Hashable {
         case .exclusionsWebsites: return "Excluded websites"
         case .storageOverview: return "Storage overview"
         case .storageManagement: return "Automatic storage"
+        case .searchSemanticSearch: return "Meaning Search"
         case .storageLibraryTools: return "Library tools"
         case .integrationsLocalTools: return "Command Setup"
         case .integrationsAssistantConnections: return "Assistant Connections"
@@ -207,8 +214,13 @@ enum SettingsAnchor: String, CaseIterable, Hashable {
             return ["disk", "space", "usage", "library size"]
         case .storageManagement:
             return ["retention", "limit", "compress", "cleanup", "automatic"]
+        case .searchSemanticSearch:
+            return [
+                "meaning", "semantic", "related", "visual", "images", "model", "download", "embeddings", "text", "offline", "sources",
+                "indexing",
+            ]
         case .storageLibraryTools:
-            return ["backup", "copy", "export", "restore", "finder", "delete", "history"]
+            return ["backup", "copy", "export", "restore", "finder", "delete", "history", "database", "optimize", "SQLite"]
         case .integrationsLocalTools:
             return [
                 "terminal", "terminal command", "screenlog command", "command line", "CLI",
@@ -265,7 +277,7 @@ struct SettingsDestinationFocusRequest: Equatable {
 // MARK: - Sidebar search model
 
 enum SettingsSidebarItem: String, CaseIterable, Identifiable, Hashable {
-    case general, appearance, shortcuts, capture, privacy, exclusions, storage, integrations, support
+    case general, appearance, shortcuts, capture, privacy, exclusions, search, storage, integrations, support
 
     var id: String { rawValue }
 
@@ -278,6 +290,7 @@ enum SettingsSidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .capture: return "Capture"
         case .privacy: return "Privacy"
         case .storage: return "Storage"
+        case .search: return "Search"
         case .exclusions: return "Exclusions"
         case .support: return "Support & About"
         }
@@ -292,6 +305,7 @@ enum SettingsSidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .capture: return "record.circle"
         case .privacy: return "hand.raised"
         case .storage: return "internaldrive"
+        case .search: return "magnifyingglass"
         case .exclusions: return "eye.slash"
         case .support: return "lifepreserver"
         }
@@ -306,6 +320,7 @@ enum SettingsSidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .capture: return "Displays, timing, image quality, text, and audio"
         case .privacy: return "Permissions, protected activity, and Library data"
         case .storage: return "Library usage and retention"
+        case .search: return "Meaning Search, sources, models, and indexing"
         case .exclusions: return "Apps and detectable websites Screenlogger skips"
         case .support: return "Versions and privacy-safe diagnostics"
         }
@@ -337,10 +352,12 @@ enum SettingsSidebarItem: String, CaseIterable, Identifiable, Hashable {
             return [title, subtitle, "permission", "screen recording", "accessibility", "offline", "network", "local"]
         case .exclusions:
             return [title, subtitle, "skip", "apps", "websites", "private browsing", "incognito"]
+        case .search:
+            return [title, subtitle, "semantic", "related", "visual", "images", "download", "embeddings"]
         case .storage:
             return [
                 title, subtitle, "disk", "space", "retention", "limit", "compress", "library",
-                "backup", "copy", "export", "restore", "finder", "delete", "history",
+                "backup", "copy", "export", "restore", "finder", "delete", "history", "database", "optimize", "SQLite",
             ]
         case .integrations:
             return [
@@ -464,7 +481,7 @@ struct SettingsSidebarSection: Identifiable {
         SettingsSidebarSection(
             id: "capture-and-data",
             title: "Capture & Data",
-            items: [.capture, .privacy, .exclusions, .storage]
+            items: [.capture, .privacy, .exclusions, .search, .storage]
         ),
         SettingsSidebarSection(
             id: "tools-and-support",

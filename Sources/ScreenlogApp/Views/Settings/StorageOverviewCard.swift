@@ -30,8 +30,7 @@ struct StorageOverviewCard: View {
                         .accessibilityIdentifier("settings.storage.refresh-size")
                         .accessibilityHint("Recalculate Library size and available disk space")
                     }
-                }
-                .padding(14)
+                }.padding(SLDesign.space16)
 
                 Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
@@ -40,11 +39,10 @@ struct StorageOverviewCard: View {
                         LabeledContent(metric.label) {
                             Text(metric.value)
                                 .font(.body.weight(.semibold).monospacedDigit())
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel("\(metric.label), \(metric.value)")
+                        }.padding(.horizontal, SLDesign.space16)
+                            .padding(.vertical, 9)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel("\(metric.label), \(metric.value)")
 
                         if index < metrics.count - 1 {
                             Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
@@ -69,8 +67,7 @@ struct StorageOverviewCard: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(14)
+                .fixedSize(horizontal: false, vertical: true).padding(SLDesign.space16)
             }
         }
         .accessibilityElement(children: .contain)
@@ -124,7 +121,7 @@ struct StorageOverviewCard: View {
         case .compressionOnly:
             return "Compression reduces growth without a fixed size target"
         case .ageLimitOnly:
-            return "The age limit is active; no Library size limit is set"
+            return "The age limit is active. No Library size limit is set."
         case .needsGrowthHistory:
             return "Size forecast needs measurements at least 15 minutes apart"
         case .stableOrShrinking:

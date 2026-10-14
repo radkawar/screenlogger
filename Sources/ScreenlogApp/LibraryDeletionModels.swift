@@ -73,26 +73,26 @@ enum LibraryDeletionIssue: Sendable {
 
     var title: String {
         switch self {
-        case .preparationFailed: return "Deletion Review Couldn't Open"
+        case .preparationFailed: return "Deletion Review Could Not Open"
         case .nothingToDelete: return "Nothing to Delete"
         case .reviewExpired: return "Review This Deletion Again"
-        case .deletionFailed: return "History Wasn't Deleted"
-        case .captureCouldNotPause: return "Capture Couldn't Pause"
+        case .deletionFailed: return "History Not Deleted"
+        case .captureCouldNotPause: return "Capture Could Not Pause"
         }
     }
 
     var message: String {
         switch self {
         case .preparationFailed:
-            return "Screenlogger couldn't safely inspect that selection. Your history was not changed."
+            return "Screenlogger could not safely inspect that selection. Screenlogger did not change your history."
         case .nothingToDelete:
             return "There are no saved moments in that selection."
         case .reviewExpired:
-            return "The Library changed after you reviewed it. Review the current selection before deleting anything."
+            return "The Library changed after your review. Review the current selection before you delete anything."
         case .deletionFailed:
-            return "Screenlogger kept your history because the reviewed deletion couldn't finish safely. You can try again or cancel."
+            return "Screenlogger kept your history because it could not safely complete the deletion. Try again or cancel."
         case .captureCouldNotPause:
-            return "Screenlogger didn't start the review because capture must pause before the affected moments can be counted."
+            return "Screenlogger did not start the review. Capture must pause before Screenlogger can count the affected moments."
         }
     }
 

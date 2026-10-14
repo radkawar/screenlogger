@@ -1,7 +1,6 @@
 import Foundation
-import XCTest
-
 @testable import ScreenlogCore
+import XCTest
 
 final class AssistantIntegrationServiceTests: XCTestCase {
     func testAutomaticMaintenanceOnlySelectsOwnedStaleOrIncompleteIntegrations() {
@@ -613,10 +612,6 @@ final class AssistantIntegrationServiceTests: XCTestCase {
         XCTAssertEqual(
             CLIInstallState.failed(.removalFailed).failure,
             .removalFailed
-        )
-        XCTAssertEqual(
-            CLIConnectionFailure.startFailed.localizedDescription,
-            "Screenlogger couldn't start the local command-line connection. Try again or reopen the app."
         )
         XCTAssertFalse(CLIInstallFailure.installationFailed.localizedDescription.contains("/"))
         let conflict = CLIArtifactConflict.unrecognized(existing: ["/tmp/bin/screenlog"])

@@ -12,7 +12,7 @@ extension AppModel {
         exclusionStore.add(bid)
         reloadExclusionsFromStore()
         newExclusionBundle = ""
-        statusMessage = "Won't capture \(SLAppIdentity.displayName(bundleID: bid))"
+        statusMessage = "Will not capture \(SLAppIdentity.displayName(bundleID: bid))"
     }
 
     func addExclusion(_ bundleID: String) {
@@ -40,7 +40,7 @@ extension AppModel {
         exclusionStore.addDomain(normalized)
         reloadExclusionsFromStore()
         newExclusionDomain = ""
-        statusMessage = "Won't capture \(normalized)"
+        statusMessage = "Will not capture \(normalized)"
     }
 
     /// Installed and running apps shown by the exclusions picker.
@@ -114,7 +114,7 @@ extension AppModel {
         guard let normalized = DomainExclusionParser.normalize(domain) else { return false }
         exclusionStore.addDomain(normalized)
         reloadExclusionsFromStore()
-        statusMessage = "Won't capture \(normalized)"
+        statusMessage = "Will not capture \(normalized)"
         return true
     }
 

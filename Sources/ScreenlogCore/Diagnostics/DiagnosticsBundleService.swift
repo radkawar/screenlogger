@@ -240,7 +240,7 @@ public enum DiagnosticsBundleError: Error, LocalizedError, Equatable, Sendable {
         case .destinationExists:
             return "A file or folder already exists there. Choose another name."
         case .creationFailed:
-            return "Screenlogger couldn't create the diagnostics bundle. Try another location."
+            return "Screenlogger could not create the diagnostics bundle. Try another location."
         }
     }
 }

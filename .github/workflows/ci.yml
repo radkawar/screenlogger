@@ -16,13 +16,11 @@ concurrency:
 jobs:
   quality:
     name: Build and test
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 30
     env:
-      # Pin the same major toolchain used to author the project and
-      # .swift-format. The macos-15 image's Xcode.app alias still points at
-      # Xcode 16.4, even though Xcode 26.3 is installed alongside it.
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      # MLX 0.32 requires Swift 6.3; keep CI and release on the same toolchain.
+      DEVELOPER_DIR: /Applications/Xcode_26.4.1.app/Contents/Developer
 
     steps:
       - name: Check out source

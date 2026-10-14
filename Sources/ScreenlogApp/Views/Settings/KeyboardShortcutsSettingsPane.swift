@@ -16,7 +16,7 @@ struct KeyboardShortcutsSettingsPane: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     Text(
-                        "Select a shortcut, then press the keys you want to use. "
+                        "Select a shortcut. Press the keys you want to use. "
                             + "Changes apply immediately."
                     )
                     .font(.callout)
@@ -82,8 +82,13 @@ struct KeyboardShortcutsSettingsPane: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Label(category.title, systemImage: category.systemImage)
-                    .font(.headline)
+                Label {
+                    Text(category.title)
+                } icon: {
+                    Image(systemName: category.systemImage)
+                        .foregroundStyle(.secondary)
+                }
+                .font(SLDesign.sectionFont)
                 Text(category.detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -97,7 +102,7 @@ struct KeyboardShortcutsSettingsPane: View {
                     ForEach(Array(definitions.enumerated()), id: \.element.id) { index, definition in
                         if index > 0 {
                             Divider()
-                                .padding(.leading, 14)
+                                .padding(.leading, SLDesign.space16)
                         }
                         shortcutRow(definition)
                     }
@@ -113,13 +118,13 @@ struct KeyboardShortcutsSettingsPane: View {
         let isCustomized = binding != definition.defaultBinding
         let rowFeedback = feedback?.actionID == definition.id ? feedback : nil
 
-        return VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
+        return VStack(alignment: .leading, spacing: SLDesign.space8) {
+            HStack(alignment: .center, spacing: SLDesign.space8) {
+                VStack(alignment: .leading, spacing: SLDesign.space4) {
                     Text(definition.title)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(SLDesign.bodyFont.weight(.medium))
                     Text(definition.subtitle ?? definition.scope.settingsDetail)
-                        .font(.caption)
+                        .font(SLDesign.metadataFont)
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -136,6 +141,8 @@ struct KeyboardShortcutsSettingsPane: View {
                     Image(systemName: "arrow.counterclockwise")
                 }
                 .buttonStyle(.borderless)
+                .tint(.primary)
+                .slCompactControlTarget()
                 .opacity(isCustomized ? 1 : 0)
                 .disabled(!isCustomized)
                 .accessibilityHidden(!isCustomized)
@@ -164,6 +171,8 @@ struct KeyboardShortcutsSettingsPane: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
+                .foregroundStyle(.secondary)
+                .slCompactControlTarget()
                 .help("More options for \(definition.title)")
                 .accessibilityLabel("More options for \(definition.title)")
                 .accessibilityIdentifier("settings.shortcuts.\(definition.id.rawValue).menu")
@@ -179,8 +188,8 @@ struct KeyboardShortcutsSettingsPane: View {
                     .transition(.opacity)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, SLDesign.space16)
+        .padding(.vertical, SLDesign.space8)
         .contentShape(Rectangle())
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("settings.shortcuts.\(definition.id.rawValue)")
@@ -200,12 +209,12 @@ struct KeyboardShortcutsSettingsPane: View {
             }
         } label: {
             Text(isRecording ? "Press shortcut..." : binding?.displayLabel ?? "Not Set")
-                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .font(SLDesign.metadataFont.monospaced())
                 .foregroundStyle(isRecording ? Color.accentColor : Color.primary)
                 .lineLimit(1)
-                .frame(width: 108)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
+                .frame(minWidth: 108, minHeight: SLDesign.compactControlTarget)
+                .padding(.horizontal, SLDesign.space8)
+                .padding(.vertical, SLDesign.space4)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(
@@ -263,7 +272,7 @@ struct KeyboardShortcutsSettingsPane: View {
         guard let binding = KeyboardShortcutEventAdapter.binding(from: event) else {
             feedback = ShortcutEditingFeedback(
                 actionID: actionID,
-                message: "That key can't be used as a shortcut. Try a letter, number, symbol, arrow, or navigation key.",
+                message: "You cannot use that key as a shortcut. Try a letter, number, symbol, arrow, or navigation key.",
                 tone: .error
             )
             return
@@ -315,7 +324,7 @@ struct KeyboardShortcutsSettingsPane: View {
         } catch {
             feedback = ShortcutEditingFeedback(
                 actionID: definition.id,
-                message: "Screenlogger couldn't save that shortcut. Try another combination.",
+                message: "Screenlogger could not save that shortcut. Try another combination.",
                 tone: .error
             )
         }
@@ -334,7 +343,7 @@ struct KeyboardShortcutsSettingsPane: View {
     private func validationMessage(for issue: KeyboardShortcutValidationIssue) -> String {
         switch issue {
         case .requiresCommandOptionOrControl:
-            return "Add Command, Option, or Control so this shortcut doesn't interrupt typing."
+            return "Add Command, Option, or Control so this shortcut does not interrupt typing."
         case .reservedMacOSShortcut(.editing):
             return "That shortcut is reserved for standard text editing."
         case .reservedMacOSShortcut(.windowManagement):
@@ -342,9 +351,9 @@ struct KeyboardShortcutsSettingsPane: View {
         case .reservedMacOSShortcut(.system):
             return "That shortcut is reserved by macOS or a standard app command."
         case .unsupportedKey:
-            return "That key isn't supported. Try a letter, number, symbol, arrow, or navigation key."
+            return "Screenlogger does not support that key. Try a letter, number, symbol, arrow, or navigation key."
         case .unregisteredAction:
-            return "That Screenlogger command is no longer available. Reopen Settings and try again."
+            return "That Screenlogger command is no longer available. Open Settings again. Then try again."
         }
     }
 
@@ -360,7 +369,7 @@ struct KeyboardShortcutsSettingsPane: View {
         } catch {
             feedback = ShortcutEditingFeedback(
                 actionID: definition.id,
-                message: "Screenlogger couldn't disable that shortcut.",
+                message: "Screenlogger could not disable that shortcut.",
                 tone: .error
             )
         }
@@ -391,7 +400,7 @@ struct KeyboardShortcutsSettingsPane: View {
         } catch {
             feedback = ShortcutEditingFeedback(
                 actionID: definition.id,
-                message: "Screenlogger couldn't restore that shortcut.",
+                message: "Screenlogger could not restore that shortcut.",
                 tone: .error
             )
         }

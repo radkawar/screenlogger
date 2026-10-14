@@ -11,24 +11,24 @@ enum CaptureIssue: Equatable, Sendable {
 
     var title: String {
         switch self {
-        case .startFailed: return "Capture Couldn't Start"
-        case .stopFailed: return "Capture Couldn't Stop"
-        case .pauseFailed: return "Capture Couldn't Pause"
-        case .resumeFailed: return "Capture Couldn't Resume"
-        case .automaticCaptureFailed: return "A Moment Couldn't Be Saved"
+        case .startFailed: return "Capture Could Not Start"
+        case .stopFailed: return "Capture Could Not Stop"
+        case .pauseFailed: return "Capture Could Not Pause"
+        case .resumeFailed: return "Capture Could Not Resume"
+        case .automaticCaptureFailed: return "Screenlogger Could Not Save a Moment"
         }
     }
 
     var message: String {
         switch self {
         case .startFailed:
-            return "Screenlogger couldn't start automatic capture. Your existing Library is unchanged."
+            return "Screenlogger could not start automatic capture. Your existing Library is unchanged."
         case .stopFailed:
-            return "Screenlogger couldn't confirm that automatic capture stopped. Try again before working with private content."
+            return "Screenlogger could not confirm that automatic capture stopped. Try again before you work with private content."
         case .pauseFailed:
-            return "Screenlogger couldn't pause automatic capture. No timed pause was scheduled."
+            return "Screenlogger could not pause automatic capture. Screenlogger did not schedule a timed pause."
         case .resumeFailed:
-            return "The pause ended, but Screenlogger couldn't resume automatic capture."
+            return "The pause ended, but Screenlogger could not resume automatic capture."
         case .automaticCaptureFailed:
             return "Screenlogger skipped the latest moment and will retry automatically. Your existing Library remains available."
         }

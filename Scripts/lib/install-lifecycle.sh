@@ -212,30 +212,31 @@ sl_cli_pair_recognized() {
       | /usr/bin/grep -Fq '@rpath/ScreenlogCore.framework/Versions/A/ScreenlogCore'
 }
 
-sl_receipt_matches() {
-  local receipt="$1"
-  local app="$2"
-  local cli="$3"
-  local framework="$4"
-  local app_executable="$app/Contents/MacOS/Screenlogger"
-  local app_info="$app/Contents/Info.plist"
-  local framework_executable
+sl_app_receipt_matches() {
+  local receipt="$1" app="$2" cli="$3" framework="$4"
   local byte_count
   sl_regular_file "$receipt" || return 1
   byte_count="$(/usr/bin/wc -c < "$receipt" 2>/dev/null)" || return 1
   [[ "$byte_count" -gt 0 && "$byte_count" -le 65536 ]] || return 1
-  sl_app_recognized "$app" && sl_cli_pair_recognized "$cli" "$framework" || return 1
-  framework_executable="$(sl_framework_executable "$framework")" || return 1
+  sl_app_recognized "$app" || return 1
   [[ "$(sl_plist_value "$receipt" productIdentifier || true)" == "$SL_RECEIPT_PRODUCT" ]] \
     && [[ "$(sl_plist_value "$receipt" schemaVersion || true)" == "$SL_RECEIPT_VERSION" ]] \
     && [[ "$(sl_plist_value "$receipt" appPath || true)" == "$app" ]] \
     && [[ "$(sl_plist_value "$receipt" cliPath || true)" == "$cli" ]] \
     && [[ "$(sl_plist_value "$receipt" frameworkPath || true)" == "$framework" ]] \
-    && [[ "$(sl_plist_value "$receipt" appExecutableSHA256 || true)" == "$(sl_sha256 "$app_executable")" ]] \
-    && [[ "$(sl_plist_value "$receipt" appInfoSHA256 || true)" == "$(sl_sha256 "$app_info")" ]] \
-    && [[ "$(sl_plist_value "$receipt" cliSHA256 || true)" == "$(sl_sha256 "$cli")" ]] \
+    && [[ "$(sl_plist_value "$receipt" appExecutableSHA256 || true)" == "$(sl_sha256 "$app/Contents/MacOS/Screenlogger")" ]] \
+    && [[ "$(sl_plist_value "$receipt" appInfoSHA256 || true)" == "$(sl_sha256 "$app/Contents/Info.plist")" ]] \
+    && [[ "$(sl_plist_value "$receipt" appTreeSHA256 || true)" == "$(sl_tree_sha256 "$app")" ]]
+}
+
+sl_receipt_matches() {
+  local receipt="$1" app="$2" cli="$3" framework="$4"
+  local framework_executable
+  sl_app_receipt_matches "$receipt" "$app" "$cli" "$framework" || return 1
+  sl_cli_pair_recognized "$cli" "$framework" || return 1
+  framework_executable="$(sl_framework_executable "$framework")" || return 1
+  [[ "$(sl_plist_value "$receipt" cliSHA256 || true)" == "$(sl_sha256 "$cli")" ]] \
     && [[ "$(sl_plist_value "$receipt" frameworkExecutableSHA256 || true)" == "$(sl_sha256 "$framework_executable")" ]] \
-    && [[ "$(sl_plist_value "$receipt" appTreeSHA256 || true)" == "$(sl_tree_sha256 "$app")" ]] \
     && [[ "$(sl_plist_value "$receipt" frameworkTreeSHA256 || true)" == "$(sl_tree_sha256 "$framework")" ]]
 }
 

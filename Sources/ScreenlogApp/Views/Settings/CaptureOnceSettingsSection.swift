@@ -20,11 +20,15 @@ struct CaptureOnceSettingsSection: View {
                 feedback
             }
         }
+        .disabled(model.isDatabaseReclamationRunning)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("capture.manual.card")
     }
 
     private var subtitle: String {
+        if model.isDatabaseReclamationRunning {
+            return "Screenlogger is reclaiming database space. Capture is unavailable until this finishes."
+        }
         switch model.captureOnceState {
         case .idle:
             if model.libraryStartupIssue != nil {
@@ -102,8 +106,8 @@ struct CaptureOnceSettingsSection: View {
     private var successSubtitle: String {
         let count = model.lastCaptureDisplayCount
         return count > 1
-            ? "\(count) displays were saved to your Library."
-            : "The capture was saved to your Library."
+            ? "Screenlogger saved \(count) displays to your Library."
+            : "Screenlogger saved the capture to your Library."
     }
 
     private var successLabel: String {

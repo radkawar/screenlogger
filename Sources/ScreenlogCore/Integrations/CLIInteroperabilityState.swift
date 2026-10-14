@@ -8,11 +8,11 @@ public enum CLIConnectionFailure: Error, LocalizedError, Equatable, Sendable {
     public var errorDescription: String? {
         switch self {
         case .libraryUnavailable:
-            return "The local library is unavailable. Reopen Screenlogger and try again."
+            return "The local Library is unavailable. Reopen Screenlogger. Try again."
         case .notListening:
             return "The local connection stopped unexpectedly."
         case .startFailed:
-            return "Screenlogger couldn't start the local command-line connection. Try again or reopen the app."
+            return "Screenlogger could not start the local command-line connection. Try again or reopen the app."
         }
     }
 }
@@ -54,19 +54,19 @@ public enum CLIInstallFailure: Error, LocalizedError, Equatable, Sendable {
     public var errorDescription: String? {
         switch self {
         case .artifactsUnavailable:
-            return "Could not find a complete screenlog CLI installation."
+            return "Screenlogger could not find a complete screenlog CLI installation."
         case .artifactsInvalid:
-            return "Screenlogger's bundled Terminal command could not be verified. Reinstall Screenlogger and try again."
+            return "Screenlogger could not verify its bundled Terminal command. Reinstall Screenlogger. Try again."
         case .installationFailed:
-            return "The screenlog command couldn't be installed. Existing command files were preserved."
+            return "Screenlogger could not install the screenlog command. It preserved existing command files."
         case .removalFailed:
-            return "The screenlog command couldn't be removed. Existing command files were preserved."
+            return "Screenlogger could not remove the screenlog command. It preserved existing command files."
         case .installationRecoveryRequired(let path):
             return
-                "The command installation could not be rolled back completely. Recovery files were kept at \(path)."
+                "Screenlogger could not fully restore the previous command installation. It kept recovery files at \(path)."
         case .removalRecoveryRequired(let path):
             return
-                "The command removal could not be rolled back completely. Recovery files were kept at \(path)."
+                "Screenlogger could not fully undo command removal. It kept recovery files at \(path)."
         }
     }
 

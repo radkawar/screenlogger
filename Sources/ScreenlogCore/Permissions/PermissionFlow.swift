@@ -194,11 +194,11 @@ public struct PermissionSettingsOpenResult: Sendable, Equatable {
         let destination = permission.settingsPaneName
         switch route {
         case .privacyDeepLink, .legacyDeepLink:
-            return "In System Settings, find Screenlogger in \(destination) and turn it on."
+            return "In System Settings, find Screenlogger in \(destination). Turn on Screenlogger."
         case .systemSettingsApplication:
-            return "Open \(destination), find Screenlogger, and turn it on."
+            return "Open \(destination). Find Screenlogger. Turn on Screenlogger."
         case .unavailable:
-            return "Open System Settings manually, choose \(destination), then find Screenlogger and turn it on."
+            return "Open System Settings. Choose \(destination). Find Screenlogger. Turn on Screenlogger."
         }
     }
 }

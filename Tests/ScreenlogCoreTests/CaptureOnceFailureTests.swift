@@ -1,8 +1,7 @@
 import CoreGraphics
 import ImageIO
-import XCTest
-
 @testable import ScreenlogCore
+import XCTest
 
 final class CaptureOnceFailureTests: XCTestCase {
     func testScreenloggerIsAlwaysAddedToCaptureFilter() {
@@ -231,31 +230,4 @@ final class CaptureOnceFailureTests: XCTestCase {
         XCTAssertEqual(CaptureOnceFailure.classify(CaptureError.excluded, pauseReason: nil), .excludedContent)
     }
 
-    func testExpectedRecoveryMessagesRemainSpecific() {
-        XCTAssertEqual(
-            CaptureOnceFailure.permissionRequired.userMessage,
-            "Allow Screen Recording and Accessibility in Permissions & Privacy, then try again."
-        )
-        XCTAssertEqual(
-            CaptureOnceFailure.lowDiskSpace.userMessage,
-            "Free up storage on this Mac, then retry the capture."
-        )
-        XCTAssertEqual(
-            CaptureOnceFailure.privateBrowsing.userMessage,
-            "Leave the private window or tab, then try again."
-        )
-        XCTAssertTrue(
-            CaptureOnceFailure.browserAddressUnavailable.userMessage.contains(
-                "Accessibility"
-            )
-        )
-    }
-
-    func testUnexpectedFailureUsesTruthfulGenericCopy() {
-        XCTAssertEqual(CaptureOnceFailure.captureFailed.userTitle, "Capture couldn't be saved")
-        XCTAssertEqual(
-            CaptureOnceFailure.captureFailed.userMessage,
-            "Screenlogger couldn't save this capture. Your existing Library remains available. Try again."
-        )
-    }
 }

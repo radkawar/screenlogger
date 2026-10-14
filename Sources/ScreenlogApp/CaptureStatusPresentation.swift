@@ -11,6 +11,7 @@ struct CaptureStatusInput: Equatable, Sendable {
         case opening(LibraryStartupIssue?)
         case unavailable(LibraryStartupIssue)
         case restoring
+        case reclaimingDatabase
     }
 
     let library: LibraryState
@@ -50,6 +51,7 @@ enum CaptureStatusPhase: Equatable, Sendable {
     case openingLibrary
     case libraryUnavailable(LibraryStartupIssue)
     case restoringLibrary
+    case reclaimingDatabase
     case setupRequired(resumeAt: Date?)
     case captureFailed(CaptureIssue)
     case timedPause(until: Date)
@@ -159,7 +161,7 @@ enum CaptureStatusToolbarResolver {
                 title: "Set Up \(permission.title)",
                 symbolName: "play.fill",
                 action: .perform(.setupCapture(permission)),
-                actionHint: "Allow \(permission.title), then choose whether capture starts."
+                actionHint: "Allow \(permission.title). Then choose whether capture starts."
             )
         case .resumeCapture:
             return presentation(
@@ -192,7 +194,7 @@ enum CaptureStatusToolbarResolver {
         for phase: CaptureStatusPhase
     ) -> CaptureStatusToolbarPresentation {
         switch phase {
-        case .openingLibrary, .libraryUnavailable, .restoringLibrary:
+        case .openingLibrary, .libraryUnavailable, .restoringLibrary, .reclaimingDatabase:
             return presentation(title: "Capture Unavailable", symbolName: "record.circle")
         case .timedPause, .lowDiskSpace, .websiteAddressUnavailable, .automaticPause:
             return presentation(title: "Capture Paused", symbolName: "pause.fill")
@@ -295,6 +297,23 @@ enum CaptureStatusResolver {
                 controls: baseControls
             )
 
+        case .reclaimingDatabase:
+            return presentation(
+                phase: .reclaimingDatabase,
+                scope: .library,
+                headline: "Reclaiming Database Space",
+                compactLabel: "Database Maintenance",
+                detail: "Screenlogger is reclaiming database space. Capture is unavailable until this finishes.",
+                compactDetail: "Capture is temporarily unavailable",
+                symbolName: "externaldrive",
+                tone: .working,
+                primaryAction: .manageStorage,
+                actionLabel: "Show Storage",
+                actionHint: "Show database maintenance in Storage settings.",
+                inspectionDestination: .storage,
+                controls: baseControls
+            )
+
         case .ready:
             break
         }
@@ -307,8 +326,8 @@ enum CaptureStatusResolver {
             if let activePauseUntil {
                 let time = formatTime(activePauseUntil)
                 detail =
-                    "Finish Permissions setup to resume capture. The pause scheduled until \(time) will stay in place."
-                compactDetail = "Finish Permissions setup, then capture resumes at \(time)"
+                    "Complete Permissions setup to resume capture. The scheduled pause continues until \(time)."
+                compactDetail = "Complete Permissions setup. Capture resumes at \(time)."
             } else {
                 detail = permissionSetupDetail(input.permissions)
                 compactDetail = "Finish Permissions setup"
@@ -357,7 +376,7 @@ enum CaptureStatusResolver {
                 scope: .capture,
                 headline: "Capture Paused",
                 compactLabel: "Capture Paused",
-                detail: "No new moments are being saved. Capture is scheduled to resume at \(time).",
+                detail: "Screenlogger is not saving new moments. Screenlogger scheduled capture to resume at \(time).",
                 compactDetail: "Resumes at \(time)",
                 symbolName: "pause.circle.fill",
                 tone: .neutral,
@@ -376,12 +395,12 @@ enum CaptureStatusResolver {
                 headline: "Capture Paused",
                 compactLabel: "Low Disk Space",
                 detail: CapturePauseReason.lowDiskSpace.userDescription,
-                compactDetail: "Free up storage to resume",
+                compactDetail: "Free storage space to resume",
                 symbolName: CapturePauseReason.lowDiskSpace.systemImageName,
                 tone: .warning,
                 primaryAction: .manageStorage,
                 actionLabel: "Manage Storage...",
-                actionHint: "Open Automatic Storage to free up space.",
+                actionHint: "Open Automatic Storage to free space.",
                 inspectionDestination: .storage,
                 controls: baseControls
             )
@@ -464,7 +483,7 @@ enum CaptureStatusResolver {
             scope: .capture,
             headline: "Capture Off",
             compactLabel: "Capture Off",
-            detail: "No new moments are being saved. Your existing Library remains available.",
+            detail: "Screenlogger is not saving new moments. Your existing Library remains available.",
             compactDetail: "Review Capture settings",
             symbolName: "record.circle",
             tone: .neutral,
@@ -522,7 +541,7 @@ enum CaptureStatusResolver {
         case [.screenRecording]:
             return "Allow Screen Recording in System Settings before starting capture."
         case [.accessibility]:
-            return "Allow Accessibility before starting capture so exclusions and app context are applied completely."
+            return "Allow Accessibility before you start capture. Screenlogger needs this permission for exclusions and app context."
         default:
             return "Review Permissions setup before starting capture."
         }
@@ -554,7 +573,7 @@ enum CaptureStatusResolver {
         case .inactivity: return "Resumes when you return"
         case .permissionRequired: return "Finish Permissions Setup"
         case .browserAddressUnavailable: return "Review website protection"
-        case .lowDiskSpace: return "Free up storage to resume"
+        case .lowDiskSpace: return "Free storage space to resume"
         }
     }
 
@@ -614,7 +633,7 @@ enum CaptureLocalProcessingCopy {
     static func caption(intervalSeconds: Double, isSaving: Bool) -> String {
         let interval = intervalLabel(intervalSeconds)
         if isSaving {
-            return "\(interval), captures and recognized text are saved to the Library on this Mac."
+            return "\(interval), Screenlogger saves captures and recognized text to the Library on this Mac."
         }
         return
             "When capture is on, Screenlogger saves captures and recognized text to the Library on this Mac \(interval.lowercased())."

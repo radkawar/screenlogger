@@ -5,7 +5,6 @@ import SwiftUI
 struct HistoryPane: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorSchemeContrast) var colorSchemeContrast
     @State var showDayPicker = false
     @State var dayPickerSelection = Date()
     @State var timelineScaleStep = 0
@@ -16,17 +15,14 @@ struct HistoryPane: View {
     var body: some View {
         Group {
             if let issue = model.libraryStartupIssue {
-                ZStack {
-                    Color.black
-                    LibraryStartupRecoveryView(issue: issue, surface: .timeline)
-                }
-                .environment(\.colorScheme, .dark)
+                LibraryStartupRecoveryView(issue: issue, surface: .timeline)
             } else {
                 timelineSurface
-                    .environment(\.colorScheme, .dark)
             }
         }
         .tint(model.accentSwiftUIColor)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .accentColor(model.accentSwiftUIColor)
         .transaction { transaction in
             if reduceMotion { transaction.animation = nil }
         }
@@ -78,16 +74,16 @@ struct HistoryPane: View {
 
     private var timelineEmptyView: some View {
         ZStack {
-            Color.black
+            Color(nsColor: .windowBackgroundColor)
             TimelineStatePanel(
                 symbol: model.permissions.isCaptureReady
                     ? "rectangle.stack.badge.plus"
                     : "checkmark.shield",
-                symbolColor: model.accentSwiftUIColor,
+                symbolColor: .secondary,
                 title: timelineEmptyTitle,
                 detail: timelineEmptyDetail
             ) {
-                HStack(spacing: 12) {
+                HStack(spacing: SLDesign.space8) {
                     Button {
                         if model.isRecording {
                             Task { await model.refreshData(light: false) }
@@ -151,6 +147,15 @@ struct HistoryPane: View {
 
     private var timelineContentView: some View {
         VStack(spacing: 0) {
+            if model.selectedTimelineMomentFrames.count > 1 {
+                HStack {
+                    Spacer()
+                    timelineDisplaySwitcher
+                }
+                .padding(.horizontal, SLDesign.space16)
+                .padding(.top, SLDesign.space8)
+            }
+
             ZStack {
                 memoryStage
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -159,16 +164,9 @@ struct HistoryPane: View {
                     previewIssueView(issue)
                 }
 
-                if model.selectedTimelineMomentFrames.count > 1 {
-                    VStack {
-                        timelineDisplaySwitcher
-                        Spacer()
-                    }
-                    .padding(.top, 14)
-                    .padding(.horizontal, 18)
-                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(SLDesign.space16)
 
             if let selectedTimestampMs = model.selectedTimelineFrame?.timestampMs,
                 !TimelineTranscriptPresentation.visiblePassages(
@@ -191,29 +189,15 @@ struct HistoryPane: View {
     @ViewBuilder
     private var timelineDisplaySwitcher: some View {
         let displays = model.selectedTimelineMomentFrames
-        HStack(spacing: 8) {
-            Image(systemName: "display.2")
+        HStack(spacing: SLDesign.space8) {
+            Text("Display")
+                .font(SLDesign.metadataFont)
                 .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-
-            if displays.count <= 3 {
-                timelineDisplayPicker(displays)
-                    .pickerStyle(.segmented)
-                    .fixedSize()
-            } else {
-                timelineDisplayPicker(displays)
-                    .pickerStyle(.menu)
-                    .fixedSize()
-            }
+            timelineDisplayPicker(displays)
+                .pickerStyle(.menu)
+                .fixedSize()
+                .controlSize(.small)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(Color.white.opacity(controlStrokeOpacity), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("timeline.display.switcher")
     }
@@ -283,41 +267,35 @@ private struct TimelineTranscriptRows: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: SLDesign.space8) {
             ForEach(visiblePassages) { passage in
                 let isActive = passage.contains(timestampMs: selectedTimestampMs)
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                HStack(alignment: .firstTextBaseline, spacing: SLDesign.space16) {
                     Label(
                         passage.source.label,
                         systemImage: passage.source == .microphone ? "mic.fill" : "waveform"
                     )
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.68))
+                    .foregroundStyle(isActive ? Color.primary : Color.secondary)
                     .frame(width: 88, alignment: .leading)
 
                     Text(passage.text)
                         .font(.callout)
-                        .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.88))
+                        .foregroundStyle(Color.primary)
                         .lineLimit(isActive ? 3 : 2)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                     Text(SLTimeFormat.shortTime(passage.startTimestampMs))
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(isActive ? Color.white.opacity(0.76) : Color.white.opacity(0.46))
+                        .font(SLDesign.metadataFont.monospacedDigit())
+                        .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, 9)
-                .padding(.vertical, 7)
+                .padding(.horizontal, SLDesign.space8)
+                .padding(.vertical, SLDesign.space8)
                 .background(
-                    isActive ? accent.opacity(0.22) : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    isActive ? accent.opacity(0.08) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: SLDesign.thumbRadius, style: .continuous)
                 )
-                .overlay {
-                    if isActive {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(accent.opacity(0.72), lineWidth: 1)
-                    }
-                }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(
                     "\(isActive ? "Currently speaking, " : "")\(passage.source.label), \(passage.text), \(SLTimeFormat.shortTime(passage.startTimestampMs))"
@@ -327,17 +305,17 @@ private struct TimelineTranscriptRows: View {
 
             if passages.count > visiblePassages.count {
                 Text("\(passages.count) transcript passages in this timeline")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.5))
-                    .padding(.leading, 9)
+                    .font(SLDesign.metadataFont)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, SLDesign.space8)
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 8)
+        .padding(.horizontal, SLDesign.space16)
+        .padding(.vertical, SLDesign.space8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.black.opacity(0.94))
+        .background(Color(nsColor: .windowBackgroundColor))
         .overlay(alignment: .top) {
-            Divider().overlay(Color.white.opacity(0.12))
+            Divider()
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Audio transcript")

@@ -62,9 +62,10 @@ public struct SQLiteCompactionReport: Equatable, Sendable {
     public var reclaimedBytes: Int64 { max(0, bytesBefore - bytesAfter) }
 }
 
-public enum SQLiteMaintenanceError: Error, CustomStringConvertible, Sendable {
+public enum SQLiteMaintenanceError: Error, CustomStringConvertible, LocalizedError, Sendable {
     case insufficientFreeSpace(requiredBytes: Int64, availableBytes: Int64)
     case freeSpaceUnavailable(String)
+    case checkpointBlocked
 
     public var description: String {
         switch self {
@@ -72,8 +73,13 @@ public enum SQLiteMaintenanceError: Error, CustomStringConvertible, Sendable {
             return "Compacting needs \(required) free bytes; only \(available) are available"
         case .freeSpaceUnavailable(let detail):
             return "Could not measure free disk space before compacting: \(detail)"
+        case .checkpointBlocked:
+            return
+                "An active reader prevented the database checkpoint. Space reclamation will retry later. Your history remains available."
         }
     }
+
+    public var errorDescription: String? { description }
 }
 
 /// Connection the running thread must use. A `nil` handle pins the thread to
@@ -110,6 +116,7 @@ public final class SQLiteDatabase: @unchecked Sendable {
     /// process can briefly own two stores during import, restore, or tests; a
     /// shared key would let a nested read use the other store's handle.
     private let connectionScopeKey = "dev.screenlog.sqlite.connection-scope.\(UUID().uuidString)"
+    private let writerConnectionScope = SQLiteConnectionScope(handle: nil)
 
     public init(path: String) throws {
         self.path = path
@@ -167,19 +174,22 @@ public final class SQLiteDatabase: @unchecked Sendable {
     /// using this database connection.
     public func withExclusiveMutation<T>(_ body: () throws -> T) rethrows -> T {
         mutationExecutor.lock()
-        // A mutation nested inside a read scope must keep reading its own
-        // uncommitted rows, so pin this thread to the writer for the duration
-        // and restore its read scope afterwards. A thread without a scope is
-        // already on the writer, and capture takes this path for every
-        // statement, so it is left untouched.
+        // Pin even an outermost mutation: a read scope opened by its body must
+        // see uncommitted rows instead of checking out a separate connection.
+        // Reuse the marker so nested exec/transaction calls do not allocate.
         let scopes = Thread.current.threadDictionary
-        let enclosing = scopes[connectionScopeKey]
-        if enclosing != nil {
-            scopes[connectionScopeKey] = SQLiteConnectionScope(handle: nil)
+        let enclosing = scopes[connectionScopeKey] as? SQLiteConnectionScope
+        let needsScope = enclosing !== writerConnectionScope
+        if needsScope {
+            scopes[connectionScopeKey] = writerConnectionScope
         }
         defer {
-            if let enclosing {
-                scopes[connectionScopeKey] = enclosing
+            if needsScope {
+                if let enclosing {
+                    scopes[connectionScopeKey] = enclosing
+                } else {
+                    scopes.removeObject(forKey: connectionScopeKey)
+                }
             }
             mutationExecutor.unlock()
         }
@@ -396,37 +406,64 @@ public final class SQLiteDatabase: @unchecked Sendable {
         }
     }
 
-    /// Rebuild the whole database file, which is the only way to shrink a
-    /// library created before incremental auto-vacuum and the only way to give
-    /// it a pointer map. Deliberately not on the capture path: VACUUM holds a
-    /// write lock for the length of a full-file rewrite and needs room for a
-    /// temporary copy, so it is offered as a user-initiated maintenance action
-    /// and refuses to start without the disk space it requires.
+    /// Rebuild a legacy database off-main at a safe maintenance opportunity.
+    /// The caller must keep this connection open until the operation returns.
+    /// The mutation executor excludes writers throughout the file rewrite.
     @discardableResult
     public func compactDatabaseFile(freeSpaceMarginBytes: Int64 = 256 * 1024 * 1024) throws
         -> SQLiteCompactionReport
     {
         try withExclusiveMutation {
-            let pageSize = try integerScalar("PRAGMA page_size")
-            let bytesBefore = try integerScalar("PRAGMA page_count") * pageSize
-            let available = try availableCapacityBytes()
-            let required = bytesBefore.addingReportingOverflow(max(0, freeSpaceMarginBytes))
-            let requiredBytes = required.overflow ? Int64.max : required.partialValue
-            guard available >= requiredBytes else {
-                throw SQLiteMaintenanceError.insufficientFreeSpace(
-                    requiredBytes: requiredBytes,
-                    availableBytes: available
-                )
+            let bytesBefore = try requireCompactionHeadroom(freeSpaceMarginBytes: freeSpaceMarginBytes)
+            // Do not start a full rewrite when an existing reader pins the WAL.
+            // A reader that starts later can still defer the final checkpoint.
+            sqlite3_busy_timeout(db, 0)
+            defer { sqlite3_busy_timeout(db, 5_000) }
+            let initialCheckpoint = sqlite3_wal_checkpoint_v2(
+                db, nil, SQLITE_CHECKPOINT_TRUNCATE, nil, nil
+            )
+            guard initialCheckpoint == SQLITE_OK else {
+                if initialCheckpoint == SQLITE_BUSY || initialCheckpoint == SQLITE_LOCKED {
+                    throw SQLiteMaintenanceError.checkpointBlocked
+                }
+                throw SQLiteError.exec("Database checkpoint failed (SQLite \(initialCheckpoint))")
             }
             // The pragma only reaches the header when VACUUM rewrites the file,
             // which is exactly what makes this the conversion step for legacy
             // libraries; afterwards retention can reclaim incrementally.
             try exec("PRAGMA auto_vacuum = INCREMENTAL;")
             try exec("VACUUM;")
-            try exec("PRAGMA wal_checkpoint(TRUNCATE);")
+            let checkpoint = sqlite3_wal_checkpoint_v2(db, nil, SQLITE_CHECKPOINT_TRUNCATE, nil, nil)
+            guard checkpoint == SQLITE_OK else {
+                if checkpoint == SQLITE_BUSY || checkpoint == SQLITE_LOCKED {
+                    throw SQLiteMaintenanceError.checkpointBlocked
+                }
+                throw SQLiteError.exec("Database compaction checkpoint failed (SQLite \(checkpoint))")
+            }
             let pageSizeAfter = try integerScalar("PRAGMA page_size")
             let bytesAfter = try integerScalar("PRAGMA page_count") * pageSizeAfter
             return SQLiteCompactionReport(bytesBefore: bytesBefore, bytesAfter: bytesAfter)
+        }
+    }
+
+    /// A full rewrite needs space for a temporary copy and its journal.
+    func requireCompactionHeadroom(freeSpaceMarginBytes: Int64) throws -> Int64 {
+        try withExclusiveMutation {
+            let pageSize = try integerScalar("PRAGMA page_size")
+            let bytes = try integerScalar("PRAGMA page_count") * pageSize
+            let available = try availableCapacityBytes()
+            // VACUUM needs both a temporary database and a rollback journal or
+            // rebuilt WAL: SQLite documents up to twice the original size free.
+            let copies = bytes.multipliedReportingOverflow(by: 2)
+            let required = copies.partialValue.addingReportingOverflow(max(0, freeSpaceMarginBytes))
+            let requiredBytes = copies.overflow || required.overflow ? Int64.max : required.partialValue
+            guard available >= requiredBytes else {
+                throw SQLiteMaintenanceError.insufficientFreeSpace(
+                    requiredBytes: requiredBytes,
+                    availableBytes: available
+                )
+            }
+            return bytes
         }
     }
 

@@ -10,7 +10,7 @@ POSITIONAL=()
 
 usage() {
   cat <<EOF
-Usage: $0 [--identity NAME] [--team-id ID] Screenlogger.app screenlog
+Usage: $0 [--identity NAME_OR_SHA1] [--team-id ID] Screenlogger.app screenlog
 
 Signs Sparkle's helpers, the app's embedded framework and CLI, the outer app,
 and the standalone CLI/framework pair with Developer ID Application. Every
@@ -83,6 +83,7 @@ SPARKLE_DOWNLOADER="$SPARKLE_VERSION/XPCServices/Downloader.xpc"
 SPARKLE_INSTALLER="$SPARKLE_VERSION/XPCServices/Installer.xpc"
 SPARKLE_AUTOUPDATE="$SPARKLE_VERSION/Autoupdate"
 BUNDLED_CLI="$APP/Contents/MacOS/screenlog"
+SEMANTIC_WORKER="$APP/Contents/MacOS/screenlog-semantic-worker"
 CLI_FRAMEWORK="$CLI_DIRECTORY/ScreenlogCore.framework"
 DEVELOPMENT_DYLIB="$APP/Contents/MacOS/Screenlogger.debug.dylib"
 PREVIEW_DYLIB="$APP/Contents/MacOS/__preview.dylib"
@@ -91,8 +92,12 @@ if ! command -v codesign >/dev/null 2>&1; then
   echo "error: required signing tool is unavailable: codesign" >&2
   exit 1
 fi
-if ! /usr/bin/security find-identity -v -p codesigning \
-  | /usr/bin/grep -Fq "\"$IDENTITY\""; then
+IDENTITIES="$(/usr/bin/security find-identity -v -p codesigning)"
+IDENTITY_MATCH="\"$IDENTITY\""
+if [[ "$IDENTITY" =~ ^[[:xdigit:]]{40}$ ]]; then
+  IDENTITY_MATCH=" $IDENTITY \"Developer ID Application:"
+fi
+if ! printf '%s\n' "$IDENTITIES" | /usr/bin/grep -Fiq "$IDENTITY_MATCH"; then
   echo "error: Developer ID signing identity is unavailable: $IDENTITY" >&2
   exit 1
 fi
@@ -123,6 +128,7 @@ require_directory "$SPARKLE_DOWNLOADER" "Sparkle downloader service"
 require_directory "$SPARKLE_INSTALLER" "Sparkle installer service"
 require_executable "$SPARKLE_AUTOUPDATE" "Sparkle autoupdate tool"
 require_executable "$BUNDLED_CLI" "bundled CLI"
+require_executable "$SEMANTIC_WORKER" "semantic worker"
 require_directory "$CLI_FRAMEWORK" "standalone CLI framework"
 require_executable "$CLI" "standalone CLI"
 if [[ ! -f "$ENTITLEMENTS" || -L "$ENTITLEMENTS" ]]; then
@@ -170,6 +176,7 @@ sign_sparkle_artifact "$SPARKLE_VERSION" \
   "org.sparkle-project.Sparkle"
 sign_artifact "$APP_FRAMEWORK" "dev.screenlog.core"
 sign_artifact "$BUNDLED_CLI" "dev.screenlog.cli"
+sign_artifact "$SEMANTIC_WORKER" "dev.screenlog.semantic-worker"
 # Debug builds use install-name indirection through these two dylibs. They are
 # absent from release archives, but signing them when present keeps a locally
 # staged Developer ID build launchable under library validation.
@@ -220,6 +227,7 @@ for artifact in \
   "$SPARKLE_VERSION" \
   "$APP_FRAMEWORK" \
   "$BUNDLED_CLI" \
+  "$SEMANTIC_WORKER" \
   "$CLI_FRAMEWORK" \
   "$CLI"; do
   artifact_team_id="$(team_id_for "$artifact")"

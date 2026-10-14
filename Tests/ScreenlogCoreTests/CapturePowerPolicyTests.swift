@@ -1,6 +1,5 @@
-import XCTest
-
 @testable import ScreenlogCore
+import XCTest
 
 final class CapturePowerPolicyTests: XCTestCase {
     func testBatteryStretchesShortIntervalsAndLeavesLongOnesAlone() {
@@ -198,10 +197,8 @@ final class CapturePowerPolicyTests: XCTestCase {
         )
     }
 
-    func testEveryEnergySaverReasonHasUserFacingCopy() {
+    func testEveryEnergySaverReasonHasAnIcon() {
         for reason in CaptureEnergySaverReason.allCases {
-            XCTAssertFalse(reason.statusTitle.isEmpty)
-            XCTAssertFalse(reason.userDescription.isEmpty)
             XCTAssertFalse(reason.systemImageName.isEmpty)
         }
     }

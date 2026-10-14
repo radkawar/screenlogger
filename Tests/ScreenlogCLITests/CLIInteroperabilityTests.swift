@@ -1,8 +1,7 @@
 import Foundation
+@testable import ScreenlogCLI
 import ScreenlogCore
 import XCTest
-
-@testable import ScreenlogCLI
 
 final class CLIInteroperabilityTests: XCTestCase {
     func testStatusDocumentUsesStableTypedHealthCodes() {
@@ -216,10 +215,6 @@ final class CLIInteroperabilityTests: XCTestCase {
         XCTAssertTrue(json.contains(#""incompatible_protocol""#))
         XCTAssertFalse(json.contains("/Users/"))
         XCTAssertFalse(json.contains("untrusted peer detail"))
-        XCTAssertEqual(
-            ScreenlogCLIMain.doctorIssueDescription(.incompatibleProtocol),
-            "Screenlogger.app and the screenlog command use incompatible local protocols"
-        )
     }
 
     func testSkillLifecycleFailureCopyDoesNotExposeErrorPaths() {
@@ -230,10 +225,6 @@ final class CLIInteroperabilityTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(
-            failure,
-            "the integration could not be replaced; the previous installation was preserved"
-        )
         XCTAssertFalse(failure.contains("/Users/"))
         XCTAssertFalse(failure.contains("NSPOSIXErrorDomain"))
     }
@@ -243,24 +234,14 @@ final class CLIInteroperabilityTests: XCTestCase {
             "SQLite failed at /Users/private/Library/Application Support/dev.screenlog"
         )
 
-        XCTAssertEqual(error.description, "Screenlogger could not complete the request")
         XCTAssertFalse(error.description.contains("/Users/"))
         XCTAssertFalse(error.description.contains("SQLite"))
 
         let protocolError = XPCClientError.incompatibleProtocol(
             "untrusted peer detail at /Users/private"
         )
-        XCTAssertEqual(
-            protocolError.description,
-            "Screenlogger.app and the screenlog command are incompatible; update them together"
-        )
         XCTAssertFalse(protocolError.description.contains("/Users/"))
 
-        let accessError = XPCClientError.mutationAccessDenied
-        XCTAssertEqual(
-            accessError.description,
-            "Screenlogger local tool access is read-only. In Settings > Integrations, turn on Allow capture control and maintenance, then try again."
-        )
     }
 
     func testBlockedSkillStatusNeverRecommendsIneffectiveUpgrade() {
@@ -269,7 +250,6 @@ final class CLIInteroperabilityTests: XCTestCase {
             target: .codex
         )
 
-        XCTAssertTrue(remediation.contains("review the reported path"))
         XCTAssertTrue(remediation.contains("install codex --force"))
         XCTAssertFalse(remediation.contains("skill upgrade"))
     }

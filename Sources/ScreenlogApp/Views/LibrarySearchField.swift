@@ -3,9 +3,9 @@ import SwiftUI
 
 /// Native Library search field with Screenlogger's structured-search keyboard contract.
 ///
-/// AppKit owns the bezel, focus ring, cancel button, pointer behavior, and
-/// accessibility search-field role. The coordinator forwards only the
-/// Library-specific commands that a stock NSSearchField does not understand.
+/// AppKit owns editing, the cancel button, and the accessibility search-field
+/// role. The surrounding SwiftUI control owns the shared matching-menu bezel.
+/// The coordinator preserves structured-search keyboard commands.
 struct LibrarySearchField: NSViewRepresentable {
     @Binding var text: String
     @Binding var isFocused: Bool
@@ -28,6 +28,10 @@ struct LibrarySearchField: NSViewRepresentable {
         field.placeholderString = placeholder
         field.controlSize = .large
         field.font = .systemFont(ofSize: NSFont.systemFontSize)
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        (field.cell as? NSSearchFieldCell)?.searchButtonCell = nil
         field.sendsSearchStringImmediately = false
         field.sendsWholeSearchString = true
         field.delegate = context.coordinator

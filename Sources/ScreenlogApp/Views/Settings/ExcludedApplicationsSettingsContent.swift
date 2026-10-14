@@ -55,13 +55,12 @@ struct ExcludedApplicationsSettingsContent: View {
                         Label("Always Excluded", systemImage: "checkmark.shield.fill")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(SLDesign.success)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 11)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Screenlogger, always excluded")
-                    .accessibilityHint("Screenlogger windows never appear in captures")
-                    .accessibilityIdentifier("exclusions.applications.screenlogger")
+                    }.padding(.horizontal, SLDesign.space16)
+                        .padding(.vertical, 11)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Screenlogger, always excluded")
+                        .accessibilityHint("Screenlogger windows never appear in captures")
+                        .accessibilityIdentifier("exclusions.applications.screenlogger")
 
                     Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
 
@@ -91,9 +90,8 @@ struct ExcludedApplicationsSettingsContent: View {
                         } label: {
                             Text("Password managers found on this Mac")
                                 .font(.caption.weight(.medium))
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
+                        }.padding(.horizontal, SLDesign.space16)
+                            .padding(.vertical, 10)
                     }
                 }
             }
@@ -155,8 +153,7 @@ struct ExcludedApplicationsSettingsContent: View {
                                     "Show \(filteredInstalledApps.count - displayedInstalledApps.count) More",
                                     systemImage: "chevron.down"
                                 )
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 14)
+                                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, SLDesign.space16)
                                 .padding(.vertical, 10)
                                 .contentShape(Rectangle())
                             }
@@ -220,10 +217,9 @@ struct ExcludedApplicationsSettingsContent: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 11)
-                    .contentShape(Rectangle())
+                    }.padding(.horizontal, SLDesign.space16)
+                        .padding(.vertical, 11)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Shows a confirmation before restoring privacy defaults")
@@ -251,9 +247,9 @@ struct ExcludedApplicationsSettingsContent: View {
                 .foregroundStyle(SLDesign.warning)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Text("Applications couldn't be loaded")
+                Text("Could not load applications")
                     .font(.caption.weight(.medium))
-                Text("Screenlogger couldn't read the apps on this Mac. Your exclusions are unchanged.")
+                Text("Screenlogger could not read the apps on this Mac. Your exclusions are unchanged.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -269,7 +265,7 @@ struct ExcludedApplicationsSettingsContent: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Applications couldn't be loaded")
+        .accessibilityLabel("Could not load applications")
         .accessibilityHint("Your exclusions are unchanged. Choose Retry to try again.")
         .accessibilityIdentifier("exclusions.applications.error")
     }
@@ -352,9 +348,8 @@ struct ExcludedApplicationsSettingsContent: View {
             .accessibilityLabel("Exclude \(displayName)")
             .accessibilityValue(SettingsAccessibilityValue.onOff(true))
             .accessibilityHint(policy.accessibilityHint)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        }.padding(.horizontal, SLDesign.space16)
+            .padding(.vertical, 10)
     }
 
     private func availableApplicationRow(_ app: DiscoveredApplication) -> some View {
@@ -392,9 +387,8 @@ struct ExcludedApplicationsSettingsContent: View {
                 SettingsAccessibilityValue.onOff(policy.outcome == .neverCapture)
             )
             .accessibilityHint(policy.accessibilityHint)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        }.padding(.horizontal, SLDesign.space16)
+            .padding(.vertical, 8)
     }
 
     private var filteredExcludedApps: [String] {
@@ -450,7 +444,7 @@ struct ExcludedApplicationsSettingsContent: View {
         else {
             return (
                 "No applications available",
-                "Screenlogger didn't find any installed or running applications.",
+                "Screenlogger did not find any installed or running applications.",
                 "exclusions.applications.empty"
             )
         }

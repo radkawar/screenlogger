@@ -10,8 +10,8 @@ struct PrivacyNetworkSettingsSection: View {
                 iconColor: model.airgapMode ? SLDesign.success : .secondary,
                 title: "Keep Screenlogger Offline",
                 detail: model.airgapMode
-                    ? "On. Optional network requests are blocked; capture, text recognition, and search keep working."
-                    : "Off. Optional network access is available. Screenlogger fetches website icons only if you separately opt in below."
+                    ? "On. Screenlogger blocks optional network requests. Capture, text recognition, and search continue."
+                    : "Off. Optional network access is available. Screenlogger gets website icons only if you enable them below."
             ) {
                 Toggle("Keep Screenlogger Offline", isOn: $model.airgapMode)
                     .labelsHidden()
@@ -20,8 +20,7 @@ struct PrivacyNetworkSettingsSection: View {
                     .accessibilityValue(SettingsAccessibilityValue.onOff(model.airgapMode))
                     .accessibilityHint("When on, Screenlogger does not make optional network requests")
                     .accessibilityIdentifier("privacy.network.offline.toggle")
-            }
-            .padding(14)
+            }.padding(SLDesign.space16)
 
             PrivacySettingsDivider()
 
@@ -40,19 +39,18 @@ struct PrivacyNetworkSettingsSection: View {
                     )
                     .accessibilityHint(websiteIconToggleHint)
                     .accessibilityIdentifier("privacy.network.website-icons.toggle")
-            }
-            .padding(14)
+            }.padding(SLDesign.space16)
         }
         .accessibilityIdentifier("privacy.network")
     }
 
     private var websiteIconDetail: String {
         if model.airgapMode {
-            return "Blocked while offline mode is on. No website domain names are sent for icons."
+            return "Offline mode blocks icon requests. Screenlogger does not send website domain names for icons."
         }
         if model.remoteFaviconsEnabled {
             return
-                "On. Domains shown in Screenlogger are sent to DuckDuckGo's public icon service. Captures, recognized text, and full page addresses are not sent."
+                "On. Screenlogger sends displayed domains to the DuckDuckGo public icon service. Screenlogger does not send captures, recognized text, or full page addresses."
         }
         return "Off by default. Screenlogger uses only icons already cached on this Mac."
     }
@@ -61,6 +59,6 @@ struct PrivacyNetworkSettingsSection: View {
         if model.airgapMode {
             return "Unavailable while Keep Screenlogger Offline is on"
         }
-        return "When on, website domain names are sent to DuckDuckGo's public icon service"
+        return "When on, Screenlogger sends website domain names to the DuckDuckGo public icon service"
     }
 }

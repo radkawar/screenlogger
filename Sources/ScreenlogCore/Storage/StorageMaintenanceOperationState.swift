@@ -19,13 +19,13 @@ public enum StorageMaintenanceFailure: Equatable, Sendable {
     public var userMessage: String {
         switch self {
         case .compactionFailed:
-            return "Couldn't finish compressing older images. Your saved moments remain available. Try again."
+            return "Could not compress older images. Your saved captures remain available. Try again."
         case .retentionCouldNotRemoveFiles:
-            return "Some capture images couldn't be removed safely. They were kept so you can retry."
+            return "Screenlogger kept capture images that it could not safely remove. Try again."
         case .retentionLimitNotSatisfied:
-            return "All eligible images were removed, but other managed data still exceeds the limit."
+            return "Screenlogger removed all eligible images, but other managed data still exceeds the limit."
         case .retentionFailed:
-            return "Couldn't apply storage limits. Screenlogger kept any files it couldn't safely remove. Try again."
+            return "Could not apply storage limits. Screenlogger kept files that it could not safely remove. Try again."
         }
     }
 

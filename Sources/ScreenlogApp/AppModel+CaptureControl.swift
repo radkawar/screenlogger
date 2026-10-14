@@ -79,6 +79,10 @@ extension AppModel {
 
     @discardableResult
     func startCapture(persistIntent: Bool = true) -> Bool {
+        guard !isDatabaseReclamationRunning, !isPreparingForShutdown else {
+            statusMessage = "Wait for database space reclamation before you start capture"
+            return false
+        }
         #if DEBUG
             if AppUITestFixture.startCaptureIfRequested(on: self) {
                 captureIssue = nil
@@ -86,7 +90,7 @@ extension AppModel {
             }
         #endif
         guard libraryRestoreState != .restoring else {
-            statusMessage = "Capture is paused while the Library is restored"
+            statusMessage = "Capture is paused while Screenlogger restores the Library"
             return false
         }
         guard libraryStartupIssue == nil, store != nil else {
@@ -117,7 +121,7 @@ extension AppModel {
             statusMessage = captureRunningStatusMessage
         } else {
             captureIssue = .startFailed
-            statusMessage = "Couldn't start capture"
+            statusMessage = "Could not start capture"
         }
         recordDiagnostic(.capture, started ? .succeeded : .failed)
         return started
@@ -142,7 +146,7 @@ extension AppModel {
         if stopped, persistIntent {
             CaptureIntentPreference.save(false, to: preferences)
         }
-        statusMessage = stopped ? "Capture stopped" : "Couldn't stop capture"
+        statusMessage = stopped ? "Capture stopped" : "Could not stop capture"
         recordDiagnostic(.capture, stopped ? .stopped : .failed)
         return stopped
     }
@@ -170,7 +174,7 @@ extension AppModel {
         synchronizeRecordingState()
         guard stopped else {
             captureIssue = .pauseFailed
-            statusMessage = "Couldn't pause capture"
+            statusMessage = "Could not pause capture"
             return
         }
 
@@ -271,7 +275,7 @@ extension AppModel {
             let started = startCapture(persistIntent: false)
             if !started, permissions.isCaptureReady {
                 captureIssue = .resumeFailed
-                statusMessage = "Couldn't resume capture"
+                statusMessage = "Could not resume capture"
             } else if started {
                 statusMessage = "Capture resumed"
             }
@@ -287,7 +291,7 @@ extension AppModel {
     }
 
     /// Mirrors engine-owned state after every transition instead of predicting it.
-    private func synchronizeRecordingState() {
+    func synchronizeRecordingState() {
         isRecording = engine.isRecording
         pausedForDisk = engine.pausedForDisk
     }
@@ -331,7 +335,7 @@ extension AppModel {
                 displayName: name
             )
         )
-        statusMessage = "Won't capture \(name)"
+        statusMessage = "Will not capture \(name)"
     }
 
     func excludeWebsite(domain: String) {
@@ -339,7 +343,7 @@ extension AppModel {
         exclusionStore.addDomain(normalized)
         recentCaptureExclusion = .website(domain: normalized)
         reloadExclusionsFromStore()
-        statusMessage = "Won't capture \(normalized)"
+        statusMessage = "Will not capture \(normalized)"
     }
 
     func undoRecentCaptureExclusion() {
@@ -357,7 +361,9 @@ extension AppModel {
     }
 
     func captureOnce() async {
-        guard captureOnceState != .inProgress, libraryRestoreState != .restoring else { return }
+        guard captureOnceState != .inProgress, libraryRestoreState != .restoring,
+            !isDatabaseReclamationRunning, !isPreparingForShutdown
+        else { return }
         guard permissions.isCaptureReady else {
             captureOnceState = .failure(.permissionRequired)
             statusMessage = "Allow \(missingCapturePermissionNames) to save a capture"
@@ -375,6 +381,9 @@ extension AppModel {
                 : "Saved a capture"
             // `lastFrameID` publishes after the durable write and drives the
             // Library refresh; avoid issuing a duplicate Timeline query here.
+        } catch is CancellationError {
+            // Restore deliberately drains one-shot capture. Keep the idle state.
+            captureOnceState = .idle
         } catch {
             writeBootstrapLog("manual capture failed: \(error)")
             let failure = CaptureOnceFailure.classify(error, pauseReason: engine.pauseReason)
@@ -387,7 +396,7 @@ extension AppModel {
             case .excludedContent, .privateBrowsing, .browserAddressUnavailable:
                 statusMessage = "Capture skipped for privacy"
             case .displayUnavailable, .encodingFailed, .captureFailed:
-                statusMessage = "Couldn't save capture"
+                statusMessage = "Could not save capture"
             }
         }
     }

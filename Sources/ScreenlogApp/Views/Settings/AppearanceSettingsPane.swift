@@ -9,7 +9,7 @@ struct AppearanceSettingsPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsChrome.cardSpacing) {
             SettingsCard {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: SLDesign.space16) {
                     SettingsCardRow(
                         icon: "circle.lefthalf.filled",
                         title: "Theme",
@@ -27,12 +27,12 @@ struct AppearanceSettingsPane: View {
                         .accessibilityIdentifier("settings.appearance.theme")
                     }
 
-                    Divider().padding(.leading, 36)
+                    Divider().padding(.leading, SettingsChrome.iconSize + SLDesign.space16)
 
                     SettingsCardRow(
                         icon: "paintpalette",
                         title: "Accent Color",
-                        subtitle: "\(model.accentColorPreference.label) highlights are used throughout Screenlogger."
+                        subtitle: "\(model.accentColorPreference.label) highlights for selections and primary actions."
                     ) {
                         Picker("Accent Color", selection: $model.accentColorPreference) {
                             ForEach(AccentColorPreference.allCases) { c in
@@ -55,13 +55,13 @@ struct AppearanceSettingsPane: View {
             }
 
             SettingsCard {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: SLDesign.space16) {
                     HStack(alignment: .firstTextBaseline) {
                         Text("Timeline Display")
-                            .font(.headline)
+                            .font(SLDesign.sectionFont)
                         Spacer(minLength: 8)
                         Text("\(enabledTimelineOptionCount) of 4 on")
-                            .font(.caption.monospacedDigit())
+                            .font(SLDesign.metadataFont.monospacedDigit())
                             .foregroundStyle(.secondary)
                             .accessibilityLabel(
                                 "\(enabledTimelineOptionCount) of 4 Timeline options on"
@@ -82,15 +82,15 @@ struct AppearanceSettingsPane: View {
                         identifier: "open-source",
                         isOn: $model.showOpenExternally
                     )
-                    Divider().padding(.leading, 36)
+                    Divider().padding(.leading, SettingsChrome.iconSize + SLDesign.space16)
                     timelineToggle(
                         icon: "text.viewfinder",
-                        title: "Detected text highlights",
-                        subtitle: "Show recognized-text highlights over the captured moment when available.",
+                        title: "Recognized text highlights",
+                        subtitle: "Show recognized text highlights over the captured moment when available.",
                         identifier: "detected-text",
                         isOn: $model.showLiveText
                     )
-                    Divider().padding(.leading, 36)
+                    Divider().padding(.leading, SettingsChrome.iconSize + SLDesign.space16)
                     timelineToggle(
                         icon: "plus.magnifyingglass",
                         title: "Zoom buttons",
@@ -105,11 +105,11 @@ struct AppearanceSettingsPane: View {
                         identifier: "zoom",
                         isOn: $model.showZoomControls
                     )
-                    Divider().padding(.leading, 36)
+                    Divider().padding(.leading, SettingsChrome.iconSize + SLDesign.space16)
                     timelineToggle(
                         icon: "chevron.left.forwardslash.chevron.right",
                         title: "Activity navigation buttons",
-                        subtitle: "Show buttons for jumping to the previous or next activity. "
+                        subtitle: "Show buttons to move to the previous or next activity. "
                             + hiddenControlsShortcutGuidance(
                                 actionIDs: [
                                     .timelinePreviousActivity,
@@ -128,11 +128,11 @@ struct AppearanceSettingsPane: View {
     private var themeSubtitle: String {
         switch model.appearancePreference {
         case .system:
-            return "Following this Mac's appearance. The Timeline canvas stays dark."
+            return "Uses the appearance of this Mac. The Timeline image area stays dark."
         case .light:
-            return "Using Light app chrome. The Timeline canvas stays dark."
+            return "Uses Light app controls. The Timeline image area stays dark."
         case .dark:
-            return "Using Dark app chrome and a dark Timeline canvas."
+            return "Uses Dark app controls and a dark Timeline image area."
         }
     }
 

@@ -28,14 +28,13 @@ struct StorageLibraryToolsCard: View {
         SettingsCardRow(
             icon: "folder",
             title: "Library Folder",
-            subtitle: "Reveal the files Screenlogger manages on this Mac."
+            subtitle: "Show the files that Screenlogger manages on this Mac."
         ) {
             Button("Show in Finder") { model.openDataFolder() }
                 .controlSize(.small)
-                .accessibilityHint("Reveal Screenlogger's Library folder")
+                .accessibilityHint("Show the Screenlogger Library folder")
                 .accessibilityIdentifier("settings.storage.reveal")
-        }
-        .padding(14)
+        }.padding(SLDesign.space16)
     }
 
     private var backupAndRestoreSection: some View {
@@ -43,7 +42,7 @@ struct StorageLibraryToolsCard: View {
             StorageSectionHeading(
                 title: "Backup & Restore",
                 detail:
-                    "Create a verified backup, or review one before it replaces your captured history. Settings and exclusions are not replaced."
+                    "Create a verified backup. Review a backup before it replaces your capture history. Screenlogger keeps your settings and exclusions."
             )
 
             ViewThatFits(in: .horizontal) {
@@ -59,8 +58,7 @@ struct StorageLibraryToolsCard: View {
 
             LibraryExportStatusView()
             LibraryRestoreStatusView()
-        }
-        .padding(14)
+        }.padding(SLDesign.space16)
     }
 
     private var compressionSection: some View {
@@ -81,6 +79,18 @@ struct StorageLibraryToolsCard: View {
             .accessibilityHint("Compress eligible older capture images without deleting searchable history")
             .accessibilityIdentifier("settings.storage.compress-now")
 
+            if let status = model.databaseMigrationStatus {
+                Text(status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("settings.storage.database-migration")
+            }
+            Text(
+                "Screenlogger updates older database storage automatically. Screenlogger does not remove history. Space reclamation waits until capture stops."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
             Text("Space savings depend on the captured images, so Screenlogger measures the result after compression.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -99,15 +109,14 @@ struct StorageLibraryToolsCard: View {
             .accessibilityIdentifier("settings.storage.maintenance-power")
 
             StorageMaintenanceStatusView()
-        }
-        .padding(14)
+        }.padding(SLDesign.space16)
     }
 
     private var advancedActions: some View {
         DisclosureGroup(isExpanded: $showingAdvancedActions) {
             VStack(alignment: .leading, spacing: 12) {
                 Text(
-                    "These actions remove capture media or complete moments. Screenlogger shows a confirmation or detailed review before anything is deleted."
+                    "These actions remove capture media or complete moments. Screenlogger asks for confirmation before it deletes history."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -128,10 +137,9 @@ struct StorageLibraryToolsCard: View {
         } label: {
             Label("Advanced storage actions", systemImage: "gearshape.2")
                 .font(.callout.weight(.medium))
-        }
-        .padding(14)
-        .accessibilityHint("Show deletion, limit enforcement, and the Library location")
-        .accessibilityIdentifier("settings.storage.advanced-actions")
+        }.padding(SLDesign.space16)
+            .accessibilityHint("Show deletion, limit enforcement, and the Library location")
+            .accessibilityIdentifier("settings.storage.advanced-actions")
     }
 
     @ViewBuilder
@@ -152,7 +160,7 @@ struct StorageLibraryToolsCard: View {
         }
         .buttonStyle(.bordered)
         .disabled(exclusiveOperationActive)
-        .help("Delete today, a time range, or all captured history after reviewing the impact")
+        .help("Review history before you delete it")
         .accessibilityIdentifier("settings.storage.delete-history")
     }
 
@@ -177,8 +185,8 @@ struct StorageLibraryToolsCard: View {
         }
         .buttonStyle(.bordered)
         .disabled(exclusiveOperationActive)
-        .help("Verify a Screenlogger Library backup, review it, then replace this Library")
-        .accessibilityHint("Choose and verify a Library backup before reviewing a restore")
+        .help("Review a verified Library backup before it replaces this Library")
+        .accessibilityHint("Choose a Library backup for verification")
         .accessibilityIdentifier("settings.storage.restore")
     }
 

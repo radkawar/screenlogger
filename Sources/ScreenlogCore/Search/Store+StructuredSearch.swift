@@ -18,6 +18,7 @@ extension Store {
 
         let limit = min(500, max(1, requestedLimit))
         let parsed = SearchOperatorParser.parse(query)
+        if let issue = parsed.validationIssue { throw SearchQueryValidationError.invalid(issue) }
         let hasStructure =
             parsed.appFilter != nil
             || parsed.siteFilter != nil

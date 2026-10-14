@@ -10,9 +10,10 @@ extension AppModel {
             !libraryRestoreState.isBusy, libraryRestoreReview == nil
         else { return }
         let panel = NSSavePanel()
-        panel.title = "Export Screenlogger Library"
-        panel.message = "Choose where to save a verified copy. Your current Library will stay in place."
-        panel.prompt = "Export"
+        panel.title = "Save a Library Copy"
+        panel.message = "Choose a folder for your Library copy. Screenlogger verifies the copy and leaves your current Library unchanged."
+        panel.prompt = "Save Copy"
+        panel.nameFieldLabel = "Save Copy As:"
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
         panel.allowedContentTypes = [
@@ -46,7 +47,7 @@ extension AppModel {
                     error as? LibraryExportError
                     ?? .snapshotFailed(error.localizedDescription)
                 self?.libraryExportState = .failed(exportError)
-                self?.statusMessage = "Library export didn't finish"
+                self?.statusMessage = "Library export did not finish"
             }
         }
     }
@@ -71,9 +72,9 @@ extension AppModel {
         else { return }
 
         let panel = NSOpenPanel()
-        panel.title = "Choose a Screenlogger Library Copy"
-        panel.message = "Screenlogger will verify the copy before showing what will be replaced."
-        panel.prompt = "Review"
+        panel.title = "Restore a Library Copy"
+        panel.message = "Choose a Screenlogger Library copy. You can review it before replacing any captured history."
+        panel.prompt = "Review Copy"
         panel.canChooseFiles = true
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
@@ -107,7 +108,7 @@ extension AppModel {
                 self.statusMessage = "Library copy needs a newer Screenlogger"
             case .invalid(let issue):
                 self.libraryRestoreState = .failed(.invalidBackup(issue))
-                self.statusMessage = "Library copy couldn't be verified"
+                self.statusMessage = "Could not verify Library copy"
             }
         }
     }
@@ -160,7 +161,7 @@ extension AppModel {
                 self.bootstrap()
                 self.libraryRestoreReview = nil
                 self.libraryRestoreState = .failed(restoreError)
-                self.statusMessage = "Library restore didn't finish"
+                self.statusMessage = "Library restore did not finish"
             }
             self.libraryRestoreTask = nil
         }

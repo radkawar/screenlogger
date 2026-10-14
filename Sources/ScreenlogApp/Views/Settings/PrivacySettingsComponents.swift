@@ -16,17 +16,23 @@ struct PrivacySettingsGroup<Content: View>: View {
     }
 
     var body: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 0) {
-                content()
+        VStack(alignment: .leading, spacing: SLDesign.space8) {
+            Label {
+                Text(title)
+                    .foregroundStyle(.primary)
+            } icon: {
+                Image(systemName: systemImage)
+                    .foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } label: {
-            Label(title, systemImage: systemImage)
-                .font(.headline)
-                .accessibilityAddTraits(.isHeader)
+            .font(SLDesign.sectionFont)
+            .accessibilityAddTraits(.isHeader)
+
+            SettingsCard(padding: 0) {
+                VStack(alignment: .leading, spacing: 0) {
+                    content()
+                }
+            }
         }
-        .groupBoxStyle(.automatic)
     }
 }
 

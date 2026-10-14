@@ -36,12 +36,12 @@ struct AssistantIntegrationResolutionSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-                .padding(20)
+                .padding(SLDesign.space24)
 
             Divider()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: SLDesign.space24) {
                     recoveryCard
 
                     if let actionNotice {
@@ -51,13 +51,13 @@ struct AssistantIntegrationResolutionSheet: View {
 
                     technicalDetails
                 }
-                .padding(20)
+                .padding(SLDesign.space24)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Divider()
             footer
-                .padding(20)
+                .padding(SLDesign.space24)
         }
         .frame(
             minWidth: 540,
@@ -124,11 +124,11 @@ struct AssistantIntegrationResolutionSheet: View {
                 applicationURL: model.agentSkillSnapshotState(target).snapshot?.presence.appURL
             )
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: SLDesign.space4) {
                 Text(presentation.title)
-                    .font(.title2.weight(.semibold))
+                    .font(SLDesign.titleFont)
                 Text(presentation.detail)
-                    .font(.callout)
+                    .font(SLDesign.bodyFont)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -150,8 +150,11 @@ struct AssistantIntegrationResolutionSheet: View {
     }
 
     private var recoveryCard: some View {
-        GroupBox(presentation.recoveryTitle) {
-            VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: SLDesign.space8) {
+            Text(presentation.recoveryTitle)
+                .font(SLDesign.sectionFont)
+                .accessibilityAddTraits(.isHeader)
+            VStack(alignment: .leading, spacing: SLDesign.space16) {
                 if inspection.isCurrent {
                     Label(
                         "The managed integration files are current. This does not yet confirm that \(target.label) can search Screenlogger.",
@@ -178,7 +181,7 @@ struct AssistantIntegrationResolutionSheet: View {
 
                     if !confirmedForcedReplacement {
                         Text(
-                            "Review Integration details below, then confirm before copying the force-replacement command."
+                            "Review Integration details below. Confirm before you copy the force-replacement command."
                         )
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -197,13 +200,13 @@ struct AssistantIntegrationResolutionSheet: View {
                     .disabled(!confirmedForcedReplacement)
                     .keyboardShortcut(.defaultAction)
                     .accessibilityHint(
-                        "Copies a Terminal command that replaces the reviewed item; it does not run the command"
+                        "Copies a Terminal command that replaces the reviewed item. Does not run the command."
                     )
                     .accessibilityIdentifier("settings.integration.resolve.copy-force-command")
 
                     if commandCopied {
                         Text(
-                            "Paste the command into Terminal and review it there before pressing Return. Then come back and choose Check Again."
+                            "Paste the command into Terminal. Review it before you press Return. Then return here. Choose Check Again."
                         )
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -211,7 +214,7 @@ struct AssistantIntegrationResolutionSheet: View {
                     }
                 } else {
                     Text(
-                        "This integration is recognized as Screenlogger-owned, so it can be updated without replacing unrelated content."
+                        "Screenlogger manages this integration. Screenlogger can update it without replacing unrelated content."
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -247,7 +250,7 @@ struct AssistantIntegrationResolutionSheet: View {
                     }
                 }
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, SLDesign.space4)
         }
     }
 
@@ -478,18 +481,18 @@ private struct AssistantIntegrationResolutionPresentation {
         case .staleLink:
             return "Screenlogger owns this integration, but its managed link points to an older Screenlogger installation."
         case .staleCopy:
-            return "Screenlogger owns this integration, but its installed files are out of date."
+            return "Screenlogger owns this integration, but its installed files need an update."
         case .brokenLink:
             return
-                "The integration uses a link whose source is unavailable. Screenlogger cannot verify who created it, so the app will preserve it."
+                "The integration link source is unavailable. Screenlogger cannot verify who created the link. Screenlogger will keep it."
         case .conflict:
             return
-                "An existing file or folder occupies the integration location. Screenlogger cannot verify that it owns the item, so the app will preserve it."
+                "An existing file or folder occupies the integration location. Screenlogger cannot verify that it owns the item. Screenlogger will keep it."
         case .missing:
             return "No integration is installed at this location. Screenlogger can install its managed files safely."
         case .currentLink, .currentCopy:
             return inspection.isCurrent
-                ? "Restart \(target.label) if it was open. To try the connection, close this sheet and use \(handoffShortcutLabel) with a Library search."
+                ? "Restart \(target.label) if it was open. Close this sheet. Use \(handoffShortcutLabel) with a Library search to try the connection."
                 : "The integration files are current, but \(target.label) still needs its remaining setup step."
         }
     }

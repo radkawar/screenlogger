@@ -93,6 +93,7 @@ extension AppModel {
             && !searchSessionScoped
         if enablesSessionScope {
             searchSessionScoped = true
+            reconcileSearchFiltersForSelectedSession()
         }
         refreshSearchAutocomplete()
         // Catalog scan is relatively expensive - only on first enter (or empty catalogs).
@@ -104,6 +105,8 @@ extension AppModel {
         }
     }
 
+    /// Leaving the window changes presentation only. An in-flight query still
+    /// belongs to the retained Library and must settle before the user returns.
     func exitShellSearch() {
         shellSearchMode = false
         shellFocusSearch = false
@@ -142,6 +145,7 @@ extension AppModel {
     }
 
     func loadSessions() async {
+        guard libraryRestoreState != .restoring else { return }
         let issue = TimelineIssue.refreshSessions
         if timelineIssue == issue { timelineIssue = nil }
         guard let store else {
@@ -150,9 +154,30 @@ extension AppModel {
         }
         do {
             let rows = try await store.readAsync { try $0.sessions(gapMs: 5 * 60 * 1000) }
+            guard !Task.isCancelled, self.store === store,
+                libraryRestoreState != .restoring
+            else { return }
             applySessionRefresh(rows)
         } catch {
+            guard !Task.isCancelled, self.store === store,
+                libraryRestoreState != .restoring
+            else { return }
             timelineIssue = issue
+        }
+    }
+
+    /// Commit only explicit user edits. A cancelled editor never reaches storage.
+    func renameSession(_ session: SessionRow, to name: String?) async throws {
+        guard let store, libraryRestoreState != .restoring else { throw CancellationError() }
+        let startMs = session.startMs
+        let normalized = try await store.readAsync {
+            try $0.setSessionName(startMs: startMs, name: name)
+        }
+        guard self.store === store, libraryRestoreState != .restoring else {
+            throw CancellationError()
+        }
+        if let index = sessions.firstIndex(where: { $0.startMs == startMs }) {
+            sessions[index].customName = normalized
         }
     }
 
@@ -183,6 +208,7 @@ extension AppModel {
             selectedSession?.startMs != selectedStartMs
                 || selectedSession?.endMs != selectedEndMs
         {
+            reconcileSearchFiltersForSelectedSession()
             startLibrarySearch()
         }
     }
@@ -208,9 +234,21 @@ extension AppModel {
         await loadSession(sessions[index])
     }
 
-    func loadSession(_ session: SessionRow) async {
-        let issue = TimelineIssue.reloadSession(startMs: session.startMs)
-        if timelineIssue == issue { timelineIssue = nil }
+    func loadSession(
+        _ session: SessionRow,
+        on day: Date? = nil,
+        preferLatestMoment: Bool = true,
+        aroundTimestampMs: Int64? = nil
+    ) async {
+        guard libraryRestoreState != .restoring else { return }
+        let generation = timelineLoadPublication.beginLoad()
+        defer { finishTimelineLoad(generation) }
+        let issue = TimelineIssue.reloadSession(
+            startMs: session.startMs,
+            day: day,
+            preferLatestMoment: preferLatestMoment
+        )
+        if timelineIssue != .refreshSessions { timelineIssue = nil }
         dismissTimelineNotice()
         timelineLoadState = .loading
         guard let store else {
@@ -220,28 +258,50 @@ extension AppModel {
         }
         shellSearchMode = false
         stopReplay()
+        // A session can cross midnight. Constrain the query, not the retained
+        // session identity, so day arrows land on the day that was requested.
+        let querySession: SessionRow = {
+            guard let day,
+                let interval = Calendar.current.dateInterval(of: .day, for: day)
+            else { return session }
+            var bounded = session
+            bounded.startMs = max(session.startMs, Int64(interval.start.timeIntervalSince1970 * 1_000))
+            bounded.endMs = min(session.endMs, Int64(interval.end.timeIntervalSince1970 * 1_000) - 1)
+            return bounded
+        }()
         do {
             let frames = try await store.readAsync {
                 try $0.timeline(
-                    session: session,
-                    aroundTimestampMs: session.endMs,
-                    before: 499,
-                    after: 0
+                    session: querySession,
+                    aroundTimestampMs: aroundTimestampMs
+                        ?? (preferLatestMoment ? querySession.endMs : querySession.startMs),
+                    before: aroundTimestampMs != nil ? 249 : (preferLatestMoment ? 499 : 0),
+                    after: aroundTimestampMs != nil ? 250 : (preferLatestMoment ? 0 : 499)
                 )
                 .sorted(by: TimelineFrame.chronologicalAscending)
             }
+            guard !Task.isCancelled, timelineLoadPublication.allowsLoad(generation) else { return }
             selectedSessionIndex = sessions.firstIndex(where: { $0.startMs == session.startMs })
             if searchSessionScoped {
+                reconcileSearchFiltersForSelectedSession()
                 startLibrarySearch()
             }
             timeline = frames
-            selectedTimelineID = frames.last?.id ?? frames.first?.id
+            if let aroundTimestampMs {
+                selectedTimelineID =
+                    frames.min {
+                        abs($0.timestampMs - aroundTimestampMs) < abs($1.timestampMs - aroundTimestampMs)
+                    }?.id
+            } else {
+                selectedTimelineID = preferLatestMoment ? frames.last?.id : frames.first?.id
+            }
             timelineLoadState = .ready
             publishTimelineNotice(
                 .timelineLoaded(scope: .session, momentCount: timelineMomentCount),
                 announce: true
             )
         } catch {
+            guard !Task.isCancelled, timelineLoadPublication.allowsLoad(generation) else { return }
             timelineLoadState = .failed
             timelineIssue = issue
         }
@@ -249,16 +309,14 @@ extension AppModel {
 
     /// Open a session selected from Library while preserving the native Back
     /// to Library handoff used by individual search results.
-    func openLibrarySession(_ session: SessionRow) {
+    func openLibrarySession(_ session: SessionRow, at timestampMs: Int64? = nil) {
         stopReplay()
-        searchTask?.cancel()
-        searchDebounceTask?.cancel()
         SearchWindowController.shared.hide()
         shellSearchMode = false
         stageHighlightTokens = []
         timelineLoadState = .loading
         openMainShell(origin: .librarySession)
-        Task { await loadSession(session) }
+        Task { await loadSession(session, aroundTimestampMs: timestampMs) }
     }
 
     /// Replaces the loaded detail window while retaining the selected session.
@@ -269,7 +327,11 @@ extension AppModel {
         before: Int = 249,
         after: Int = 250
     ) async {
+        guard libraryRestoreState != .restoring else { return }
         guard let session = selectedSession, let store else { return }
+        let generation = timelineLoadPublication.beginLoad()
+        defer { finishTimelineLoad(generation) }
+        if timelineIssue != .refreshSessions { timelineIssue = nil }
         let target = min(session.endMs, max(session.startMs, timestampMs))
         timelineLoadState = .loading
         do {
@@ -282,6 +344,7 @@ extension AppModel {
                 )
                 .sorted(by: TimelineFrame.chronologicalAscending)
             }
+            guard !Task.isCancelled, timelineLoadPublication.allowsLoad(generation) else { return }
             timeline = frames
             if let closest = frames.min(by: {
                 abs($0.timestampMs - target) < abs($1.timestampMs - target)
@@ -292,6 +355,7 @@ extension AppModel {
             }
             timelineLoadState = .ready
         } catch {
+            guard !Task.isCancelled, timelineLoadPublication.allowsLoad(generation) else { return }
             timelineLoadState = .failed
             timelineIssue = .reloadSession(startMs: session.startMs)
         }

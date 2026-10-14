@@ -107,7 +107,7 @@ struct StorageSettingsPane: View {
                 impact = "The current estimate covers about \(measuredCount) media \(noun)\(reclaimed)."
             }
             if model.storageCleanupPreflightState.isLoading {
-                impact += " This estimate is being refreshed."
+                impact += " Screenlogger is updating this estimate."
             } else if model.storageCleanupPreflightState.refreshFailed {
                 impact += " This is the last available estimate because the latest refresh failed."
             }

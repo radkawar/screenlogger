@@ -38,16 +38,10 @@ struct PermissionsHelperView: View {
         Bundle.main.bundleURL
     }
 
-    private var appIcon: NSImage {
-        let icon = NSWorkspace.shared.icon(forFile: appURL.path)
-        icon.size = NSSize(width: 64, height: 64)
-        return icon
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: SLDesign.space24) {
                     header
                     PermissionsSetupProgress(
                         screenRecordingAllowed: model.permissions.screenRecording,
@@ -58,17 +52,10 @@ struct PermissionsHelperView: View {
                     if model.permissions.isCaptureReady {
                         currentStateCard
                     }
-                    if showsNextActionGuidance {
+                    if let permission = nextRequiredPermission {
                         PermissionsNextActionCard(
-                            screenRecordingAllowed: model.permissions.screenRecording,
-                            accessibilityAllowed: model.permissions.accessibility,
-                            preferredPermission: nextRequiredPermission,
-                            journeyState: nextRequiredPermission.map {
-                                model.permissionJourney.state(for: $0)
-                            },
-                            isRecording: model.isRecording,
-                            timedPauseActive: timedPauseActive,
-                            captureStartFailed: model.captureIssue == .startFailed
+                            permission: permission,
+                            journeyState: model.permissionJourney.state(for: permission)
                         )
                     }
                     if showsOptionalAudioSetup {
@@ -104,11 +91,9 @@ struct PermissionsHelperView: View {
                             onRetry: retryOpenedPermission
                         )
                     }
-                    PermissionsStatusCard(
-                        screenRecordingAllowed: model.permissions.screenRecording,
-                        accessibilityAllowed: model.permissions.accessibility
-                    )
                     PermissionsPrivacySummary(
+                        screenRecordingAllowed: model.permissions.screenRecording,
+                        accessibilityAllowed: model.permissions.accessibility,
                         audioTranscriptionEnabled: model.audioTranscriptionEnabled,
                         microphoneEnabled: model.audioTranscriptionEnabled
                             && model.microphoneTranscriptionEnabled
@@ -116,7 +101,7 @@ struct PermissionsHelperView: View {
                     )
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(24)
+                .padding(SLDesign.space24)
             }
 
             Divider()
@@ -125,6 +110,7 @@ struct PermissionsHelperView: View {
         .frame(minWidth: 460, idealWidth: 620, minHeight: 428, idealHeight: 600)
         .background(Color(nsColor: .windowBackgroundColor))
         .tint(model.accentSwiftUIColor)
+        .accentColor(model.accentSwiftUIColor)
         .onAppear {
             DispatchQueue.main.async {
                 decisionFocus = .primary
@@ -182,30 +168,19 @@ struct PermissionsHelperView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 14) {
-            Image(nsImage: appIcon)
-                .resizable()
-                .frame(width: 52, height: 52)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Get Screenlogger Ready")
-                    .font(.title2.weight(.semibold))
-                Text(headerDetail)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
+        VStack(alignment: .leading, spacing: SLDesign.space8) {
+            Text("Get Screenlogger Ready")
+                .font(SLDesign.titleFont)
+                .accessibilityAddTraits(.isHeader)
+            Text(headerDetail)
+                .font(SLDesign.bodyFont)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private var timedPauseActive: Bool {
         model.recordingPausedUntil.map { $0 > Date() } == true
-    }
-
-    private var showsNextActionGuidance: Bool {
-        !model.permissions.isCaptureReady || model.captureIssue == .startFailed
     }
 
     private var showsOptionalAudioSetup: Bool {
@@ -226,10 +201,10 @@ struct PermissionsHelperView: View {
 
     private var headerDetail: String {
         if model.permissions.missingRequiredPermissions.count == 2 {
-            return "Allow two required macOS permissions, then choose whether capture starts."
+            return "Allow the two required macOS permissions. Then choose whether capture starts."
         }
         if let nextRequiredPermission {
-            return "Allow \(nextRequiredPermission.title), then choose whether capture starts."
+            return "Allow \(nextRequiredPermission.title). Then choose whether capture starts."
         }
         if showsOptionalAudioSetup {
             return "Capture permissions are ready. Audio transcription is optional before you start."
@@ -240,58 +215,34 @@ struct PermissionsHelperView: View {
         if isFirstRunReady {
             return "Your first searchable moment is ready in Library."
         }
-        return "Permissions are ready. You stay in control of when capture is on."
+        return "Permissions are ready. You control when capture is on."
     }
 
     private var currentStateCard: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: currentState.symbol)
-                .font(.title3)
-                .foregroundStyle(currentState.tint)
-                .frame(width: 24)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(currentState.title)
-                    .font(.headline)
-                Text(currentState.detail)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        VStack(alignment: .leading, spacing: SLDesign.space8) {
+            Text(currentState.title)
+                .font(SLDesign.sectionFont)
+            Text(currentState.detail)
+                .font(SLDesign.bodyFont)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(currentState.title)
         .accessibilityValue(currentState.detail)
         .accessibilityIdentifier("setup.current-state")
     }
 
-    private var currentState: (title: String, detail: String, symbol: String, tint: Color) {
-        if nextRequiredPermission == .screenRecording {
-            return (
-                "Screen Recording is off",
-                "Capture is off. Screenlogger cannot save moments until macOS allows Screen Recording.",
-                "exclamationmark.shield",
-                SLDesign.warning
-            )
-        }
-        if nextRequiredPermission == .accessibility {
-            return (
-                "Accessibility is off",
-                "Capture is off because exclusions and app context cannot be applied completely.",
-                "exclamationmark.shield",
-                SLDesign.warning
-            )
+    private var currentState: (title: String, detail: String) {
+        if model.isDatabaseReclamationRunning {
+            let status = model.captureStatusPresentation()
+            return (status.headline, status.detail)
         }
         if model.captureIssue == .startFailed {
             return (
-                "Capture didn't start",
-                "Your existing Library remains available. Choose Start Capture to try again.",
-                "exclamationmark.triangle",
-                SLDesign.warning
+                "Capture did not start",
+                "Your existing Library remains available. Choose Start Capture to try again."
             )
         }
         if isFirstRunWaiting {
@@ -300,63 +251,53 @@ struct PermissionsHelperView: View {
                     ? "Still saving your first moment"
                     : "Saving your first moment",
                 firstRunWaitIsLong
-                    ? "This is taking longer than expected. Capture is still on; you can keep waiting or stop and open Library."
-                    : "Keep this window open while Screenlogger stores and indexes one searchable moment.",
-                "arrow.triangle.2.circlepath",
-                model.accentSwiftUIColor
+                    ? "Screenlogger needs more time. Capture is still on. You can wait or stop capture and open Library."
+                    : "Keep this window open while Screenlogger saves and indexes one searchable moment."
             )
         }
         if isFirstRunReady {
             return (
                 "First moment is searchable",
-                "It is stored in your Library. Capture remains on when you open it.",
-                "checkmark.circle.fill",
-                SLDesign.success
+                "Screenlogger saved it in your Library. Capture remains on when you open it."
             )
         }
         if let until = model.recordingPausedUntil, until > Date() {
             return (
                 "Capture is paused",
-                "It will resume at \(until.formatted(date: .omitted, time: .shortened)), or you can resume now.",
-                "pause.circle.fill",
-                SLDesign.warning
+                "It will resume at \(until.formatted(date: .omitted, time: .shortened)), or you can resume now."
             )
         }
         if model.isRecording {
             return (
                 "Capture is on",
-                "Screenlogger is saving searchable moments on this Mac.",
-                "record.circle.fill",
-                SLDesign.success
+                "Screenlogger is saving searchable moments on this Mac."
             )
         }
         return (
             "Ready to start",
-            "Capture is still off and will not start until you choose Start Capture.",
-            "checkmark.circle.fill",
-            SLDesign.success
+            "Capture is still off and will not start until you choose Start Capture."
         )
     }
 
     private var actionBar: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(actionGuidance.text, systemImage: actionGuidance.symbol)
-                .font(.caption)
+        VStack(alignment: .leading, spacing: SLDesign.space16) {
+            Text(actionGuidance)
+                .font(SLDesign.metadataFont)
                 .foregroundStyle(.secondary)
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel(actionGuidance.text)
+                .accessibilityLabel(actionGuidance)
                 .accessibilityIdentifier("setup.return-guidance")
 
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 10) {
+                HStack(spacing: SLDesign.space8) {
                     if showsRefreshButton {
                         refreshButton
                     }
-                    Spacer(minLength: 12)
+                    Spacer(minLength: SLDesign.space16)
                     decisionButtons
                 }
 
-                VStack(alignment: .trailing, spacing: 10) {
+                VStack(alignment: .trailing, spacing: SLDesign.space8) {
                     decisionButtons
                     if showsRefreshButton {
                         refreshButton
@@ -365,8 +306,8 @@ struct PermissionsHelperView: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.horizontal, SLDesign.space24)
+        .padding(.vertical, SLDesign.space16)
         .background(.bar)
     }
 
@@ -381,45 +322,30 @@ struct PermissionsHelperView: View {
         openedPermission != nil
     }
 
-    private var actionGuidance: (text: String, symbol: String) {
+    private var actionGuidance: String {
         if !model.permissions.isCaptureReady {
-            return (
-                CaptureSetupGuidance.missingPermissionFooter(for: origin),
-                "hand.raised"
-            )
+            return CaptureSetupGuidance.missingPermissionFooter(for: origin)
         }
         if isFirstRunWaiting {
-            return (
-                "Screenlogger will let you continue as soon as the first moment is safely stored.",
-                "internaldrive"
-            )
+            return "Screenlogger will let you continue as soon as the first moment is safely stored."
         }
         if isFirstRunReady {
-            return (
-                "Your first searchable moment is ready. Open Library to see it.",
-                "checkmark.circle"
-            )
+            return "Open Library to see your first searchable moment."
         }
         if model.isRecording {
-            return (
-                "Capture is on. Done returns you to \(origin.returnSurfaceName).",
-                "checkmark.circle"
-            )
+            return "Done returns you to \(origin.returnSurfaceName)."
         }
-        return (
-            CaptureSetupGuidance.readyFooter(for: origin),
-            "hand.tap"
-        )
+        return CaptureSetupGuidance.readyFooter(for: origin)
     }
 
     @ViewBuilder
     private var decisionButtons: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) {
+            HStack(spacing: SLDesign.space8) {
                 decisionButtonContent
             }
 
-            VStack(alignment: .trailing, spacing: 8) {
+            VStack(alignment: .trailing, spacing: SLDesign.space8) {
                 decisionButtonContent
             }
         }
@@ -430,7 +356,7 @@ struct PermissionsHelperView: View {
         if model.permissions.isCaptureReady {
             if isFirstRunWaiting {
                 keepCaptureOffButton
-                HStack(spacing: 7) {
+                HStack(spacing: SLDesign.space8) {
                     ProgressView()
                         .controlSize(.small)
                     Text("Saving first moment...")
@@ -464,6 +390,7 @@ struct PermissionsHelperView: View {
                     )
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(model.isDatabaseReclamationRunning)
                 .keyboardShortcut(.defaultAction)
                 .focused($decisionFocus, equals: .primary)
                 .accessibilityFocused($decisionAccessibilityFocus, equals: .primary)

@@ -20,10 +20,10 @@ final class StatusMenuPresentationTests: XCTestCase {
             at: now
         ) { _ in "10:00 AM" }
 
-        XCTAssertEqual(off.compactLabel, "Capture Off")
-        XCTAssertEqual(off.actionLabel, "Start Capture")
-        XCTAssertEqual(StatusMenuCapturePresentation.statusTitle(off), "Capture Off")
-        XCTAssertFalse(StatusMenuCapturePresentation.statusTitle(off).contains("Start Capture"))
+        XCTAssertEqual(off.phase, .off)
+        XCTAssertEqual(off.primaryAction, .startCapture)
+        XCTAssertEqual(StatusMenuCapturePresentation.statusTitle(off), off.compactLabel)
+        XCTAssertNotEqual(StatusMenuCapturePresentation.statusTitle(off), off.actionLabel)
 
         let setup = CaptureStatusResolver.resolve(
             CaptureStatusInput(
@@ -41,8 +41,7 @@ final class StatusMenuPresentationTests: XCTestCase {
             at: now
         ) { _ in "10:00 AM" }
 
-        XCTAssertEqual(StatusMenuCapturePresentation.statusTitle(setup), "Setup Required")
-        XCTAssertFalse(StatusMenuCapturePresentation.statusTitle(setup).contains(" - "))
+        XCTAssertEqual(StatusMenuCapturePresentation.statusTitle(setup), setup.compactLabel)
     }
 
     func testSupportedAudioControlIsAnIndependentCheckedToggle() {
@@ -58,7 +57,6 @@ final class StatusMenuPresentationTests: XCTestCase {
             hasSelectedSources: true,
             status: active
         )
-        XCTAssertEqual(enabled.title, "Audio Transcription")
         XCTAssertTrue(enabled.isEnabled)
         XCTAssertTrue(enabled.isChecked)
         XCTAssertEqual(enabled.action, .toggle)
@@ -69,7 +67,6 @@ final class StatusMenuPresentationTests: XCTestCase {
             hasSelectedSources: true,
             status: .off
         )
-        XCTAssertEqual(disabled.title, "Audio Transcription")
         XCTAssertTrue(disabled.isEnabled)
         XCTAssertFalse(disabled.isChecked)
         XCTAssertEqual(disabled.action, .toggle)
@@ -83,7 +80,6 @@ final class StatusMenuPresentationTests: XCTestCase {
             status: .off
         )
 
-        XCTAssertEqual(presentation.title, "Choose Audio Transcription Sources...")
         XCTAssertEqual(presentation.action, .openSettings)
         XCTAssertTrue(presentation.isEnabled)
         XCTAssertFalse(presentation.isChecked)
@@ -97,7 +93,6 @@ final class StatusMenuPresentationTests: XCTestCase {
             status: .off
         )
 
-        XCTAssertEqual(presentation.title, "Audio Transcription Requires macOS 26")
         XCTAssertEqual(presentation.action, .none)
         XCTAssertFalse(presentation.isEnabled)
         XCTAssertFalse(presentation.isChecked)
@@ -114,7 +109,13 @@ final class StatusMenuPresentationTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(presentation.title, "Audio Transcription - Needs Attention")
+        let off = AudioTranscriptionMenuPresentation.resolve(
+            isSupported: true,
+            isEnabled: false,
+            hasSelectedSources: true,
+            status: .off
+        )
+        XCTAssertNotEqual(presentation.title, off.title)
         XCTAssertEqual(presentation.action, .toggle)
         XCTAssertTrue(presentation.isChecked)
     }

@@ -72,6 +72,8 @@ private actor AudioTranscriptionPipeline {
     private let failureHandler: @Sendable (TranscriptSource, String) -> Void
     private var sessions: [TranscriptSource: OnDeviceTranscriptionSession] = [:]
     private var failedSources: Set<TranscriptSource> = []
+    private var sessionFinishTask: Task<Void, Never>?
+    private var sessionFinishRevision: UInt64 = 0
     // A stream must prove that its current foreground context is allowed
     // before the first sample reaches an analyzer.
     private var acceptsAudio = false
@@ -132,17 +134,34 @@ private actor AudioTranscriptionPipeline {
     func setAcceptsAudio(_ value: Bool, closeCurrentSegments: Bool) async {
         acceptsAudio = value
         guard closeCurrentSegments else { return }
-        let active = sessions.values
-        sessions.removeAll()
-        for session in active { await session.finish() }
+        await finishCurrentSessions()
     }
 
     func finish() async {
         acceptsAudio = false
         failedSources.removeAll()
+        await finishCurrentSessions()
+    }
+
+    private func finishCurrentSessions() async {
         let active = sessions.values
         sessions.removeAll()
-        for session in active { await session.finish() }
+        let previousFinishTask = sessionFinishTask
+        guard !active.isEmpty else {
+            await previousFinishTask?.value
+            return
+        }
+        sessionFinishRevision &+= 1
+        let revision = sessionFinishRevision
+        // Privacy changes remove sessions from the live map immediately, but
+        // their final transcript writes still belong to this pipeline.
+        let finishTask = Task {
+            await previousFinishTask?.value
+            for session in active { await session.finish() }
+        }
+        sessionFinishTask = finishTask
+        await finishTask.value
+        if sessionFinishRevision == revision { sessionFinishTask = nil }
     }
 }
 
@@ -425,6 +444,8 @@ final class AudioTranscriptionCoordinator {
     private var pipeline: AnyObject?
     private var privacyTask: Task<Void, Never>?
     private var recoveryTask: Task<Void, Never>?
+    private var resourceTeardownTask: Task<Void, Never>?
+    private var resourceTeardownRevision: UInt64 = 0
     private var workspaceActivationObserver: NSObjectProtocol?
     private var workspaceLifecycleObservers: [NSObjectProtocol] = []
     private var generation = UUID()
@@ -497,7 +518,7 @@ final class AudioTranscriptionCoordinator {
             await stopActiveResources(
                 finalStatus: AudioTranscriptionStatus(
                     phase: .capturePaused,
-                    detail: "Audio transcription is paused with capture."
+                    detail: "Audio transcription pauses with capture."
                 )
             )
             return
@@ -658,7 +679,7 @@ final class AudioTranscriptionCoordinator {
     private var displaySleepStatus: AudioTranscriptionStatus {
         AudioTranscriptionStatus(
             phase: .capturePaused,
-            detail: "The display is off. Audio transcription will resume automatically when it wakes."
+            detail: "The display is off. Audio transcription resumes automatically when the display turns on."
         )
     }
 
@@ -677,7 +698,7 @@ final class AudioTranscriptionCoordinator {
         recoverySchedule.reset()
         guard desiredRequest != nil, captureAvailable else { return }
         audioLog.info("display woke; scheduling audio transcription recovery")
-        scheduleRecovery(detail: "Display awake. Reconnecting audio transcription...")
+        scheduleRecovery(detail: "Display on. Reconnecting audio transcription...")
     }
 
     private func handleStartFailure(_ error: Error) async {
@@ -692,7 +713,7 @@ final class AudioTranscriptionCoordinator {
             if displayIsSleeping {
                 status = displaySleepStatus
             } else {
-                scheduleRecovery(detail: "Audio was interrupted. Reconnecting...")
+                scheduleRecovery(detail: "Audio connection interrupted. Reconnecting...")
             }
             return
         }
@@ -722,7 +743,7 @@ final class AudioTranscriptionCoordinator {
             guard let nextDelay = recoverySchedule.nextDelay() else {
                 status = AudioTranscriptionStatus(
                     phase: .failed,
-                    detail: "Audio transcription couldn't reconnect automatically. Choose Try Again."
+                    detail: "Audio transcription could not reconnect automatically. Choose Try Again."
                 )
                 return
             }
@@ -827,16 +848,37 @@ final class AudioTranscriptionCoordinator {
         streamOutput = nil
         streamDelegate = nil
         pipeline = nil
+        guard stoppedStream != nil || stoppedPipeline != nil else {
+            await resourceTeardownTask?.value
+            return
+        }
 
-        if let stoppedStream {
-            try? await stoppedStream.stopCapture()
+        await finishResources {
+            if let stoppedStream {
+                try? await stoppedStream.stopCapture()
+            }
+            if #available(macOS 26.0, *),
+                let activePipeline = stoppedPipeline as? AudioTranscriptionPipeline
+            {
+                await activePipeline.finish()
+            }
+            withExtendedLifetime((stoppedOutput, stoppedDelegate)) {}
         }
-        if #available(macOS 26.0, *),
-            let activePipeline = stoppedPipeline as? AudioTranscriptionPipeline
-        {
-            await activePipeline.finish()
+    }
+
+    /// A later stop must await resources already detached by an earlier stop.
+    /// Keeping this boundary injectable permits tests without opening SCStream.
+    func finishResources(_ operation: @escaping @MainActor () async -> Void) async {
+        let previousTeardownTask = resourceTeardownTask
+        resourceTeardownRevision &+= 1
+        let revision = resourceTeardownRevision
+        let teardown = Task {
+            await previousTeardownTask?.value
+            await operation()
         }
-        withExtendedLifetime((stoppedOutput, stoppedDelegate)) {}
+        resourceTeardownTask = teardown
+        await teardown.value
+        if resourceTeardownRevision == revision { resourceTeardownTask = nil }
     }
 
     @available(macOS 26.0, *)

@@ -5,8 +5,6 @@ import SwiftUI
 /// State views provide the outcome and actions while this shell keeps their
 /// hierarchy, readable width, and contrast consistent.
 struct TimelineStatePanel<Actions: View>: View {
-    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
-
     let symbol: String
     let symbolColor: Color
     let title: String
@@ -28,54 +26,48 @@ struct TimelineStatePanel<Actions: View>: View {
     }
 
     var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: symbol)
-                .font(.system(size: 30, weight: .regular))
-                .foregroundStyle(symbolColor)
-                .frame(width: 36, height: 36)
-                .accessibilityHidden(true)
-
-            VStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: SLDesign.space16) {
+            Label {
                 Text(title)
-                    .font(.title2.weight(.semibold))
-                Text(detail)
-                    .font(.callout)
-                    .foregroundStyle(.white.opacity(secondaryTextOpacity))
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 440)
+                    .font(SLDesign.titleFont)
+            } icon: {
+                Image(systemName: symbol)
+                    .font(.title3)
+                    .foregroundStyle(symbolColor)
+                    .accessibilityHidden(true)
             }
+
+            Text(detail)
+                .font(SLDesign.bodyFont)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             actions
         }
-        .padding(28)
-        .frame(maxWidth: 520)
-        .foregroundStyle(.white.opacity(0.92))
+        .padding(SLDesign.space24)
+        .frame(maxWidth: 480, alignment: .leading)
+        .foregroundStyle(.primary)
         .accessibilityElement(children: .contain)
     }
 
-    private var secondaryTextOpacity: Double {
-        colorSchemeContrast == .increased ? 0.94 : 0.74
-    }
 }
 
 /// Primary Timeline state surfaces used only when there is no usable moment to
 /// keep on stage. Refresh failures with existing content stay compact banners.
 struct TimelineLoadingStateView: View {
-    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
-
     var body: some View {
         ZStack {
-            Color.black
-            VStack(spacing: 12) {
+            Color(nsColor: .windowBackgroundColor)
+            HStack(spacing: SLDesign.space16) {
                 ProgressView()
-                    .controlSize(.regular)
-                    .tint(.white)
-                Text("Loading Timeline...")
-                    .font(.headline)
-                    .foregroundStyle(.white.opacity(0.9))
-                Text("Opening your most recent captured moments.")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(secondaryTextOpacity))
+                    .controlSize(.small)
+                VStack(alignment: .leading, spacing: SLDesign.space4) {
+                    Text("Loading Timeline...")
+                        .font(SLDesign.sectionFont)
+                    Text("Opening your most recent captured moments.")
+                        .font(SLDesign.metadataFont)
+                        .foregroundStyle(.secondary)
+                }
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Loading Timeline")
@@ -83,9 +75,6 @@ struct TimelineLoadingStateView: View {
         }
     }
 
-    private var secondaryTextOpacity: Double {
-        colorSchemeContrast == .increased ? 0.92 : 0.72
-    }
 }
 
 struct TimelineFailureStateView: View {
@@ -95,14 +84,14 @@ struct TimelineFailureStateView: View {
 
     var body: some View {
         ZStack {
-            Color.black
+            Color(nsColor: .windowBackgroundColor)
             TimelineStatePanel(
                 symbol: "exclamationmark.triangle",
                 symbolColor: SLDesign.warning,
                 title: issue.title,
                 detail: issue.message
             ) {
-                HStack(spacing: 12) {
+                HStack(spacing: SLDesign.space8) {
                     Button(action: onRetry) {
                         Label("Try Again", systemImage: "arrow.clockwise")
                     }
@@ -128,21 +117,20 @@ struct TimelineNavigationEmptyStateView: View {
         case selectedSessionUnavailable
     }
 
-    @EnvironmentObject private var model: AppModel
     let context: Context
     let onReturnToLibrary: () -> Void
     let onShowRecent: () -> Void
 
     var body: some View {
         ZStack {
-            Color.black
+            Color(nsColor: .windowBackgroundColor)
             TimelineStatePanel(
                 symbol: symbol,
-                symbolColor: model.accentSwiftUIColor,
+                symbolColor: .secondary,
                 title: title,
                 detail: detail
             ) {
-                HStack(spacing: 12) {
+                HStack(spacing: SLDesign.space8) {
                     Button(action: primaryAction) {
                         Label(primaryTitle, systemImage: primarySymbol)
                     }
@@ -171,7 +159,7 @@ struct TimelineNavigationEmptyStateView: View {
     private var detail: String {
         switch context {
         case .libraryResultUnavailable:
-            "It may have been removed by your storage settings. Your Library search and filters are still waiting for you."
+            "Screenlogger may have removed it because of your storage settings. Your Library search and filters are unchanged."
         case .selectedSessionUnavailable:
             "This recorded session no longer contains moments. You can return to your recent Timeline."
         }

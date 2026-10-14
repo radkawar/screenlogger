@@ -34,15 +34,15 @@ extension StoreStartupError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .databaseUnavailable:
-            return "Screenlogger couldn't open your library database. Capture has not started."
+            return "Screenlogger could not open your Library database. Capture has not started."
         case .integrityCheckFailed:
-            return "Your library database did not pass its integrity check. Capture has not started."
+            return "Your Library database did not pass its integrity check. Capture has not started."
         case .schemaMigrationFailed:
-            return "Screenlogger couldn't safely update your library. Capture has not started."
+            return "Screenlogger could not safely update your Library. Capture has not started."
         case .schemaValidationFailed:
-            return "Your library database has inconsistent relationships. Capture has not started."
+            return "Your Library database has inconsistent relationships. Capture has not started."
         case .orphanRecoveryFailed:
-            return "Screenlogger couldn't finish recovering your local library. Capture has not started."
+            return "Screenlogger could not complete recovery of your local Library. Capture has not started."
         }
     }
 }

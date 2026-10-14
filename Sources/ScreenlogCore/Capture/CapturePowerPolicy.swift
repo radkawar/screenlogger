@@ -80,9 +80,9 @@ public enum CaptureEnergySaverReason: String, CaseIterable, Codable, Sendable, E
         case .battery:
             return "Screenlogger captures less often and at a smaller size while this Mac runs on battery."
         case .lowPowerMode:
-            return "Low Power Mode is on, so Screenlogger captures less often and postpones background compression."
+            return "Low Power Mode is on. Screenlogger captures less often and delays background compression."
         case .thermalPressure:
-            return "This Mac is running hot. Screenlogger captures less often until it cools down."
+            return "This Mac is hot. Screenlogger captures less often until its temperature decreases."
         }
     }
 

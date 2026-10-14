@@ -3,7 +3,7 @@ import ScreenlogCore
 import SwiftUI
 
 extension HistoryPane {
-    /// Full-bleed capture (edge to edge, no card chrome).
+    /// Image-led stage, with pan and OCR projection sharing the same viewport.
     var memoryStage: some View {
         stageWithDisplayAccessibility
             .accessibilityAction(named: Text(model.isReplaying ? "Pause replay" : "Play through moments")) {
@@ -22,10 +22,9 @@ extension HistoryPane {
     private var stageCanvas: some View {
         GeometryReader { geometry in
             ZStack {
-                Color.black
+                Color(nsColor: .underPageBackgroundColor)
                 if model.selectedFrameExtracting {
                     ProgressView()
-                        .tint(.white)
                         .accessibilityLabel("Loading captured moment")
                 } else if let img = model.selectedFrameImage {
                     let sourceSize = stageSourceSize(for: img)
@@ -44,27 +43,26 @@ extension HistoryPane {
                     frame.imagePath == nil,
                     frame.videoID == nil
                 {
-                    VStack(spacing: 10) {
-                        Image(systemName: "photo.badge.clock")
-                            .font(.system(size: 34, weight: .light))
-                            .foregroundStyle(.white.opacity(0.38))
+                    VStack(spacing: SLDesign.space8) {
+                        Image(systemName: "photo")
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
                             .accessibilityHidden(true)
                         Text("Preview no longer available")
-                            .font(.headline)
-                            .foregroundStyle(.white.opacity(0.88))
-                        Text("Screenlogger kept the searchable text, app, and time for this moment.")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(secondaryTextOpacity))
+                            .font(SLDesign.sectionFont)
+                        Text("Searchable text, app, and time are still available.")
+                            .font(SLDesign.metadataFont)
+                            .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                     }
-                    .padding(24)
+                    .padding(SLDesign.space24)
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel("Preview no longer available. Searchable text, app, and time remain.")
                     .accessibilityIdentifier("timeline.preview.unavailable")
-                } else {
-                    Image(systemName: "photo")
-                        .font(.system(size: 40, weight: .ultraLight))
-                        .foregroundStyle(.white.opacity(0.25))
+                } else if model.selectedFramePreviewIssue == nil {
+                    Text("Select a moment to view its screenshot")
+                        .font(SLDesign.bodyFont)
+                        .foregroundStyle(.secondary)
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
@@ -75,6 +73,7 @@ extension HistoryPane {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: SLDesign.thumbRadius, style: .continuous))
     }
 
     private var stageWithContextActions: some View {
@@ -166,23 +165,18 @@ extension HistoryPane {
     }
 
     func previewIssueView(_ issue: TimelinePreviewIssue) -> some View {
-        VStack(spacing: 14) {
-            Image(systemName: issue.systemImage)
-                .font(.system(size: 34, weight: .light))
-                .foregroundStyle(.white.opacity(0.72))
-                .accessibilityHidden(true)
-
-            VStack(spacing: 6) {
-                Text(issue.title)
-                    .font(.headline)
+        VStack(spacing: SLDesign.space16) {
+            VStack(spacing: SLDesign.space8) {
+                Label(issue.title, systemImage: issue.systemImage)
+                    .font(SLDesign.sectionFont)
                 Text(issue.message)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(secondaryTextOpacity))
+                    .font(SLDesign.bodyFont)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 360)
             }
 
-            HStack(spacing: 10) {
+            HStack(spacing: SLDesign.space8) {
                 if model.canCopySelectedOCRText {
                     Button("Copy Text") {
                         model.copySelectedOCRText()
@@ -211,20 +205,15 @@ extension HistoryPane {
                 }
             }
         }
-        .padding(22)
-        .foregroundStyle(.white.opacity(0.9))
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.white.opacity(controlStrokeOpacity), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.35), radius: 18, y: 6)
+        .padding(SLDesign.space24)
+        .foregroundStyle(.primary)
+        .background(Color(nsColor: .underPageBackgroundColor))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("timeline.preview.issue")
         .accessibilitySortPriority(2)
     }
 
-    // Replay and inspection share the same full-bleed memory stage.
+    // Replay and inspection share the same image stage.
 
     /// Frame image with OCR boxes; search hits get stronger highlights on matching tokens.
     @ViewBuilder
@@ -343,9 +332,9 @@ extension HistoryPane {
 
     private var stageAccessibilityHint: String {
         if model.stageZoom > 1 {
-            return "Drag to pan the zoomed moment. Use Left and Right Arrow to move between moments, or Command-0 to reset zoom"
+            return "Drag to pan the zoomed moment. Use Left and Right Arrow to move between moments. Use Command-0 to reset zoom."
         }
-        return "Use Left and Right Arrow to move between moments, or Space to play and pause"
+        return "Use Left and Right Arrow to move between moments. Use Space to play or pause."
     }
 
     private var stageAccessibilityValue: String {

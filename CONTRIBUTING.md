@@ -1,17 +1,15 @@
 # Contributing
 
-Screenlogger is a native macOS application written in Swift. Contributions
-should preserve its privacy boundary, predictable native behavior, and tested
-release contracts.
+Screenlogger is a native macOS application in Swift.
+Changes must preserve privacy, predictable native behavior, and tested release requirements.
 
 ## Before making a change
 
 - Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-- Follow [docs/styling.md](docs/styling.md) for interface work.
+- Follow [docs/styling.md](docs/styling.md) for interface work and user-facing language.
 - Add or update tests for behavior changes.
 - Do not read, modify, or commit a real Screenlogger Library.
-- Do not add generated output, local paths, credentials, or borrowed product
-  language.
+- Do not add generated output, local paths, credentials, or text from other products.
 
 ## Local checks
 
@@ -25,18 +23,18 @@ git diff --exit-code -- Screenlog.xcodeproj/project.pbxproj
 Scripts/build.sh
 ```
 
-Run `Scripts/test-ui.sh` when changing navigation, accessibility labels,
-permission presentation, Library, Timeline, or Settings. Run
-`Scripts/measure-performance.sh` when changing search, media decoding, Timeline
-loading, capture cadence, or storage queries.
+Run `Scripts/test-ui.sh` after changes to navigation, accessibility labels,
+permission presentation, Library, Timeline, or Settings.
+Run `Scripts/measure-performance.sh` after changes to search, media decoding,
+Timeline loading, capture intervals, or storage queries.
 
 ## Pull requests
 
-Explain the user-visible outcome, privacy impact, failure behavior, and tests.
-Keep changes focused. Do not mix refactoring, generated project updates, and
-unrelated product changes without a clear reason.
+Describe the user-visible result, privacy effects, failure behavior, and tests.
+Keep changes related to one purpose.
+Do not combine unrelated changes without a clear reason.
 
 ## Releases
 
-Only maintainers create version tags and publish artifacts. The release process
-is documented in [docs/RELEASING.md](docs/RELEASING.md).
+Only maintainers create version tags and publish artifacts.
+Follow [docs/RELEASING.md](docs/RELEASING.md) for releases.

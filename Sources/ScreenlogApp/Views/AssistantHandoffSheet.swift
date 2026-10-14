@@ -28,9 +28,9 @@ struct AssistantHandoffSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-                .padding(.horizontal, 20)
-                .padding(.top, 20)
-                .padding(.bottom, 16)
+                .padding(.horizontal, SLDesign.space24)
+                .padding(.top, SLDesign.space24)
+                .padding(.bottom, SLDesign.space16)
 
             Divider()
 
@@ -41,10 +41,12 @@ struct AssistantHandoffSheet: View {
             Divider()
 
             footer
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
+                .padding(.horizontal, SLDesign.space24)
+                .padding(.vertical, SLDesign.space16)
         }
         .frame(minWidth: 560, idealWidth: 620)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .tint(model.accentSwiftUIColor)
         .onChange(of: model.libraryAssistantRoutingPreference) { _, preference in
             if case .preferred(let target) = preference,
                 request.destinations.contains(where: { $0.target == target })
@@ -62,10 +64,10 @@ struct AssistantHandoffSheet: View {
     private var sheetContent: some View {
         if request.destinations.isEmpty {
             unavailableContent
-                .padding(20)
+                .padding(SLDesign.space24)
         } else {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: SLDesign.space24) {
                     if case .preferredUnavailable(let preferred, _) = request.decision {
                         preferredUnavailableNotice(preferred)
                     }
@@ -78,14 +80,14 @@ struct AssistantHandoffSheet: View {
                             launchError.localizedDescription,
                             systemImage: "exclamationmark.triangle.fill"
                         )
-                        .font(.caption)
+                        .font(SLDesign.metadataFont)
                         .foregroundStyle(SLDesign.warning)
                         .accessibilityIdentifier("library.assistant.launch-error")
                     }
 
                     routingPreference
                 }
-                .padding(20)
+                .padding(SLDesign.space24)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .accessibilityIdentifier("library.assistant.details")
@@ -113,44 +115,40 @@ struct AssistantHandoffSheet: View {
     }
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "arrow.up.forward.app")
-                .font(.system(size: 24, weight: .medium))
+        VStack(alignment: .leading, spacing: SLDesign.space8) {
+            Text("Ask an Assistant")
+                .font(SLDesign.titleFont)
+                .accessibilityAddTraits(.isHeader)
+            Text("Choose where to continue your search.")
+                .font(SLDesign.bodyFont)
                 .foregroundStyle(.secondary)
-                .frame(width: 32)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Ask an Assistant")
-                    .font(.title2.weight(.semibold))
-                Text("Choose where to continue your search.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("library.assistant.sheet")
     }
 
     private var unavailableContent: some View {
-        ContentUnavailableView {
-            Label("No Assistant Connection Available", systemImage: "puzzlepiece.extension")
+        VStack(alignment: .leading, spacing: SLDesign.space16) {
+            Text("No Assistant Connection Available")
+                .font(SLDesign.sectionFont)
                 .accessibilityIdentifier("library.assistant.unavailable")
-        } description: {
             Text(
-                "Install a connection for an assistant on this Mac and complete Command Setup before using "
+                "Install an assistant connection on this Mac. Complete Command Setup before you use "
                     + model.keyboardShortcutAccessibilityLabel(for: .askAssistant)
                     + "."
             )
-        } actions: {
+            .font(SLDesign.bodyFont)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
             Button("Open Assistant Settings") {
                 openAssistantSettings()
             }
             .buttonStyle(.borderedProminent)
+            .keyboardShortcut(.defaultAction)
             .accessibilityIdentifier("library.assistant.open-settings")
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func preferredUnavailableNotice(
@@ -165,7 +163,7 @@ struct AssistantHandoffSheet: View {
             Image(systemName: "exclamationmark.circle.fill")
                 .foregroundStyle(SLDesign.warning)
         }
-        .font(.callout)
+        .font(SLDesign.bodyFont)
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Preferred assistant unavailable")
@@ -174,9 +172,9 @@ struct AssistantHandoffSheet: View {
 
     @ViewBuilder
     private var destinationChooser: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SLDesign.space8) {
             Text(shouldChooseDestination ? "Choose an assistant" : "Assistant")
-                .font(.headline)
+                .font(SLDesign.sectionFont)
                 .accessibilityAddTraits(.isHeader)
 
             ForEach(request.destinations) { destination in
@@ -184,19 +182,19 @@ struct AssistantHandoffSheet: View {
                     selectedTarget = destination.target
                     launchError = nil
                 } label: {
-                    HStack(spacing: 11) {
+                    HStack(spacing: SLDesign.space8) {
                         AssistantIntegrationIcon(
                             target: destination.target,
                             applicationURL: destination.applicationURL
                         )
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: SLDesign.space4) {
                             Text(destination.target.label)
-                                .font(.body.weight(.medium))
+                                .font(SLDesign.bodyFont.weight(.medium))
                             Text(deliveryLabel(destination.delivery))
-                                .font(.caption)
+                                .font(SLDesign.metadataFont)
                                 .foregroundStyle(.secondary)
                         }
-                        Spacer(minLength: 8)
+                        Spacer(minLength: SLDesign.space8)
                         Image(
                             systemName: selectedTarget == destination.target
                                 ? "checkmark.circle.fill"
@@ -207,23 +205,14 @@ struct AssistantHandoffSheet: View {
                         )
                         .accessibilityHidden(true)
                     }
-                    .padding(9)
+                    .padding(SLDesign.space8)
                     .contentShape(Rectangle())
                     .background(
                         selectedTarget == destination.target
                             ? Color.accentColor.opacity(0.10)
-                            : Color.primary.opacity(0.035),
-                        in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            : Color.clear,
+                        in: RoundedRectangle(cornerRadius: SLDesign.thumbRadius)
                     )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .strokeBorder(
-                                selectedTarget == destination.target
-                                    ? Color.accentColor.opacity(0.45)
-                                    : Color(nsColor: .separatorColor).opacity(0.55),
-                                lineWidth: 1
-                            )
-                    }
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(destination.target.label)
@@ -240,10 +229,10 @@ struct AssistantHandoffSheet: View {
 
     private var privacyDisclosure: some View {
         let message =
-            "Screenlogger shares only your search words and visible filters with the assistant you choose. Results, captured text, and screenshots are never included."
+            "Screenlogger shares only your search words and visible filters with the assistant you choose. Screenlogger never includes results, captured text, or screenshots."
 
         return Label(message, systemImage: "lock")
-            .font(.caption)
+            .font(SLDesign.metadataFont)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityElement(children: .ignore)
@@ -268,6 +257,7 @@ struct AssistantHandoffSheet: View {
         .accessibilityLabel("Next time")
         .accessibilityValue(routingPreferenceAccessibilityValue)
         .accessibilityHint("Controls how Screenlogger selects an assistant for future handoffs")
+        .accessibilityIdentifier("library.assistant.routing-preference")
     }
 
     private var routingPreferenceAccessibilityValue: String {
@@ -289,7 +279,7 @@ struct AssistantHandoffSheet: View {
                 decisionButtons
             }
 
-            VStack(alignment: .trailing, spacing: 10) {
+            VStack(alignment: .trailing, spacing: SLDesign.space8) {
                 decisionButtons
                 settingsButton
             }
@@ -309,7 +299,7 @@ struct AssistantHandoffSheet: View {
     }
 
     private var decisionButtons: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: SLDesign.space8) {
             Button("Cancel") {
                 dismiss()
             }
@@ -360,7 +350,7 @@ struct AssistantHandoffSheet: View {
     ) -> String {
         switch delivery {
         case .terminalCommand(.claude):
-            return "Opens in Terminal; may ask to trust the handoff workspace once"
+            return "Opens in Terminal. Claude can ask you to trust the handoff workspace once."
         case .terminalCommand(.openClaw): return "Runs one turn in Terminal"
         case .terminalCommand: return "Opens in Terminal"
         case .claudeCodePrefill: return "Opens with the prompt ready"

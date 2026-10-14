@@ -1,7 +1,6 @@
 import Foundation
-import XCTest
-
 @testable import ScreenlogCore
+import XCTest
 
 final class KeyboardShortcutStoreTests: XCTestCase {
     private var defaults: UserDefaults!
@@ -21,16 +20,49 @@ final class KeyboardShortcutStoreTests: XCTestCase {
         super.tearDown()
     }
 
-    func testLibraryFindAndSearchTitlesStateAVisibleDifference() {
-        let find = KeyboardShortcutRegistry.standard.definition(for: .findLibrary)
-        let search = KeyboardShortcutRegistry.standard.definition(for: .searchLibrary)
+    func testNumberedNavigationDefaultsAreAppWideAndDistinct() {
+        let store = KeyboardShortcutStore(defaults: defaults)
+        for (action, key) in [
+            (KeyboardShortcutActionID.showLibrary, Character("1")),
+            (.showSessions, "2"),
+            (.showTimeline, "3"),
+        ] {
+            XCTAssertEqual(
+                store.binding(for: action),
+                KeyboardShortcutBinding(key: .character(key), modifiers: .command)
+            )
+            XCTAssertEqual(store.registry.definition(for: action)?.scope, .application)
+        }
+        XCTAssertTrue(store.allConflicts().isEmpty)
+    }
 
-        XCTAssertEqual(find?.title, "Find in Library")
-        XCTAssertEqual(find?.subtitle, "Selects or replaces the current query")
-        XCTAssertEqual(search?.title, "Search Library")
-        XCTAssertEqual(search?.subtitle, "Opens Library")
-        XCTAssertNotEqual(find?.title, search?.title)
-        XCTAssertNotEqual(find?.subtitle, search?.subtitle)
+    func testExistingOverridesSurviveNewNavigationDefaults() throws {
+        let commandTwo = KeyboardShortcutBinding(key: .character("2"), modifiers: .command)
+        let commandThree = KeyboardShortcutBinding(key: .character("3"), modifiers: .command)
+        try persistCurrentDocument([
+            (KeyboardShortcutActionID.showTimeline.rawValue, commandTwo),
+            (KeyboardShortcutActionID.showLibrary.rawValue, commandThree),
+            (KeyboardShortcutActionID.timelineToggleReplay.rawValue, nil),
+        ])
+
+        let store = KeyboardShortcutStore(defaults: defaults)
+        XCTAssertEqual(store.persistenceStatus, .loaded(version: 1))
+        XCTAssertEqual(store.binding(for: .showTimeline), commandTwo)
+        XCTAssertEqual(store.binding(for: .showLibrary), commandThree)
+        XCTAssertNil(store.binding(for: .showSessions))
+        XCTAssertNil(store.binding(for: .timelineToggleReplay))
+        XCTAssertTrue(store.allConflicts().isEmpty)
+
+        // A later customization must persist the displaced default as disabled.
+        try store.setBinding(nil, for: .askAssistant)
+        let restored = KeyboardShortcutStore(defaults: defaults)
+        XCTAssertEqual(restored.binding(for: .showTimeline), commandTwo)
+        XCTAssertEqual(restored.binding(for: .showLibrary), commandThree)
+        XCTAssertNil(restored.binding(for: .showSessions))
+        XCTAssertTrue(restored.allConflicts().isEmpty)
+        restored.resetToDefaults()
+        XCTAssertEqual(restored.binding(for: .showSessions), commandTwo)
+        XCTAssertEqual(restored.binding(for: .showTimeline), commandThree)
     }
 
     func testStandardRegistryCoversEveryActionAndHasNoConflicts() {
@@ -382,22 +414,29 @@ final class KeyboardShortcutStoreTests: XCTestCase {
         XCTAssertEqual(store.binding(for: .timelineFilter), custom)
     }
 
-    func testPersistedConflictsFailClosedToRegistryDefaults() throws {
-        let showTimeline = try XCTUnwrap(
-            KeyboardShortcutRegistry.standard.definition(for: .showTimeline)?.defaultBinding
-        )
+    func testCustomBindingWinsOverReassignedTimelineDefault() throws {
+        let commandThree = KeyboardShortcutBinding(key: .character("3"), modifiers: .command)
         try persistCurrentDocument([
-            (KeyboardShortcutActionID.showLibrary.rawValue, showTimeline)
+            (KeyboardShortcutActionID.showLibrary.rawValue, commandThree)
         ])
 
         let store = KeyboardShortcutStore(defaults: defaults)
 
+        XCTAssertEqual(store.persistenceStatus, .loaded(version: 1))
+        XCTAssertTrue(store.allConflicts().isEmpty)
+        XCTAssertEqual(store.binding(for: .showLibrary), commandThree)
+        XCTAssertNil(store.binding(for: .showTimeline))
+    }
+
+    func testConflictingExplicitOverridesStillFailClosed() throws {
+        let custom = KeyboardShortcutBinding(key: .character("g"), modifiers: .command)
+        try persistCurrentDocument([
+            (KeyboardShortcutActionID.showLibrary.rawValue, custom),
+            (KeyboardShortcutActionID.showTimeline.rawValue, custom),
+        ])
+        let store = KeyboardShortcutStore(defaults: defaults)
         XCTAssertEqual(store.persistenceStatus, .corrupt)
         XCTAssertTrue(store.allConflicts().isEmpty)
-        XCTAssertEqual(
-            store.binding(for: .showLibrary),
-            KeyboardShortcutRegistry.standard.definition(for: .showLibrary)?.defaultBinding
-        )
     }
 
     func testRegistryRejectsStructurallyInvalidDefault() {

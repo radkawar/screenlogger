@@ -1,7 +1,6 @@
 import Foundation
-import XCTest
-
 @testable import ScreenlogCore
+import XCTest
 
 final class IPCRequestValidationTests: XCTestCase {
     func testResultLimitsRejectZeroNegativeAndExcessiveValues() throws {
@@ -25,6 +24,25 @@ final class IPCRequestValidationTests: XCTestCase {
                 outPath: String(repeating: "\u{E9}", count: 2_049)
             ).validate()
         )
+    }
+
+    func testExportDestinationsRejectAmbiguousAndNULPaths() throws {
+        for path in ["capture.heic", "../capture.heic", "/tmp/capture\u{0}.heic"] {
+            XCTAssertThrowsError(
+                try IPCRequest(cmd: .extractImage, frameID: 1, outPath: path).validate()
+            )
+        }
+        for path in ["", "/tmp/capture.heic", "/tmp/captures/"] {
+            XCTAssertNoThrow(
+                try IPCRequest(cmd: .extractImage, frameID: 1, outPath: path).validate()
+            )
+        }
+    }
+
+    func testFrameAtRequiresTimestampWithoutRejectingEpochZero() throws {
+        XCTAssertThrowsError(try IPCRequest(cmd: .frameAt).validate())
+        XCTAssertNoThrow(try IPCRequest(cmd: .frameAt, timestampMs: 0).validate())
+        XCTAssertNoThrow(try IPCRequest(cmd: .frameAt, timestampMs: -1).validate())
     }
 
     func testFrameCommandsRequirePositiveIdentifiers() throws {

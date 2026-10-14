@@ -157,7 +157,7 @@ struct ExcludedWebsitesSettingsContent: View {
             .textFieldStyle(.roundedBorder)
             .onSubmit(addWebsiteFromEntry)
             .accessibilityLabel("Website to exclude")
-            .accessibilityHint("Enter a website, then choose Exclude Website")
+            .accessibilityHint("Enter a website. Then choose Exclude Website.")
             // Keep the established identifier for routing and UI automation.
             .accessibilityIdentifier("exclusions.websites.search")
     }
@@ -205,7 +205,8 @@ struct ExcludedWebsitesSettingsContent: View {
                     ExclusionToggleRow(
                         icon: "eyeglasses",
                         title: "Private Browsing Windows",
-                        detail: "Skip Safari Private, Chrome Incognito, Edge InPrivate, and similar windows when they can be identified.",
+                        detail:
+                            "Skip Safari Private, Chrome Incognito, Edge InPrivate, and similar windows when Screenlogger can identify them.",
                         isOn: model.excludePrivateTabs,
                         policy: privateBrowsingPolicy,
                         outcomeIdentifier: "exclusions.websites.outcome.private-browsing"
@@ -322,9 +323,8 @@ struct ExcludedWebsitesSettingsContent: View {
                             .toggleStyle(.checkbox)
                             .accessibilityLabel("Exclude \(domain)")
                             .accessibilityHint(policy.accessibilityHint)
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
+                        }.padding(.horizontal, SLDesign.space16)
+                            .padding(.vertical, 10)
                         if domain != displayedExcludedDomains.last {
                             Divider().padding(.leading, SettingsChrome.rowSeparatorInset)
                         }
@@ -413,11 +413,10 @@ struct ExcludedWebsitesSettingsContent: View {
                 SettingsAccessibilityValue.onOff(policy.outcome == .neverCapture)
             )
             .accessibilityHint(policy.accessibilityHint)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("exclusions.websites.recent.domain.\(domain)")
+        }.padding(.horizontal, SLDesign.space16)
+            .padding(.vertical, 10)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("exclusions.websites.recent.domain.\(domain)")
     }
 
     private func catalogExpansionButton(remaining: Int, action: @escaping () -> Void) -> some View {
@@ -429,10 +428,9 @@ struct ExcludedWebsitesSettingsContent: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .contentShape(Rectangle())
+            }.padding(.horizontal, SLDesign.space16)
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityHint("Shows the remaining websites in this list")
@@ -510,7 +508,7 @@ struct ExcludedWebsitesSettingsContent: View {
     private var accessibilityDetail: String {
         model.pauseWhenBrowserAddressUnavailable
             ? unknownAddressPolicy.detail
-            : "Without access, Screenlogger may not know which website is open. Turn on strict protection below or exclude the entire browser when you need a guaranteed block."
+            : "Without access, Screenlogger may not know which website is open. Turn on strict protection below or exclude the entire browser to prevent capture."
     }
 
     private func isCoveredByCategory(_ domain: String) -> Bool {

@@ -2,10 +2,9 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import SQLite3
+@testable import ScreenlogCore
 import UniformTypeIdentifiers
 import XCTest
-
-@testable import ScreenlogCore
 
 final class StoreFTSTests: XCTestCase {
     var tempRoot: URL!
@@ -21,6 +20,17 @@ final class StoreFTSTests: XCTestCase {
     override func tearDownWithError() throws {
         store = nil
         try? FileManager.default.removeItem(at: tempRoot)
+    }
+    func testInvalidStructuredFilterDoesNotReturnUnfilteredHistory() throws {
+        let id = try store.insertSeedFrame(
+            timestampMs: 1_700_000_000_000, foreground: "invoice validation fixture"
+        )
+        XCTAssertThrowsError(try store.searchLibrary(query: "invoice date:2026-02-30")) { error in
+            guard case SearchQueryValidationError.invalid = error else {
+                return XCTFail("Expected a query validation error, got \(error)")
+            }
+        }
+        XCTAssertEqual(try store.searchLibrary(query: "invoice").map(\.frameID), [id])
     }
 
     func testSchemaCreatesAndStatsEmpty() throws {

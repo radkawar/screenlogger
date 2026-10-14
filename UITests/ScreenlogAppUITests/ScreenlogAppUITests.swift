@@ -1,4 +1,5 @@
 import AppKit
+import SQLite3
 import XCTest
 
 /// High-value UI contracts for Screenlogger's routed macOS surfaces.
@@ -596,7 +597,7 @@ final class ScreenlogAppUITests: XCTestCase {
         assertElement(identifier: "library.state.error", in: app)
         let searchError = assertElement(identifier: "library.state.error.message", in: app)
         let searchErrorText = accessibleText(of: searchError)
-        XCTAssertTrue(searchErrorText.contains("Couldn't search your Library"))
+        XCTAssertTrue(searchErrorText.contains("Could not search your Library"))
         XCTAssertTrue(
             searchErrorText.contains(
                 "Your saved history is still on this Mac. Try the search again."
@@ -1095,6 +1096,58 @@ final class ScreenlogAppUITests: XCTestCase {
         )
     }
 
+    func testAutomaticDatabaseMigrationStartsWithoutSettingsAndPreservesCaptureChoice() throws {
+        let app = try launch(route: "--open-library", fixture: true, legacyDatabase: true)
+        let root = try XCTUnwrap(dataDirectory)
+        let migrated = NSPredicate { _, _ in
+            var database: OpaquePointer?
+            guard
+                sqlite3_open_v2(
+                    root.appendingPathComponent("db.sqlite3").path,
+                    &database, SQLITE_OPEN_READONLY, nil
+                ) == SQLITE_OK
+            else {
+                sqlite3_close(database)
+                return false
+            }
+            defer { sqlite3_close(database) }
+            var statement: OpaquePointer?
+            let sql = """
+                SELECT completed FROM once_tasks
+                WHERE task_id = 'ax-payload-lzfse-v1' AND completed = 1
+                AND EXISTS (SELECT 1 FROM ax_node WHERE hex(substr(payload, 1, 5)) = '534C415801')
+                """
+            guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return false }
+            defer { sqlite3_finalize(statement) }
+            return sqlite3_step(statement) == SQLITE_ROW
+        }
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: migrated, object: nil)], timeout: 15),
+            .completed
+        )
+        // The completion marker must appear before the test opens Settings.
+        assertElement(identifier: "navigation.library.settings", in: app).click()
+        assertWindow("Settings", in: app)
+        let captureState = assertElement(identifier: "settings.sidebar.capture-state", in: app)
+        XCTAssertEqual(captureState.label, "Capture Off")
+        assertElement(identifier: "settings.sidebar.storage", in: app).click()
+        assertElementDoesNotExist(
+            identifier: "settings.storage.optimize-database", in: app,
+            description: "manual database optimization"
+        )
+        XCTAssertEqual(captureState.label, "Capture Off")
+        assertElement(identifier: "navigation.settings.library", in: app).click()
+        let search = assertElement(identifier: "library.search.field", in: app)
+        search.click()
+        search.typeText("navigation")
+        let result = assertElement(identifier: "library.result.6", in: app)
+        result.doubleClick()
+        assertWindow("Timeline", in: app)
+        assertElement(identifier: "timeline.moment", in: app)
+        app.typeKey("q", modifierFlags: [.command])
+        XCTAssertTrue(app.wait(for: .notRunning, timeout: Self.routeTimeout))
+    }
+
     func testSettingsCaptureStateRoutesMissingPermissionToSetup() throws {
         let app = try launch(
             route: "--open-library",
@@ -1209,7 +1262,7 @@ final class ScreenlogAppUITests: XCTestCase {
         assertWindow("Settings", in: app)
 
         let captureState = assertElement(identifier: "settings.sidebar.capture-state", in: app)
-        XCTAssertEqual(captureState.label, "Capture Couldn't Start")
+        XCTAssertEqual(captureState.label, "Capture Could Not Start")
         XCTAssertEqual(captureState.value as? String, "Review Capture settings")
         captureState.click()
 
@@ -1839,7 +1892,7 @@ final class ScreenlogAppUITests: XCTestCase {
             error.waitForExistence(timeout: Self.routeTimeout),
             "Expected an application discovery error instead of an empty catalog."
         )
-        XCTAssertEqual(error.label, "Applications couldn't be loaded")
+        XCTAssertEqual(error.label, "Could not load applications")
 
         let retry = app.buttons["exclusions.applications.retry"]
         XCTAssertTrue(retry.waitForExistence(timeout: Self.routeTimeout))
@@ -1868,6 +1921,7 @@ final class ScreenlogAppUITests: XCTestCase {
         multipleDisplays: Bool = false,
         longSession: Bool = false,
         compactHistory: Bool = false,
+        legacyDatabase: Bool = false,
         assistantDetected: [AssistantFixtureTarget] = [],
         assistantReady: [AssistantFixtureTarget] = [],
         assistantRouting: AssistantFixtureRouting = .automatic
@@ -1894,6 +1948,9 @@ final class ScreenlogAppUITests: XCTestCase {
         if fixture {
             application.launchEnvironment["SCREENLOG_UI_TEST_FIXTURE"] =
                 "deterministic-navigation-v1"
+            if legacyDatabase {
+                application.launchEnvironment["SCREENLOG_UI_TEST_LEGACY_DATABASE"] = "1"
+            }
             if simulatedCaptureIssue {
                 application.launchEnvironment["SCREENLOG_UI_TEST_CAPTURE_ISSUE"] = "start-failed"
             }

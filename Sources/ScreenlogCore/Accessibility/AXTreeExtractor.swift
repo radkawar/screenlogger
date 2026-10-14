@@ -90,10 +90,23 @@ public final class AXTreeExtractor: @unchecked Sendable {
         let nsApp = NSRunningApplication(processIdentifier: pid)
         let bundleID = nsApp?.bundleIdentifier
         let appName = nsApp?.localizedName ?? stringAttr(appEl, kAXTitleAttribute as String)
+        // Browser chrome can consume the depth budget before page text is reached.
+        // Restrict browser snapshots to the focused window, never other windows or menus.
+        let isBrowser = BrowserURLService.isSupportedBrowser(bundleID: bundleID)
+        let root: AXUIElement
+        if isBrowser {
+            guard let window = focusedWindow(appEl) else { return nil }
+            root = window
+        } else {
+            root = appEl
+        }
 
         var nodeCount = 0
         var isPartial = false
-        let body = serialize(element: appEl, depth: 0, nodeCount: &nodeCount, isPartial: &isPartial)
+        let body = serialize(element: root, depth: 0, nodeCount: &nodeCount, isPartial: &isPartial)
+        if isBrowser {
+            guard let currentWindow = focusedWindow(appEl), CFEqual(root, currentWindow) else { return nil }
+        }
         let xml = """
             <AccessibilityTree bundle="\(escape(bundleID ?? ""))" app="\(escape(appName ?? ""))" pid="\(pid)" nodes="\(nodeCount)" partial="\(isPartial)">
             \(body)
@@ -110,8 +123,19 @@ public final class AXTreeExtractor: @unchecked Sendable {
         )
     }
 
-    private func serialize(element: AXUIElement, depth: Int, nodeCount: inout Int, isPartial: inout Bool) -> String {
-        if depth > maxDepth || nodeCount >= maxNodes {
+    private func focusedWindow(_ app: AXUIElement) -> AXUIElement? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &value) == .success,
+            let value
+        else { return nil }
+        return Self.accessibilityElement(from: value)
+    }
+
+    private func serialize(
+        element: AXUIElement, depth: Int, webDepth: Int? = nil,
+        nodeCount: inout Int, isPartial: inout Bool
+    ) -> String {
+        if (webDepth ?? depth) > maxDepth || nodeCount >= maxNodes {
             isPartial = true
             return ""
         }
@@ -133,6 +157,8 @@ public final class AXTreeExtractor: @unchecked Sendable {
                 " x=\"\(Int(frame.origin.x))\" y=\"\(Int(frame.origin.y))\" w=\"\(Int(frame.size.width))\" h=\"\(Int(frame.size.height))\""
         }
 
+        // Give page content its own bounded depth budget. Nested web areas do not reset it.
+        let childWebDepth = webDepth.map { $0 + 1 } ?? (role == "AXWebArea" ? 1 : nil)
         var childrenXML = ""
         if let children = attributes.children {
             for child in children {
@@ -140,7 +166,10 @@ public final class AXTreeExtractor: @unchecked Sendable {
                     isPartial = true
                     break
                 }
-                childrenXML += serialize(element: child, depth: depth + 1, nodeCount: &nodeCount, isPartial: &isPartial)
+                childrenXML += serialize(
+                    element: child, depth: depth + 1, webDepth: childWebDepth,
+                    nodeCount: &nodeCount, isPartial: &isPartial
+                )
             }
         }
         if childrenXML.isEmpty {

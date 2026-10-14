@@ -170,3 +170,42 @@ BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
 IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
+
+## Optional native semantic search
+
+Screenlogger implements the model architecture and image preparation in its own
+Swift sources. The isolated `screenlog-semantic-worker` uses
+[MLX Swift 0.32.3](https://github.com/ml-explore/mlx-swift) (MIT) and the Tokenizers
+product from [swift-transformers 1.3.0](https://github.com/huggingface/swift-transformers)
+(Apache-2.0). The standalone CLI and ScreenlogCore do not link these runtimes.
+No model wrapper, llama.cpp, Rust runtime, or Xet feature is enabled.
+
+Model files are not included in the app. An explicit download installs only the
+text-q8 and, for image search, vision-q8 profiles from
+[EmbeddingGemma-2-MLX-Swift](https://huggingface.co/Nurymanau/EmbeddingGemma-2-MLX-Swift/tree/06b4e075e6b3772e3c29df9f2a2ace7bd4950bdd).
+The model revision is `06b4e075e6b3772e3c29df9f2a2ace7bd4950bdd`. Google DeepMind
+created the Apache-2.0 EmbeddingGemma 2 checkpoint at revision
+`914f7f89142e33e77833254d9c9b90c3cef7303b`. The model host supplies data, not code.
+All 1,290 stored text and vision tensors were checked against the original
+Google checkpoint. The 333 quantized matrices exactly match MLX affine q8
+conversion with groups of 64; all other tensors match without conversion.
+The omitted tensors belong only to the audio tower and its projection.
+No upstream endorsement is implied.
+
+Complete license and notice texts are retained in `Resources/SemanticLicenses`
+and shipped unchanged in the app at `Contents/Resources/SemanticLicenses`.
+These include the owned encoder reference notice, Apache-2.0, the PyTorch
+resize adaptation license, MLX MIT and acknowledgments, and the Metal-cpp license.
+The pinned dependency closure also includes:
+
+- [swift-huggingface 0.13.0](https://github.com/huggingface/swift-huggingface), Apache-2.0;
+- [swift-jinja 2.5.1](https://github.com/huggingface/swift-jinja), Apache-2.0;
+- [Swift Collections 1.7.1](https://github.com/apple/swift-collections), Apache-2.0 with Swift Runtime Library Exception;
+- [Swift Numerics 1.1.1](https://github.com/apple/swift-numerics), Apache-2.0 with Swift Runtime Library Exception;
+- [Swift Crypto 4.5.2](https://github.com/apple/swift-crypto), Apache-2.0 with Swift Runtime Library Exception and its retained third-party notices;
+- [Swift ASN.1 1.7.3](https://github.com/apple/swift-asn1), Apache-2.0 with Swift Runtime Library Exception and its retained notices;
+- [EventSource 1.5.1](https://github.com/mattt/EventSource), MIT;
+- [yyjson 0.12.0](https://github.com/ibireme/yyjson), MIT.
+
+The consumer dependency lock is
+`Screenlog.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`.

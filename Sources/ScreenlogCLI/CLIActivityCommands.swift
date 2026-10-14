@@ -10,8 +10,8 @@ extension ScreenlogCLIMain {
           screenlog usage top-domains [--since DATE|30d] [--before DATE] [--limit N] [--json]
           screenlog usage sessions [--since DATE|30d] [--before DATE] [--gap MIN] [--json]
 
-        Date bounds are half-open: since is included and before is excluded.
-        Relative bounds such as 30d, 12h, and 2w are measured back from now.
+        Date ranges include since and exclude before.
+        Relative dates such as 30d, 12h, and 2w specify durations before now.
         """
 
     static let digestHelp = """
@@ -19,9 +19,10 @@ extension ScreenlogCLIMain {
           screenlog digest [--since DATE|30d] [--before DATE] [--gap MIN]
                            [--limit N] [--sample-limit N] [--json]
 
-        Produces coverage, active days, approximate recorded time, top apps and
-        domains, sessions, and bounded representative OCR snippets. Use --json
-        when an assistant will synthesize the narrative.
+        This command reports coverage, active days, capture span, applications,
+        domains, sessions, and representative OCR snippets with length limits.
+        Capture span does not measure attention or project time.
+        Use --json for assistant analysis.
 
         Example:
           screenlog digest --since 30d --before now --json
@@ -33,7 +34,7 @@ extension ScreenlogCLIMain {
             return """
                 Usage: screenlog usage time [--since DATE|30d] [--before DATE] [--json]
 
-                Reports observed coverage, capture span, moment count, and active days.
+                This command reports observed coverage, capture span, moment count, and active days.
                 Example: screenlog usage time --since 7d --json
                 """
         case "coverage":
@@ -41,7 +42,7 @@ extension ScreenlogCLIMain {
                 Usage: screenlog usage coverage [--since DATE|30d] [--before DATE]
                                                 [--gap MIN] [--json]
 
-                Reports the observed range and threshold-defined session breaks.
+                This command reports the observed range and session breaks at the selected gap threshold.
                 Example: screenlog usage coverage --since 2026-08-01 --before 2026-09-01 --json
                 """
         case "top-applications", "top-apps":
@@ -49,7 +50,7 @@ extension ScreenlogCLIMain {
                 Usage: screenlog usage top-applications [--since DATE|30d] [--before DATE]
                                                         [--limit N] [--json]
 
-                Counts captured moments per application. Shares may overlap across displays.
+                This command counts captured moments per application. Shares can overlap across displays.
                 Example: screenlog usage top-applications --since 30d --limit 20 --json
                 """
         case "top-domains":
@@ -57,7 +58,7 @@ extension ScreenlogCLIMain {
                 Usage: screenlog usage top-domains [--since DATE|30d] [--before DATE]
                                                    [--limit N] [--json]
 
-                Counts captured browser moments per domain.
+                This command counts captured browser moments per domain.
                 Example: screenlog usage top-domains --since 30d --json
                 """
         case "sessions":
@@ -65,7 +66,7 @@ extension ScreenlogCLIMain {
                 Usage: screenlog usage sessions [--since DATE|30d] [--before DATE]
                                                 [--gap MIN] [--json]
 
-                Lists local timestamps, wall-clock duration, and captured moment count.
+                This command lists local timestamps, session clock duration, and captured moment count.
                 Example: screenlog usage sessions --since 7d --gap 10 --json
                 """
         default:
@@ -212,9 +213,9 @@ extension ScreenlogCLIMain {
                 CLIFrameDocument(frame: $0, maximumOCRCharacters: 240)
             },
             interpretationNotes: [
-                "Capture span is the sum of session wall-clock spans, not active attention or project time.",
-                "Application and domain shares can overlap when several displays are captured at once.",
-                "Visible or audible content is evidence of exposure, not proof that the user authored it.",
+                "Capture span is the sum of session clock durations, not active attention or project time.",
+                "Application and domain shares can overlap when Screenlogger captures several displays at once.",
+                "Visible or audible content shows exposure. It does not prove that the user created the content.",
             ]
         )
 
@@ -262,6 +263,9 @@ extension ScreenlogCLIMain {
         if args.contains(where: isHelpArgument) || args.isEmpty {
             print("Usage: screenlog record start|stop|once")
             return
+        }
+        guard args.count == 1 else {
+            throw CLIError.usage("record start|stop|once")
         }
         switch args.first {
         case "start":

@@ -632,10 +632,10 @@ public enum CaptureError: Error, CustomStringConvertible, LocalizedError {
     public var description: String {
         switch self {
         case .noDisplay: return "No display available for capture"
-        case .encodeFailed: return "Failed to encode still image (HEIC/JPEG)"
-        case .notAuthorized: return "Screen Recording permission not granted"
-        case .diskFull: return "Disk space critically low - capture paused"
-        case .excluded: return "Current app or website is excluded from capture"
+        case .encodeFailed: return "Screenlogger could not encode the still image (HEIC/JPEG)"
+        case .notAuthorized: return "Screen Recording permission required"
+        case .diskFull: return "Low disk space - capture paused"
+        case .excluded: return "Screenlogger excludes the current application or website from capture"
         }
     }
 

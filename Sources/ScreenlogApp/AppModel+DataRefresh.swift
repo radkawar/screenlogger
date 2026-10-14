@@ -27,7 +27,11 @@ extension AppModel {
 
     /// - Parameter light: when true, only refresh stats (keeps menu bar loop snappy).
     func refreshData(light: Bool = false) async {
-        guard let store else { return }
+        guard libraryRestoreState != .restoring, let store else { return }
+        let generation = light ? nil : timelineLoadPublication.beginLoad()
+        defer {
+            if let generation { finishTimelineLoad(generation) }
+        }
         if !light { timelineLoadState = .loading }
         let libraryResultFrameID =
             timelineNavigationOrigin == .libraryResult ? selectedTimelineID : nil
@@ -57,11 +61,13 @@ extension AppModel {
                     }
                 return (st, recent, tl)
             }
+            guard !Task.isCancelled else { return }
             // Reassigning an unchanged @Published value still invalidates every
             // view reading it, and `timeline.didSet` rebuilds the navigation
             // index, so each republish below is gated on a real change.
             if stats != snapshot.0 { stats = snapshot.0 }
             if light { return }
+            guard let generation, timelineLoadPublication.allowsLoad(generation) else { return }
             if let r = snapshot.1, recent != r { recent = r }
             if let tl = snapshot.2 {
                 let previousSelection = selectedTimelineID
@@ -88,7 +94,7 @@ extension AppModel {
         } catch {
             writeBootstrapLog("data refresh FAILED: \(error)")
             recordDiagnostic(.dataRefresh, .failed)
-            if !light {
+            if let generation, !Task.isCancelled, timelineLoadPublication.allowsLoad(generation) {
                 timelineLoadState = .failed
                 timelineIssue = .refreshTimeline
             }
@@ -109,7 +115,8 @@ extension AppModel {
     /// Selection follows live capture only when the user was already at the
     /// newest moment; reviewing older history is never pulled forward.
     func refreshAfterCapturedFrame() async {
-        guard let store else { return }
+        guard libraryRestoreState != .restoring, let store else { return }
+        let publicationSnapshot = timelineLoadPublication.backgroundSnapshot
         let shouldRefreshNavigation =
             MainShellController.shared.isVisible
             || SearchWindowController.shared.isVisible
@@ -117,9 +124,13 @@ extension AppModel {
         let selectedSessionStart = selectedSession?.startMs
         let previousSelection = selectedTimelineID
         let previousSelectionTimestamp = selectedTimelineFrame?.timestampMs
+        // The last loaded moment is not necessarily the session's live tail:
+        // paging or choosing an overnight session's earlier day loads a slice.
+        let isAtSessionEnd =
+            selectedSession.map { previousSelectionTimestamp == $0.endMs } ?? true
         let wasFollowingLatest =
             previousSelection == nil
-            || selectedTimelineMomentIndex == timelineMomentCount - 1
+            || (selectedTimelineMomentIndex == timelineMomentCount - 1 && isAtSessionEnd)
         // A durable frame can only extend the newest session or open a new one,
         // so the per-frame read recomputes that tail and reuses the older rows
         // already in hand. Recomputing every session here sorts the whole
@@ -183,6 +194,7 @@ extension AppModel {
                     .sorted(by: TimelineFrame.chronologicalAscending)
                 return (stats, recent, sessions, timeline)
             }
+            guard !Task.isCancelled else { return }
 
             // Every assignment below is gated on a real change. This runs once
             // per captured frame, and an unconditional republish invalidates
@@ -202,7 +214,9 @@ extension AppModel {
                 applySessionRefresh(rows)
             }
 
-            if let refreshedTimeline = snapshot.3 {
+            if let refreshedTimeline = snapshot.3,
+                timelineLoadPublication.allowsBackgroundRefresh(publicationSnapshot)
+            {
                 if timeline != refreshedTimeline { timeline = refreshedTimeline }
                 if timelineLoadState != .ready { timelineLoadState = .ready }
                 if wasFollowingLatest {
@@ -223,7 +237,9 @@ extension AppModel {
         } catch {
             writeBootstrapLog("captured-frame refresh FAILED: \(error)")
             recordDiagnostic(.dataRefresh, .failed)
-            if MainShellController.shared.isVisible {
+            if !Task.isCancelled, MainShellController.shared.isVisible,
+                timelineLoadPublication.allowsBackgroundRefresh(publicationSnapshot)
+            {
                 timelineLoadState = .failed
                 timelineIssue = .refreshTimeline
             }

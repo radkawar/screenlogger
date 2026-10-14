@@ -13,6 +13,8 @@ struct LibraryFilterPanel: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let style: Style
     var onChooseDate: (() -> Void)?
+    @State private var showsAllWebsites = false
+    @State private var showsAllApplications = false
 
     init(style: Style, onChooseDate: (() -> Void)? = nil) {
         self.style = style
@@ -47,15 +49,12 @@ struct LibraryFilterPanel: View {
         // Every facet list walks the whole scoped hit set, and the operator
         // parse walks the query. Reading each one once per pass keeps a panel
         // redraw off four full passes over the results and a duplicate parse.
-        let domainChips = Array(model.searchResultDomainChips.prefix(8))
-        let appChips = Array(model.searchResultAppChips.prefix(9))
+        let domainChips = model.searchResultDomainChips
+        let appChips = model.searchResultAppChips
         let parsedQuery = SearchOperatorParser.parse(model.searchQuery)
         return ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: SLDesign.space24) {
                 HStack(spacing: 8) {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(.secondary)
                     Text("Filters")
                         .font(.subheadline.weight(.semibold))
                     Spacer()
@@ -68,10 +67,6 @@ struct LibraryFilterPanel: View {
                     }
                 }
 
-                filterSection("Sort") {
-                    LibrarySearchSortPicker()
-                }
-
                 filterSection("Content") {
                     VStack(alignment: .leading, spacing: 2) {
                         contentFilterRow(
@@ -81,7 +76,7 @@ struct LibraryFilterPanel: View {
                         )
                         contentFilterRow(
                             .screenText,
-                            label: "Screen text",
+                            label: "Screens",
                             systemImage: "text.viewfinder"
                         )
                         contentFilterRow(
@@ -92,13 +87,13 @@ struct LibraryFilterPanel: View {
                     }
                 }
 
-                filterSection("Time") {
+                filterSection("When") {
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(AppModel.SearchTimeFilter.allCases) { tf in
                             filterRow(selected: model.searchTimeFilter == tf) {
                                 model.setSearchTimeFilter(tf)
                             } label: {
-                                Label(tf.label, systemImage: "clock")
+                                Text(tf.label.capitalized)
                             }
                             .accessibilityIdentifier("library.filter.time.\(tf.rawValue)")
                         }
@@ -128,17 +123,21 @@ struct LibraryFilterPanel: View {
                         filterRow(selected: model.searchSessionScoped) {
                             model.setSearchSessionScoped(!model.searchSessionScoped)
                         } label: {
-                            Label("\(session.appLabel) session", systemImage: "rectangle.stack")
+                            Label(session.displayTitle, systemImage: "rectangle.stack")
                                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                         }
                         .accessibilityIdentifier("library.filter.session")
                     }
                 }
 
+                if !domainChips.isEmpty || !appChips.isEmpty {
+                    Text("Where")
+                        .font(SLDesign.sectionFont)
+                }
                 if !domainChips.isEmpty {
                     filterSection("Websites") {
                         VStack(alignment: .leading, spacing: 2) {
-                            ForEach(domainChips, id: \.domain) { chipInfo in
+                            ForEach(Array(domainChips.prefix(showsAllWebsites ? domainChips.count : 3)), id: \.domain) { chipInfo in
                                 filterRow(selected: model.searchDomainFilter == chipInfo.domain) {
                                     model.setSearchDomainFilter(chipInfo.domain)
                                 } label: {
@@ -148,6 +147,14 @@ struct LibraryFilterPanel: View {
                                     }
                                 }
                             }
+                            if domainChips.count > 3 {
+                                Button(showsAllWebsites ? "Show Less" : "Show All Websites") {
+                                    showsAllWebsites.toggle()
+                                }
+                                .buttonStyle(.plain)
+                                .font(SLDesign.metadataFont)
+                                .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
@@ -155,7 +162,7 @@ struct LibraryFilterPanel: View {
                 if !appChips.isEmpty {
                     filterSection("Applications") {
                         VStack(alignment: .leading, spacing: 2) {
-                            ForEach(appChips, id: \.bundleID) { chipInfo in
+                            ForEach(Array(appChips.prefix(showsAllApplications ? appChips.count : 3)), id: \.bundleID) { chipInfo in
                                 filterRow(selected: model.searchAppFilter == chipInfo.bundleID) {
                                     model.setSearchAppFilter(chipInfo.bundleID)
                                 } label: {
@@ -164,6 +171,14 @@ struct LibraryFilterPanel: View {
                                         Text(chipInfo.label).lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                                     }
                                 }
+                            }
+                            if appChips.count > 3 {
+                                Button(showsAllApplications ? "Show Less" : "Show All Applications") {
+                                    showsAllApplications.toggle()
+                                }
+                                .buttonStyle(.plain)
+                                .font(SLDesign.metadataFont)
+                                .foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -188,6 +203,12 @@ struct LibraryFilterPanel: View {
             Label(label, systemImage: systemImage)
         }
         .accessibilityIdentifier("library.filter.content.\(content.rawValue)")
+        .disabled(!model.canSelectSearchContent(content))
+        .help(
+            model.canSelectSearchContent(content)
+                ? label
+                : "Enable text sources in Search Settings to search transcripts."
+        )
     }
 
     private func datePickerPresentation(
@@ -198,13 +219,15 @@ struct LibraryFilterPanel: View {
                 model.showSearchDatePicker && model.searchDatePickerOrigin == origin
             },
             set: { isPresented in
-                if !isPresented { model.showSearchDatePicker = false }
+                if !isPresented, model.showSearchDatePicker, model.searchDatePickerOrigin == origin {
+                    model.showSearchDatePicker = false
+                }
             }
         )
     }
 
     private func filterSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: SLDesign.space8) {
             Text(title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
@@ -218,7 +241,7 @@ struct LibraryFilterPanel: View {
         @ViewBuilder label: () -> Label
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 7) {
+            HStack(spacing: SLDesign.space8) {
                 label()
                 Spacer(minLength: 4)
                 if selected {
@@ -228,12 +251,12 @@ struct LibraryFilterPanel: View {
             }
             .font(.callout)
             .foregroundStyle(selected ? model.accentSwiftUIColor : Color.primary)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, SLDesign.space8)
+            .padding(.vertical, SLDesign.space4)
+            .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
             .background(
                 selected ? model.accentSwiftUIColor.opacity(0.12) : Color.clear,
-                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                in: RoundedRectangle(cornerRadius: SLDesign.thumbRadius, style: .continuous)
             )
             .contentShape(Rectangle())
         }

@@ -27,9 +27,8 @@ struct PrivacyPermissionsSettingsSection: View {
                     .accessibilityLabel("Review Screen Recording setup")
                     .accessibilityHint("Shows permission steps and a link to System Settings")
                 }
-            }
-            .padding(14)
-            .accessibilityIdentifier("privacy.permission.screen-recording")
+            }.padding(SLDesign.space16)
+                .accessibilityIdentifier("privacy.permission.screen-recording")
 
             PrivacySettingsDivider()
 
@@ -53,9 +52,8 @@ struct PrivacyPermissionsSettingsSection: View {
                     .accessibilityLabel("Review Accessibility setup")
                     .accessibilityHint("Shows permission steps and a link to System Settings")
                 }
-            }
-            .padding(14)
-            .accessibilityIdentifier("privacy.permission.accessibility")
+            }.padding(SLDesign.space16)
+                .accessibilityIdentifier("privacy.permission.accessibility")
 
         }
         .accessibilityIdentifier("privacy.permissions")
@@ -65,6 +63,6 @@ struct PrivacyPermissionsSettingsSection: View {
         if model.permissions.accessibility {
             return "Allowed for window titles, browser addresses, and focused-control text."
         }
-        return "Required before capture starts so exclusions and app context are applied completely."
+        return "Required before capture starts so Screenlogger can apply exclusions and capture app context completely."
     }
 }

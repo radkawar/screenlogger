@@ -1,5 +1,7 @@
 import AppKit
+import CryptoKit
 import Foundation
+import SQLite3
 import ScreenlogCore
 
 #if DEBUG
@@ -53,10 +55,13 @@ import ScreenlogCore
             let snapshotSurface: SnapshotSurface
             let settingsDestination: SettingsSidebarItem?
             let snapshotsAtMinimumWindowSize: Bool
+            let showsSessionsAtMinimumWindowSize: Bool
+            let seedsSessionDetails: Bool
             let assistantScenario: AssistantScenario
             let firstRunFrameDelayMilliseconds: UInt64?
             let seedsMultipleDisplays: Bool
             let seedsLongSession: Bool
+            let seedsOvernightSession: Bool
             let compactsSeedHistory: Bool
             let presentsAudioTranscription: Bool
             let audioTranscriptionPhase: AudioTranscriptionPhase?
@@ -213,6 +218,10 @@ import ScreenlogCore
                 ),
                 snapshotsAtMinimumWindowSize:
                     environment["SCREENLOG_UI_TEST_SNAPSHOT_WINDOW_SIZE"] == "minimum",
+                showsSessionsAtMinimumWindowSize:
+                    environment["SCREENLOG_UI_TEST_SESSIONS_MINIMUM_WINDOW"] == "1",
+                seedsSessionDetails:
+                    environment["SCREENLOG_UI_TEST_SESSION_DETAILS"] == "1",
                 assistantScenario: AssistantScenario.parse(environment: environment),
                 firstRunFrameDelayMilliseconds: environment[
                     "SCREENLOG_UI_TEST_FIRST_RUN_FRAME_DELAY_MS"
@@ -222,6 +231,9 @@ import ScreenlogCore
                 ] == "1",
                 seedsLongSession: environment[
                     "SCREENLOG_UI_TEST_LONG_SESSION"
+                ] == "1",
+                seedsOvernightSession: environment[
+                    "SCREENLOG_UI_TEST_OVERNIGHT_SESSION"
                 ] == "1",
                 compactsSeedHistory: environment[
                     "SCREENLOG_UI_TEST_COMPACT_HISTORY"
@@ -271,6 +283,15 @@ import ScreenlogCore
 
         static var shouldFailLibrarySearch: Bool {
             configuration?.failsLibrarySearch == true
+        }
+
+        static var librarySearchDelayMilliseconds: UInt64 {
+            guard configuration != nil else { return 0 }
+            let value =
+                ProcessInfo.processInfo.environment[
+                    "SCREENLOG_UI_TEST_LIBRARY_SEARCH_DELAY_MS"
+                ].flatMap(UInt64.init) ?? 0
+            return min(value, 5_000)
         }
 
         static var launchAtLoginSimulation: LoginItemSimulation? {
@@ -477,7 +498,9 @@ import ScreenlogCore
                             in: store,
                             usesUnreadablePreview: configuration.usesUnreadablePreview,
                             includesMultipleDisplays: configuration.seedsMultipleDisplays,
-                            includesLongSession: configuration.seedsLongSession
+                            includesLongSession: configuration.seedsLongSession,
+                            includesOvernightSession: configuration.seedsOvernightSession,
+                            includesSessionDetails: configuration.seedsSessionDetails
                         )
                         if configuration.compactsSeedHistory {
                             let compactor = VideoCompactionService()
@@ -519,6 +542,29 @@ import ScreenlogCore
                             in: configuration.root,
                             surface: configuration.snapshotSurface
                         )
+                    }
+                    if configuration.showsSessionsAtMinimumWindowSize {
+                        model.libraryWorkspaceNavigation.contentMode = .sessions
+                        model.libraryWorkspaceNavigation.selectedSessionStartMs =
+                            model.sessions.first?.startMs
+                        guard
+                            let window = NSApp.windows.first(where: {
+                                $0.title == "Library" && $0.isVisible
+                            })
+                        else { throw FixtureError.snapshotUnavailable }
+                        let minimumSize = NSSize(width: 820, height: 540)
+                        window.contentMinSize = minimumSize
+                        window.setContentSize(minimumSize)
+                        try await Task.sleep(for: .milliseconds(80))
+                        guard let actualSize = window.contentView?.bounds.size,
+                            abs(actualSize.width - minimumSize.width) <= 1,
+                            abs(actualSize.height - minimumSize.height) <= 1
+                        else {
+                            throw FixtureError.windowSizeMismatch(
+                                expected: minimumSize,
+                                actual: window.contentView?.bounds.size ?? .zero
+                            )
+                        }
                     }
                     try Data("ready\n".utf8).write(
                         to: configuration.root.appendingPathComponent("ui-fixture-ready"),
@@ -576,7 +622,7 @@ import ScreenlogCore
             case .recovering:
                 return "Display awake. Reconnecting audio transcription..."
             case .failed:
-                return "Audio transcription couldn't reconnect automatically. Choose Try Again."
+                return "Audio transcription could not reconnect automatically. Choose Try Again."
             case .permissionRequired:
                 return "Allow Microphone access to transcribe your voice."
             case .capturePaused:
@@ -707,7 +753,9 @@ import ScreenlogCore
             in store: Store,
             usesUnreadablePreview: Bool,
             includesMultipleDisplays: Bool,
-            includesLongSession: Bool
+            includesLongSession: Bool,
+            includesOvernightSession: Bool,
+            includesSessionDetails: Bool
         ) throws {
             let nowMs = Int64(Date().timeIntervalSince1970 * 1_000)
             let hourMs: Int64 = 60 * 60 * 1_000
@@ -774,7 +822,7 @@ import ScreenlogCore
                     accent: NSColor.systemBlue
                 ),
                 SeedMoment(
-                    offsetMs: -(6 * minuteMs),
+                    offsetMs: -((includesSessionDetails ? 4 : 6) * minuteMs),
                     foreground: "Product review with design and engineering",
                     title: "Product Review",
                     bundleID: "com.apple.iCal",
@@ -891,6 +939,22 @@ import ScreenlogCore
                         foreground: "Long session moment \(index + 1)",
                         bundleID: "com.apple.TextEdit",
                         displayName: "TextEdit"
+                    )
+                }
+            }
+            if includesOvernightSession {
+                let midnight = Calendar.current.date(
+                    byAdding: .day,
+                    value: -3,
+                    to: Calendar.current.startOfDay(for: Date())
+                )!
+                let midnightMs = Int64(midnight.timeIntervalSince1970 * 1_000)
+                for offset in [-minuteMs, minuteMs] {
+                    _ = try store.insertSeedFrame(
+                        timestampMs: midnightMs + offset,
+                        foreground: "Overnight navigation fixture",
+                        bundleID: "dev.screenlog.overnight-fixture",
+                        displayName: "Overnight Fixture"
                     )
                 }
             }
@@ -1068,6 +1132,22 @@ import ScreenlogCore
                 try await Task.sleep(nanoseconds: 25_000_000)
             }
             throw FixtureError.snapshotUnavailable
+        }
+
+        /// Seed only the isolated launch fixture, before the migration task starts.
+        static func seedLegacyDatabaseIfRequested(in store: Store) throws {
+            guard let configuration, isAuthenticatedRoutedTest,
+                ProcessInfo.processInfo.environment["SCREENLOG_UI_TEST_LEGACY_DATABASE"] == "1",
+                store.db.path == configuration.root.appendingPathComponent("db.sqlite3").path
+            else { return }
+            let raw = Data(("<Tree>" + String(repeating: "<Node title=\"Legacy\" />", count: 2_000) + "</Tree>").utf8)
+            let statement = try store.db.prepare("INSERT OR IGNORE INTO ax_node(hash, payload) VALUES (?, ?)")
+            defer { sqlite3_finalize(statement) }
+            SQLiteBind.blob(statement, 1, Data(SHA256.hash(data: raw)))
+            SQLiteBind.blob(statement, 2, raw)
+            guard sqlite3_step(statement) == SQLITE_DONE else {
+                throw SQLiteError.step("Could not seed the database migration fixture")
+            }
         }
 
         private enum FixtureError: Error {

@@ -11,7 +11,6 @@ final class CaptureStatusPresentationTests: XCTestCase {
             let input: CaptureStatusInput
             let phase: CaptureStatusPhase
             let scope: CaptureStatusScope
-            let label: String
             let tone: CaptureStatusTone
             let action: CaptureStatusPrimaryAction?
             let destination: CaptureStatusDestination
@@ -25,7 +24,6 @@ final class CaptureStatusPresentationTests: XCTestCase {
                 input: input(library: .opening(.unavailable)),
                 phase: .openingLibrary,
                 scope: .library,
-                label: "Opening Library...",
                 tone: .working,
                 action: nil,
                 destination: .libraryRecovery,
@@ -36,7 +34,6 @@ final class CaptureStatusPresentationTests: XCTestCase {
                 input: input(library: .unavailable(.integrityCheckFailed)),
                 phase: .libraryUnavailable(.integrityCheckFailed),
                 scope: .library,
-                label: "Library Unavailable",
                 tone: .warning,
                 action: .retryLibrary,
                 destination: .libraryRecovery,
@@ -47,7 +44,6 @@ final class CaptureStatusPresentationTests: XCTestCase {
                 input: input(library: .restoring),
                 phase: .restoringLibrary,
                 scope: .library,
-                label: "Restoring Library...",
                 tone: .working,
                 action: nil,
                 destination: .libraryRecovery,
@@ -58,7 +54,6 @@ final class CaptureStatusPresentationTests: XCTestCase {
                 input: input(screenRecordingAllowed: false),
                 phase: .setupRequired(resumeAt: nil),
                 scope: .capture,
-                label: "Setup Required",
                 tone: .warning,
                 action: .setupCapture(.screenRecording),
                 destination: .setup,
@@ -69,7 +64,6 @@ final class CaptureStatusPresentationTests: XCTestCase {
                 input: input(captureIssue: .startFailed),
                 phase: .captureFailed(.startFailed),
                 scope: .capture,
-                label: "Capture Couldn't Start",
                 tone: .warning,
                 action: .retryCapture(.startFailed),
                 destination: .capture,
@@ -80,7 +74,6 @@ final class CaptureStatusPresentationTests: XCTestCase {
                 input: input(timedPauseUntil: resumeAt),
                 phase: .timedPause(until: resumeAt),
                 scope: .capture,
-                label: "Capture Paused",
                 tone: .neutral,
                 action: .resumeCapture,
                 destination: .capture,
@@ -91,7 +84,6 @@ final class CaptureStatusPresentationTests: XCTestCase {
                 input: input(isRecording: true, pauseReason: .lowDiskSpace),
                 phase: .lowDiskSpace,
                 scope: .capture,
-                label: "Low Disk Space",
                 tone: .warning,
                 action: .manageStorage,
                 destination: .storage,
@@ -102,7 +94,6 @@ final class CaptureStatusPresentationTests: XCTestCase {
                 input: input(isRecording: true, pauseReason: .browserAddressUnavailable),
                 phase: .websiteAddressUnavailable,
                 scope: .capture,
-                label: "Website Address Unavailable",
                 tone: .warning,
                 action: .reviewWebsiteExclusions,
                 destination: .websiteExclusions,
@@ -113,7 +104,6 @@ final class CaptureStatusPresentationTests: XCTestCase {
                 input: input(isRecording: true, pauseReason: .privateBrowsing),
                 phase: .automaticPause(.privateBrowsing),
                 scope: .capture,
-                label: "Private Browsing Protected",
                 tone: .neutral,
                 action: nil,
                 destination: .capture,
@@ -124,7 +114,6 @@ final class CaptureStatusPresentationTests: XCTestCase {
                 input: input(isRecording: true),
                 phase: .on,
                 scope: .capture,
-                label: "Capture On",
                 tone: .success,
                 action: nil,
                 destination: .capture,
@@ -135,7 +124,6 @@ final class CaptureStatusPresentationTests: XCTestCase {
                 input: input(isRecording: true, energySaverReason: .battery),
                 phase: .energySaving(.battery),
                 scope: .capture,
-                label: "Battery Saver",
                 tone: .neutral,
                 action: nil,
                 destination: .capture,
@@ -146,7 +134,6 @@ final class CaptureStatusPresentationTests: XCTestCase {
                 input: input(),
                 phase: .off,
                 scope: .capture,
-                label: "Capture Off",
                 tone: .neutral,
                 action: .startCapture,
                 destination: .capture,
@@ -158,7 +145,6 @@ final class CaptureStatusPresentationTests: XCTestCase {
             let result = resolve(testCase.input)
             XCTAssertEqual(result.phase, testCase.phase, testCase.name)
             XCTAssertEqual(result.scope, testCase.scope, testCase.name)
-            XCTAssertEqual(result.compactLabel, testCase.label, testCase.name)
             XCTAssertEqual(result.tone, testCase.tone, testCase.name)
             XCTAssertEqual(result.primaryAction, testCase.action, testCase.name)
             XCTAssertEqual(result.inspectionDestination, testCase.destination, testCase.name)
@@ -166,6 +152,24 @@ final class CaptureStatusPresentationTests: XCTestCase {
             XCTAssertFalse(result.headline.isEmpty, testCase.name)
             XCTAssertFalse(result.detail.isEmpty, testCase.name)
         }
+    }
+
+    func testReclamationBlocksNewCaptureButPreservesAnAdmittedStop() {
+        let reclaiming = resolve(input(library: .reclaimingDatabase))
+        XCTAssertEqual(reclaiming.phase, .reclaimingDatabase)
+        XCTAssertEqual(reclaiming.primaryAction, .manageStorage)
+        XCTAssertEqual(reclaiming.inspectionDestination, .storage)
+        XCTAssertFalse(reclaiming.controls.canCaptureOnce)
+        XCTAssertFalse(reclaiming.controls.canSchedulePause)
+        XCTAssertNil(CaptureStatusToolbarResolver.resolve(reclaiming).action)
+
+        let admittedStart = resolve(input(library: .reclaimingDatabase, isRecording: true))
+        XCTAssertTrue(admittedStart.controls.canStop)
+        XCTAssertEqual(CaptureStatusToolbarResolver.resolve(admittedStart).action, .stopCapture)
+
+        let ready = resolve(input())
+        XCTAssertEqual(ready.primaryAction, .startCapture)
+        XCTAssertTrue(ready.controls.canCaptureOnce)
     }
 
     func testCanonicalPrecedenceForConflictingPublishedState() {
@@ -236,8 +240,6 @@ final class CaptureStatusPresentationTests: XCTestCase {
         let result = resolve(input(accessibilityAllowed: false))
 
         XCTAssertEqual(result.primaryAction, .setupCapture(.accessibility))
-        XCTAssertEqual(result.actionLabel, "Allow Accessibility...")
-        XCTAssertEqual(result.actionHint, "Open Accessibility setup.")
         XCTAssertTrue(result.detail.contains("exclusions and app context"))
         XCTAssertFalse(result.detail.contains("Screen Recording"))
         XCTAssertFalse(result.controls.canCaptureOnce)
@@ -337,10 +339,12 @@ final class CaptureStatusPresentationTests: XCTestCase {
         XCTAssertEqual(offStatus.phase, .off)
         XCTAssertEqual(onStatus.phase, .on)
         XCTAssertEqual(pausedStatus.phase, .automaticPause(.privateBrowsing))
-        XCTAssertFalse(off.contains("are saved"))
-        XCTAssertFalse(paused.contains("are saved"))
+        XCTAssertFalse(CaptureLocalProcessingCopy.isActivelySaving(offStatus))
+        XCTAssertFalse(CaptureLocalProcessingCopy.isActivelySaving(pausedStatus))
+        XCTAssertTrue(CaptureLocalProcessingCopy.isActivelySaving(onStatus))
         XCTAssertTrue(off.localizedCaseInsensitiveContains("when capture is on"))
-        XCTAssertTrue(on.contains("are saved"))
+        XCTAssertTrue(paused.localizedCaseInsensitiveContains("when capture is on"))
+        XCTAssertFalse(on.localizedCaseInsensitiveContains("when capture is on"))
         XCTAssertEqual(CaptureLocalProcessingCopy.intervalLabel(2), "Every 2 seconds")
     }
 
@@ -353,111 +357,22 @@ final class CaptureStatusPresentationTests: XCTestCase {
     }
 
     func testToolbarKeepsOneDirectCaptureControlAndHidesRecoveryActions() {
-        struct TestCase {
-            let name: String
-            let status: CaptureStatusPresentation
-            let expected: CaptureStatusToolbarPresentation
-        }
-
-        let cases = [
-            TestCase(
-                name: "capture off",
-                status: resolve(input()),
-                expected: toolbar(
-                    "Start Capture",
-                    "play.fill",
-                    .perform(.startCapture),
-                    "Start automatic capture."
-                )
-            ),
-            TestCase(
-                name: "setup routes through start",
-                status: resolve(input(screenRecordingAllowed: false)),
-                expected: toolbar(
-                    "Set Up Screen Recording",
-                    "play.fill",
-                    .perform(.setupCapture(.screenRecording)),
-                    "Allow Screen Recording, then choose whether capture starts."
-                )
-            ),
-            TestCase(
-                name: "accessibility recovery routes exactly",
-                status: resolve(input(accessibilityAllowed: false)),
-                expected: toolbar(
-                    "Set Up Accessibility",
-                    "play.fill",
-                    .perform(.setupCapture(.accessibility)),
-                    "Allow Accessibility, then choose whether capture starts."
-                )
-            ),
-            TestCase(
-                name: "start retry remains a direct control",
-                status: resolve(input(captureIssue: .startFailed)),
-                expected: toolbar(
-                    "Start Capture",
-                    "play.fill",
-                    .perform(.retryCapture(.startFailed)),
-                    "Try starting automatic capture again."
-                )
-            ),
-            TestCase(
-                name: "timed pause",
-                status: resolve(input(timedPauseUntil: now.addingTimeInterval(3_600))),
-                expected: toolbar(
-                    "Resume Capture",
-                    "play.fill",
-                    .perform(.resumeCapture),
-                    "Resume automatic capture now."
-                )
-            ),
-            TestCase(
-                name: "running capture",
-                status: resolve(input(isRecording: true)),
-                expected: toolbar(
-                    "Stop Capture",
-                    "stop.fill",
-                    .stopCapture,
-                    "Stop automatic capture."
-                )
-            ),
-            TestCase(
-                name: "energy saving capture",
-                status: resolve(input(isRecording: true, energySaverReason: .battery)),
-                expected: toolbar(
-                    "Stop Capture",
-                    "stop.fill",
-                    .stopCapture,
-                    "Stop automatic capture."
-                )
-            ),
-            TestCase(
-                name: "running low disk state preserves stop",
-                status: resolve(input(isRecording: true, pauseReason: .lowDiskSpace)),
-                expected: toolbar(
-                    "Stop Capture",
-                    "stop.fill",
-                    .stopCapture,
-                    "Stop automatic capture."
-                )
-            ),
-            TestCase(
-                name: "Library recovery stays out of the toolbar",
-                status: resolve(input(library: .unavailable(.databaseUnavailable))),
-                expected: toolbar("Capture Unavailable", "record.circle")
-            ),
-            TestCase(
-                name: "automatic failure stays out of the toolbar",
-                status: resolve(input(captureIssue: .automaticCaptureFailed)),
-                expected: toolbar("Capture Off", "record.circle")
-            ),
+        let cases: [(CaptureStatusInput, CaptureStatusToolbarAction?)] = [
+            (input(), .perform(.startCapture)),
+            (input(screenRecordingAllowed: false), .perform(.setupCapture(.screenRecording))),
+            (input(accessibilityAllowed: false), .perform(.setupCapture(.accessibility))),
+            (input(captureIssue: .startFailed), .perform(.retryCapture(.startFailed))),
+            (input(timedPauseUntil: now.addingTimeInterval(3_600)), .perform(.resumeCapture)),
+            (input(isRecording: true), .stopCapture),
+            (input(isRecording: true, energySaverReason: .battery), .stopCapture),
+            (input(isRecording: true, pauseReason: .lowDiskSpace), .stopCapture),
+            (input(library: .unavailable(.databaseUnavailable)), nil),
+            (input(captureIssue: .automaticCaptureFailed), nil),
         ]
 
-        for testCase in cases {
-            XCTAssertEqual(
-                CaptureStatusToolbarResolver.resolve(testCase.status),
-                testCase.expected,
-                testCase.name
-            )
+        for (input, expectedAction) in cases {
+            let status = resolve(input)
+            XCTAssertEqual(CaptureStatusToolbarResolver.resolve(status).action, expectedAction)
         }
     }
 
@@ -491,17 +406,4 @@ final class CaptureStatusPresentationTests: XCTestCase {
         )
     }
 
-    private func toolbar(
-        _ title: String,
-        _ symbolName: String,
-        _ action: CaptureStatusToolbarAction? = nil,
-        _ actionHint: String? = nil
-    ) -> CaptureStatusToolbarPresentation {
-        CaptureStatusToolbarPresentation(
-            title: title,
-            symbolName: symbolName,
-            action: action,
-            actionHint: actionHint
-        )
-    }
 }

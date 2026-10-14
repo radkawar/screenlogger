@@ -1,8 +1,34 @@
+@testable import ScreenlogCore
 import XCTest
 
-@testable import ScreenlogCore
-
 final class SearchOperatorParserTests: XCTestCase {
+    func testInvalidConstraintsCannotSilentlyBroadenSearch() {
+        for query in [
+            "invoice date:2026-02-30",
+            "invoice since:2026-13-01",
+            "invoice before:not-a-date",
+            "invoice since:2026-10-20 before:2026-10-10",
+            "invoice date:2026-10-15 since:2026-10-16",
+            "invoice app:Mail app:Safari",
+            "invoice site:",
+            #"invoice app:"""#,
+            #"invoice app:"unfinished"#,
+        ] {
+            XCTAssertNotNil(SearchOperatorParser.parse(query).validationIssue, query)
+        }
+    }
+
+    func testCompatibleDateConstraintsAndQuotedValuesRemainUsable() {
+        for query in [
+            "invoice since:2026-10-15 before:2026-10-15",
+            "invoice date:2026-10-15 since:2026-10-01 before:2026-10-31",
+            "invoice date:2024-02-29",
+            #"invoice app:"Visual Studio Code" site:example.com"#,
+        ] {
+            XCTAssertNil(SearchOperatorParser.parse(query).validationIssue, query)
+        }
+    }
+
     func testParseSiteAndAppStripFromFTS() {
         let p = SearchOperatorParser.parse("invoice site:en.wikipedia.org app:Safari")
         XCTAssertEqual(p.ftsText, "invoice")
@@ -36,6 +62,29 @@ final class SearchOperatorParserTests: XCTestCase {
         XCTAssertNotNil(p.sinceMs)
         XCTAssertNotNil(p.beforeMs)
         XCTAssertLessThan(p.sinceMs!, p.beforeMs!)
+    }
+
+    func testDayFiltersIncludeFinalMillisecondAcrossDaylightSavingTime() throws {
+        let zone = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let nextDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 2)))
+        let nextMidnight = Int64(nextDay.timeIntervalSince1970 * 1000)
+        for key in ["date", "before"] {
+            let parsed = SearchOperatorParser.parse(
+                "notes \(key):2026-11-01", calendar: calendar, timeZone: zone
+            )
+            XCTAssertTrue(
+                SearchOperatorParser.matchesTimeBounds(
+                    FTSResult(frameID: 1, timestampMs: nextMidnight - 1), parsed: parsed
+                )
+            )
+            XCTAssertFalse(
+                SearchOperatorParser.matchesTimeBounds(
+                    FTSResult(frameID: 2, timestampMs: nextMidnight), parsed: parsed
+                )
+            )
+        }
     }
 
     func testTypingContextOperators() {

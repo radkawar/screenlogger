@@ -40,6 +40,18 @@ public final class ScreenlogXPCClient: NSObject, ScreenlogClientProtocol {
         try decode(socket.call(IPCRequest(cmd: .status)).data)
     }
 
+    public func semanticStatus() throws -> SemanticFeatureStatus {
+        try socket.semanticStatus()
+    }
+
+    public func semanticSearch(_ request: SemanticSearchRequest) throws -> SemanticSearchResponse {
+        try socket.semanticSearch(request)
+    }
+
+    public func semanticControl(_ request: SemanticControlRequest) throws -> SemanticFeatureStatus {
+        try socket.semanticControl(request)
+    }
+
     public func fts(
         query: String,
         limit: Int = 50,
@@ -47,6 +59,7 @@ public final class ScreenlogXPCClient: NSObject, ScreenlogClientProtocol {
         literal: Bool = false
     ) throws -> [FTSResult] {
         let parsed = SearchOperatorParser.parse(query)
+        if let issue = parsed.validationIssue { throw SearchQueryValidationError.invalid(issue) }
         let usesStructuredOperators =
             parsed.appFilter != nil || parsed.siteFilter != nil
             || parsed.dayStartMs != nil || parsed.sinceMs != nil || parsed.beforeMs != nil
@@ -208,13 +221,26 @@ public final class ScreenlogXPCClient: NSObject, ScreenlogClientProtocol {
         preferBase64: Bool = false
     ) throws -> ExtractImageResult {
         let client = ScreenlogSocketClient(root: root, timeout: max(timeout, 120))
+        // The app may have a different working directory. Resolve destinations
+        // in the caller process, preserving an explicit directory suffix.
+        let destination: String
+        if outPath.isEmpty {
+            destination = ""
+        } else {
+            guard !outPath.utf8.contains(0) else {
+                throw IPCRequestValidationError.invalid("output path must contain no NUL bytes")
+            }
+            destination =
+                URL(fileURLWithPath: outPath).absoluteURL.path
+                + (outPath.hasSuffix("/") ? "/" : "")
+        }
         return try decode(
             client.call(
                 IPCRequest(
                     cmd: .extractImage,
                     frameID: frameID,
                     timestampMs: timestampMs,
-                    outPath: outPath,
+                    outPath: destination,
                     preferBase64: preferBase64
                 )
             ).data
@@ -312,17 +338,17 @@ public enum XPCClientError: Error, CustomStringConvertible {
     public var description: String {
         switch self {
         case .appNotRunning:
-            return "could not connect to Screenlogger.app - is it running? (CLI is a thin IPC client; launch the app first)"
+            return "The CLI could not connect to Screenlogger.app. Open the app first. The CLI uses the app's local connection."
         case .badEndpoint:
-            return "invalid IPC endpoint - restart Screenlogger.app"
+            return "Invalid IPC endpoint. Restart Screenlogger.app."
         case .proxyFailed:
-            return "failed to create IPC proxy"
+            return "The CLI could not create the IPC proxy."
         case .empty:
-            return "empty response from Screenlogger.app"
+            return "Screenlogger.app returned an empty response."
         case .timeout:
-            return "IPC request timed out - is Screenlogger.app responsive?"
+            return "The IPC request did not complete within its time limit. Check whether Screenlogger.app responds."
         case .incompatibleProtocol:
-            return "Screenlogger.app and the screenlog command are incompatible; update them together"
+            return "Screenlogger.app and the screenlog command are incompatible. Update both components."
         case .mutationAccessDenied:
             return LocalToolAccessError.mutationAccessRequired.localizedDescription
         case .remote:

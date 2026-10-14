@@ -10,11 +10,10 @@ struct TimelineNoticeView: View {
 
     var body: some View {
         TimelineBannerShell(
-            tint: tint,
             maxWidth: 620,
             accessibilityIdentifier: "timeline.notice"
         ) {
-            HStack(spacing: 10) {
+            HStack(spacing: SLDesign.space8) {
                 Image(systemName: symbol)
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(tint)
@@ -32,6 +31,7 @@ struct TimelineNoticeView: View {
                     Label("Dismiss", systemImage: "xmark")
                         .labelStyle(.iconOnly)
                 }
+                .slCompactControlTarget()
                 .buttonStyle(.borderless)
                 .help("Dismiss")
                 .accessibilityIdentifier("timeline.notice.dismiss")
@@ -50,7 +50,7 @@ struct TimelineNoticeView: View {
     private var tint: Color {
         switch notice.severity {
         case .success: return SLDesign.success
-        case .information: return .white.opacity(0.82)
+        case .information: return .secondary
         case .warning: return SLDesign.warning
         }
     }
@@ -65,21 +65,20 @@ struct TimelineIssueBannerView: View {
 
     var body: some View {
         TimelineBannerShell(
-            tint: SLDesign.warning,
             maxWidth: 680,
             accessibilityIdentifier: "timeline.issue.banner"
         ) {
-            HStack(spacing: 10) {
+            HStack(spacing: SLDesign.space8) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(SLDesign.warning)
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: SLDesign.space4) {
                     Text(issue.title)
                         .font(.callout.weight(.semibold))
                     Text(issue.message)
                         .font(.caption)
-                        .foregroundStyle(.white.opacity(0.76))
+                        .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
                 .fixedSize(horizontal: false, vertical: true)
@@ -93,6 +92,7 @@ struct TimelineIssueBannerView: View {
                     Label("Dismiss", systemImage: "xmark")
                         .labelStyle(.iconOnly)
                 }
+                .slCompactControlTarget()
                 .buttonStyle(.borderless)
                 .help("Dismiss")
                 .accessibilityIdentifier("timeline.issue.dismiss")
@@ -110,21 +110,20 @@ struct TimelineDeletionIssueBannerView: View {
 
     var body: some View {
         TimelineBannerShell(
-            tint: SLDesign.warning,
             maxWidth: 680,
             accessibilityIdentifier: "library.deletion.issue.timeline"
         ) {
-            HStack(spacing: 10) {
+            HStack(spacing: SLDesign.space8) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(SLDesign.warning)
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: SLDesign.space4) {
                     Text(issue.title)
                         .font(.callout.weight(.semibold))
                     Text(issue.message)
                         .font(.caption)
-                        .foregroundStyle(.white.opacity(0.76))
+                        .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
                 .fixedSize(horizontal: false, vertical: true)
@@ -140,6 +139,7 @@ struct TimelineDeletionIssueBannerView: View {
                     Label("Dismiss", systemImage: "xmark")
                         .labelStyle(.iconOnly)
                 }
+                .slCompactControlTarget()
                 .buttonStyle(.borderless)
                 .help("Dismiss")
                 .accessibilityIdentifier("library.deletion.issue.timeline.dismiss")
@@ -149,18 +149,15 @@ struct TimelineDeletionIssueBannerView: View {
 }
 
 private struct TimelineBannerShell<Content: View>: View {
-    let tint: Color
     let maxWidth: CGFloat
     let accessibilityIdentifier: String
     let content: Content
 
     init(
-        tint: Color,
         maxWidth: CGFloat,
         accessibilityIdentifier: String,
         @ViewBuilder content: () -> Content
     ) {
-        self.tint = tint
         self.maxWidth = maxWidth
         self.accessibilityIdentifier = accessibilityIdentifier
         self.content = content()
@@ -168,16 +165,14 @@ private struct TimelineBannerShell<Content: View>: View {
 
     var body: some View {
         content
-            .foregroundStyle(.white.opacity(0.94))
-            .padding(.leading, 13)
-            .padding(.trailing, 10)
-            .padding(.vertical, 9)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, SLDesign.space16)
+            .padding(.vertical, SLDesign.space8)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: SLDesign.thumbRadius, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(tint.opacity(0.4), lineWidth: 1)
+                RoundedRectangle(cornerRadius: SLDesign.thumbRadius, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
             }
-            .shadow(color: .black.opacity(0.26), radius: 14, y: 5)
             .frame(maxWidth: maxWidth)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier(accessibilityIdentifier)

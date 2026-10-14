@@ -18,8 +18,8 @@ enum TimelinePlaybackControl {
 extension HistoryPane {
     /// Contextual time, transport, zoom, and activity controls below the stage.
     var bottomChrome: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 12) {
+        VStack(spacing: SLDesign.space8) {
+            HStack(spacing: SLDesign.space16) {
                 if model.selectedTimelineFrame != nil {
                     timelineDayNavigation
                 }
@@ -28,22 +28,15 @@ extension HistoryPane {
 
                 timelineControlBar
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, SLDesign.space16)
 
-            // Time-aware activity ribbon.
             segmentTrack
-                .padding(.horizontal, 20)
-                .padding(.bottom, 14)
+                .padding(.horizontal, SLDesign.space24)
+                .padding(.bottom, SLDesign.space16)
         }
-        .padding(.top, 8)
-        .background(
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.45), .black.opacity(0.65)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .allowsHitTesting(false)
-        )
+        .padding(.top, SLDesign.space8)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .overlay(alignment: .top) { Divider() }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("timeline.chrome.bottom")
     }
@@ -66,7 +59,7 @@ extension HistoryPane {
     private func expandedTimelineControlBar(
         segmentAvailability: (previous: Bool, next: Bool)
     ) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: SLDesign.space8) {
             Button {
                 model.stopReplay()
                 model.stepTimeline(by: -1)
@@ -171,8 +164,8 @@ extension HistoryPane {
                     model.resetStageZoom()
                 } label: {
                     Text("\(Int(model.stageZoom * 100))%")
-                        .font(.system(size: 10.5, weight: .medium, design: .rounded).monospacedDigit())
-                        .frame(minWidth: 38, minHeight: 28)
+                        .font(SLDesign.metadataFont.monospacedDigit())
+                        .frame(minWidth: 40, minHeight: 28)
                 }
                 .disabled(model.selectedFrameImage == nil || model.stageZoom == 1)
                 .help(shortcutHelp("Reset zoom", actionID: .timelineResetZoom))
@@ -197,7 +190,7 @@ extension HistoryPane {
             Button {
                 model.showLiveText.toggle()
             } label: {
-                Label("Detected text highlights", systemImage: "text.viewfinder")
+                Label("Recognized text highlights", systemImage: "text.viewfinder")
                     .labelStyle(.iconOnly)
                     .frame(width: 28, height: 28)
                     .foregroundStyle(
@@ -208,7 +201,7 @@ extension HistoryPane {
             }
             .disabled(!hasSelectedOCRBoxes)
             .help(liveTextControlHelp)
-            .accessibilityLabel("Detected text highlights")
+            .accessibilityLabel("Recognized text highlights")
             .accessibilityValue(
                 hasSelectedOCRBoxes
                     ? (model.showLiveText ? "Shown" : "Hidden")
@@ -269,7 +262,7 @@ extension HistoryPane {
                 .disabled(model.selectedTimelineFrame == nil)
                 .accessibilityIdentifier("timeline.moment.actions.delete")
             } label: {
-                Label("Moment Actions", systemImage: "ellipsis.circle")
+                Label("Moment Actions", systemImage: "ellipsis")
                     .labelStyle(.iconOnly)
                     .frame(width: 28, height: 28)
             }
@@ -284,16 +277,9 @@ extension HistoryPane {
         }
         .buttonStyle(.borderless)
         .controlSize(.small)
-        .font(.system(size: 11, weight: .semibold))
+        .font(SLDesign.bodyFont)
         .foregroundStyle(.primary)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(Color.white.opacity(controlStrokeOpacity), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.2), radius: 10, y: 3)
+        .padding(.vertical, SLDesign.space4)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Timeline controls")
     }
@@ -303,7 +289,7 @@ extension HistoryPane {
     private func compactTimelineControlBar(
         segmentAvailability: (previous: Bool, next: Bool)
     ) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: SLDesign.space8) {
             Button {
                 model.stopReplay()
                 model.stepTimeline(by: -1)
@@ -465,7 +451,7 @@ extension HistoryPane {
                 .disabled(model.selectedTimelineFrame == nil)
                 .accessibilityIdentifier("timeline.moment.actions.delete")
             } label: {
-                Label("More Timeline Actions", systemImage: "ellipsis.circle")
+                Label("More Timeline Actions", systemImage: "ellipsis")
                     .labelStyle(.iconOnly)
                     .frame(width: 28, height: 28)
             }
@@ -478,16 +464,9 @@ extension HistoryPane {
         }
         .buttonStyle(.borderless)
         .controlSize(.small)
-        .font(.system(size: 11, weight: .semibold))
+        .font(SLDesign.bodyFont)
         .foregroundStyle(.primary)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(Color.white.opacity(controlStrokeOpacity), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.2), radius: 10, y: 3)
+        .padding(.vertical, SLDesign.space4)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Timeline controls")
     }
@@ -502,7 +481,7 @@ extension HistoryPane {
     private var controlDivider: some View {
         Divider()
             .frame(height: 16)
-            .padding(.horizontal, 2)
+            .padding(.horizontal, SLDesign.space4)
             .accessibilityHidden(true)
     }
 
@@ -512,9 +491,9 @@ extension HistoryPane {
 
     private var liveTextControlHelp: String {
         guard hasSelectedOCRBoxes else {
-            return "No detected text highlights are available for this moment"
+            return "No recognized text highlights are available for this moment"
         }
-        return model.showLiveText ? "Hide detected text highlights" : "Show detected text highlights"
+        return model.showLiveText ? "Hide recognized text highlights" : "Show recognized text highlights"
     }
 
     private var segmentNavigationAvailability: (previous: Bool, next: Bool) {
@@ -583,11 +562,12 @@ extension HistoryPane {
                 dayPickerSelection = model.selectedTimelineDay ?? Date()
                 showDayPicker = true
             } label: {
-                Label(
-                    timelineRangeLabel,
-                    systemImage: model.selectedSession == nil ? "calendar" : "clock.badge.checkmark"
-                )
-                .fontWeight(.semibold)
+                Text(timelineRangeLabel)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 180)
+                    .frame(minHeight: 28)
             }
             .popover(isPresented: $showDayPicker, arrowEdge: .bottom) {
                 timelineDayPicker
@@ -610,15 +590,9 @@ extension HistoryPane {
         }
         .buttonStyle(.borderless)
         .controlSize(.small)
-        .font(.system(size: 11, weight: .medium))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(Color.white.opacity(controlStrokeOpacity), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
+        .font(SLDesign.bodyFont)
+        .foregroundStyle(.primary)
+        .padding(.vertical, SLDesign.space4)
         .fixedSize()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Recorded day navigation")
@@ -627,7 +601,7 @@ extension HistoryPane {
     private var timelineDayPicker: some View {
         let daySessions = model.timelineSessions(on: dayPickerSelection)
         let recentRangeSelected = isRecentTimelineRangeSelected
-        return VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: SLDesign.space16) {
             Button {
                 showDayPicker = false
                 guard !recentRangeSelected else { return }
@@ -664,8 +638,8 @@ extension HistoryPane {
 
             Divider()
 
-            Label("Choose a Day", systemImage: "calendar")
-                .font(.headline)
+            Text("Choose a Day")
+                .font(SLDesign.sectionFont)
 
             DatePicker(
                 "Day",
@@ -679,7 +653,7 @@ extension HistoryPane {
             Divider()
 
             if daySessions.isEmpty {
-                Label("No captures on this day", systemImage: "moon.zzz")
+                Text("No captures on this day")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             } else {
@@ -698,7 +672,7 @@ extension HistoryPane {
                 }
 
                 ScrollView {
-                    VStack(spacing: 4) {
+                    LazyVStack(spacing: SLDesign.space4) {
                         ForEach(daySessions) { session in
                             let sessionSelected = isSelectedTimelineSession(session)
                             Button {
@@ -707,13 +681,11 @@ extension HistoryPane {
                                 Task { await model.loadSession(session) }
                             } label: {
                                 HStack(spacing: 8) {
-                                    Image(systemName: "clock")
-                                        .foregroundStyle(
-                                            sessionSelected ? model.accentSwiftUIColor : .secondary
-                                        )
+                                    SLAppIconView(bundleID: session.primaryBundleID, size: 16)
+                                        .accessibilityHidden(true)
                                     Text(SLTimeFormat.shortTime(session.startMs))
                                         .monospacedDigit()
-                                    Text(session.appLabel)
+                                    Text(session.displayTitle)
                                         .lineLimit(1)
                                     Spacer()
                                     Text(SessionPinning.summaryLabel(for: session))
@@ -740,7 +712,7 @@ extension HistoryPane {
                                     : "Open session at \(SLTimeFormat.shortTime(session.startMs))"
                             )
                             .accessibilityLabel(
-                                "Session at \(SLTimeFormat.shortTime(session.startMs)), \(session.appLabel)"
+                                "Session at \(SLTimeFormat.shortTime(session.startMs)), \(session.displayTitle)"
                             )
                             .accessibilityValue(sessionSelected ? "Selected" : "Not selected")
                             .accessibilityAddTraits(sessionSelected ? .isSelected : [])
@@ -765,38 +737,24 @@ extension HistoryPane {
 
     private var timelineRangeLabel: String {
         if let session = model.selectedSession {
-            return "Session at \(SLTimeFormat.shortTime(session.startMs))"
+            return session.customName ?? "Session at \(SLTimeFormat.shortTime(session.startMs))"
         }
         return model.selectedTimelineFrame.map { momentDateLabel($0.timestampMs) } ?? "Choose Day"
     }
 
     private var timelineRangeHelp: String {
         if let session = model.selectedSession {
-            return "Viewing the session from \(SLTimeFormat.shortTime(session.startMs)). Choose another day or show all recent activity."
+            return
+                "Viewing \(session.displayTitle) from \(SLTimeFormat.shortTime(session.startMs)). Choose another day or show all recent activity."
         }
         return "Choose a day or recording session"
     }
 
     private var timelineRangeAccessibilityValue: String {
         if let session = model.selectedSession {
-            return "Selected session, \(SLTimeFormat.shortTime(session.startMs)), \(session.appLabel)"
+            return "Selected session, \(SLTimeFormat.shortTime(session.startMs)), \(session.displayTitle)"
         }
         return model.selectedTimelineFrame.map { momentDateLabel($0.timestampMs) } ?? "No day selected"
     }
 
-    var controlStrokeOpacity: Double {
-        colorSchemeContrast == .increased ? 0.48 : 0.22
-    }
-
-    var primaryTimelineTextOpacity: Double {
-        colorSchemeContrast == .increased ? 1 : 0.82
-    }
-
-    var secondaryTextOpacity: Double {
-        colorSchemeContrast == .increased ? 0.92 : 0.72
-    }
-
-    var trackBackgroundOpacity: Double {
-        colorSchemeContrast == .increased ? 0.28 : 0.16
-    }
 }

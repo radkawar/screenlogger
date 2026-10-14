@@ -17,8 +17,7 @@ struct PrivacyProtectionSettingsSection: View {
                     .controlSize(.small)
                     .accessibilityHint("Shows the apps and detectable websites Screenlogger will not capture")
                     .accessibilityIdentifier("privacy.exclusions.manage")
-            }
-            .padding(14)
+            }.padding(SLDesign.space16)
         }
         .accessibilityIdentifier("privacy.protection")
     }

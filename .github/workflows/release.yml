@@ -18,14 +18,14 @@ concurrency:
 jobs:
   build:
     name: Verify, sign, notarize, and package
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 75
     environment: release-signing
     permissions:
       contents: read
     env:
       # Keep release verification on the same pinned toolchain as CI.
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_26.4.1.app/Contents/Developer
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
       DEVELOPER_ID_APPLICATION: "Developer ID Application: Radheshyam Kawar (3UX5N7Y8TY)"
       DEVELOPER_ID_TEAM_ID: 3UX5N7Y8TY

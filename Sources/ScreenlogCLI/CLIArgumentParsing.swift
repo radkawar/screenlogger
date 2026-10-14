@@ -19,14 +19,14 @@ extension ScreenlogCLIMain {
         while i < args.count {
             if args[i] == "--data-dir" {
                 guard g.dataDir == nil else {
-                    throw CLIError.message("--data-dir may only be provided once")
+                    throw CLIError.message("Provide --data-dir only once")
                 }
                 guard i + 1 < args.count, !args[i + 1].hasPrefix("-") else {
                     throw CLIError.usage("screenlog --data-dir PATH <command>")
                 }
                 let value = args[i + 1]
                 guard !value.isEmpty, value.utf8.count <= 4_096 else {
-                    throw CLIError.message("data directory path is empty or exceeds 4096 bytes")
+                    throw CLIError.message("data directory path is empty or contains more than 4096 bytes")
                 }
                 g.dataDir = value
                 i += 2
@@ -45,7 +45,7 @@ extension ScreenlogCLIMain {
     ) throws -> Int? {
         guard let idx = args.firstIndex(of: name) else { return nil }
         guard args.lastIndex(of: name) == idx else {
-            throw CLIError.message("\(name) may only be provided once")
+            throw CLIError.message("Provide \(name) only once")
         }
         guard idx + 1 < args.count, let value = Int(args[idx + 1]) else {
             throw CLIError.message("\(name) requires an integer value")
@@ -63,7 +63,7 @@ extension ScreenlogCLIMain {
     ) throws -> Int64? {
         guard let idx = args.firstIndex(of: name) else { return nil }
         guard args.lastIndex(of: name) == idx else {
-            throw CLIError.message("\(name) may only be provided once")
+            throw CLIError.message("Provide \(name) only once")
         }
         guard idx + 1 < args.count, let value = Int64(args[idx + 1]) else {
             throw CLIError.message("\(name) requires an integer value")
@@ -81,14 +81,14 @@ extension ScreenlogCLIMain {
     ) throws -> String? {
         guard let idx = args.firstIndex(of: name) else { return nil }
         guard args.lastIndex(of: name) == idx else {
-            throw CLIError.message("\(name) may only be provided once")
+            throw CLIError.message("Provide \(name) only once")
         }
         guard idx + 1 < args.count, !args[idx + 1].hasPrefix("-") else {
             throw CLIError.message("\(name) requires a value")
         }
         let value = args[idx + 1]
         guard !value.isEmpty, value.utf8.count <= maximumBytes else {
-            throw CLIError.message("\(name) is empty or exceeds \(maximumBytes) bytes")
+            throw CLIError.message("\(name) is empty or contains more than \(maximumBytes) bytes")
         }
         return value
     }
@@ -171,7 +171,7 @@ extension ScreenlogCLIMain {
             bounds.beforeMs = min(bounds.beforeMs ?? .max, cursor)
         }
         if let since = bounds.sinceMs, let before = bounds.beforeMs, since >= before {
-            throw CLIError.message("sample cursor falls outside the requested date range")
+            throw CLIError.message("sample cursor is outside the requested date range")
         }
         return bounds
     }
@@ -192,13 +192,13 @@ extension ScreenlogCLIMain {
     static func commaSeparatedIDs(_ raw: String, maximumCount: Int = 100) throws -> [Int64] {
         let values = raw.split(separator: ",", omittingEmptySubsequences: false)
         guard !values.isEmpty, values.count <= maximumCount else {
-            throw CLIError.message("--ids must contain between 1 and \(maximumCount) frame ids")
+            throw CLIError.message("--ids must contain between 1 and \(maximumCount) frame IDs")
         }
         var seen: Set<Int64> = []
         var ids: [Int64] = []
         for value in values {
             guard let id = Int64(value.trimmingCharacters(in: .whitespaces)), id > 0 else {
-                throw CLIError.message("--ids must contain positive comma-separated frame ids")
+                throw CLIError.message("--ids must contain positive frame IDs separated by commas")
             }
             if seen.insert(id).inserted { ids.append(id) }
         }
@@ -242,7 +242,7 @@ extension ScreenlogCLIMain {
                 return Int64(d.timeIntervalSince1970 * 1000)
             }
         }
-        throw CLIError.message("invalid timestamp: \(raw) (use ISO-8601 or epoch seconds/ms)")
+        throw CLIError.message("Invalid timestamp: \(raw). Use ISO-8601 or epoch seconds or milliseconds.")
     }
 }
 

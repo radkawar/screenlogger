@@ -41,10 +41,10 @@ extension StatusMenuController {
         let displayCount = appModel.lastCaptureDisplayCount
         let savedDescription =
             displayCount > 1
-            ? "\(displayCount) searchable stills were saved to your Library."
-            : "One searchable still was saved to your Library."
+            ? "Screenlogger saved \(displayCount) searchable still images to your Library."
+            : "Screenlogger saved one searchable still image to your Library."
         if let button = statusItem?.button {
-            button.image = menuSymbolImage("checkmark.circle.fill")
+            button.image = statusSymbolImage("checkmark.circle.fill")
             button.toolTip = "Screenlogger - capture saved"
             button.setAccessibilityLabel("Screenlogger - Capture saved")
             button.setAccessibilityHelp(savedDescription)
@@ -198,13 +198,13 @@ extension StatusMenuController {
                         item.title = "Choose an App to Exclude"
                         item.representedObject = nil
                         item.isEnabled = false
-                        item.toolTip = "Switch to the app you don't want Screenlogger to capture"
+                        item.toolTip = "Switch to the app that Screenlogger must not capture"
                     }
                 } else {
                     item.title = "Choose an App to Exclude"
                     item.representedObject = nil
                     item.isEnabled = false
-                    item.toolTip = "Switch to the app you don't want Screenlogger to capture"
+                    item.toolTip = "Switch to the app that Screenlogger must not capture"
                 }
             case .excludeCurrentWebsite:
                 switch websitePresentation {
@@ -298,8 +298,8 @@ extension StatusMenuController {
 
     private func exclusionActionTitle(_ name: String) -> String {
         appModel.audioTranscriptionEnabled
-            ? "Don't Capture or Transcribe \"\(name)\""
-            : "Don't Capture \"\(name)\""
+            ? "Do Not Capture or Transcribe \"\(name)\""
+            : "Do Not Capture \"\(name)\""
     }
 
     private func exclusionActionHelp(_ name: String) -> String {

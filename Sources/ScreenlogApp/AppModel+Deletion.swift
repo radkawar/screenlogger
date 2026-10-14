@@ -62,6 +62,7 @@ extension AppModel {
         guard let store, let review = libraryDeletionReview, !libraryDeletionInProgress else { return }
         libraryDeletionInProgress = true
         libraryDeletionIssue = nil
+        await suspendSemanticSearch()
 
         do {
             let report = try await store.readAsync { store in
@@ -74,6 +75,7 @@ extension AppModel {
 
             await clearDeletedLibraryPresentationState()
             libraryDeletionReview = nil
+            await resumeSemanticSearch()
             await refreshData(light: false)
             await loadSessions()
             if hasRunnableLibrarySearchCriteria {
@@ -102,6 +104,7 @@ extension AppModel {
                     : "Deleted \(report.deletedMomentCount) \(momentLabel)"
             }
         } catch {
+            await resumeSemanticSearch()
             let request = LibraryDeletionRequest(
                 selection: review.plan.selection,
                 origin: review.origin,
@@ -204,7 +207,7 @@ extension AppModel {
         isRecording = engine.isRecording
         captureIssue = started ? nil : .resumeFailed
         if !started {
-            statusMessage = "Couldn't resume capture"
+            statusMessage = "Could not resume capture"
         }
     }
 
@@ -212,6 +215,9 @@ extension AppModel {
         searchDebounceTask?.cancel()
         searchDebounceTask = nil
         invalidateCurrentLibrarySearch()
+        semanticSearchHits.removeAll()
+        semanticSearchMessage = nil
+        await semanticSearchController?.invalidate()
         extractTask?.cancel()
         prefetchTask?.cancel()
         timeline = []

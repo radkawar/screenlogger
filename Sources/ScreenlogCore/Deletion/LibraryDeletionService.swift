@@ -77,13 +77,13 @@ public enum LibraryDeletionError: Error, LocalizedError, Equatable {
         case .nothingToDelete:
             return "There are no moments in that selection."
         case .confirmationRequired:
-            return "Review and confirm this deletion before continuing."
+            return "Review this deletion. Confirm it before you continue."
         case .confirmationDoesNotMatchReview:
             return "This confirmation belongs to a different deletion review."
         case .reviewExpired:
-            return "The library changed after the deletion was reviewed. Review it again."
+            return "The Library changed after your deletion review. Review it again."
         case .unsafeManagedPath:
-            return "Screenlogger refused to remove a file outside its managed library."
+            return "Screenlogger refused to remove a file outside its managed Library."
         case .recoveryFailed:
             return "Screenlogger could not safely recover an interrupted deletion."
         }

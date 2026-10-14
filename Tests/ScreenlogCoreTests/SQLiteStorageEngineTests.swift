@@ -1,7 +1,6 @@
 import SQLite3
-import XCTest
-
 @testable import ScreenlogCore
+import XCTest
 
 /// Covers the two promises the storage engine makes to the rest of the app:
 /// deleting data eventually returns disk space, and a read never has to wait
@@ -84,6 +83,37 @@ final class SQLiteStorageEngineTests: XCTestCase {
         }
     }
 
+    func testCompactionReportsPinnedReaderInsteadOfClaimingReclaimedSpace() throws {
+        _ = try store.insertSeedFrame(timestampMs: 1, foreground: "checkpoint reader")
+        try store.db.exec("PRAGMA wal_checkpoint(TRUNCATE)")
+        try store.db.exec("PRAGMA busy_timeout = 1")
+        var reader: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(store.db.path, &reader, SQLITE_OPEN_READONLY, nil), SQLITE_OK)
+        defer { if let reader { sqlite3_close(reader) } }
+        var statement: OpaquePointer?
+        XCTAssertEqual(sqlite3_prepare_v2(reader, "SELECT id FROM frame", -1, &statement, nil), SQLITE_OK)
+        defer { if let statement { sqlite3_finalize(statement) } }
+        XCTAssertEqual(sqlite3_step(statement), SQLITE_ROW)
+        try store.setMeta(key: "checkpoint-probe", value: "new WAL content")
+
+        XCTAssertThrowsError(try store.compactDatabaseFile()) { error in
+            guard case SQLiteMaintenanceError.checkpointBlocked = error else {
+                return XCTFail("expected pinned-reader refusal, got \(error)")
+            }
+        }
+        XCTAssertEqual(try store.getMeta(key: "checkpoint-probe"), "new WAL content")
+
+        sqlite3_finalize(statement)
+        statement = nil
+        sqlite3_close(reader)
+        reader = nil
+        let report = try store.compactDatabaseFile()
+        let databaseSize = try XCTUnwrap(
+            FileManager.default.attributesOfItem(atPath: store.db.path)[.size] as? NSNumber
+        ).int64Value
+        XCTAssertEqual(report.bytesAfter, databaseSize)
+    }
+
     func testRetentionRunReclaimsDatabaseSpaceItFreed() throws {
         try fillAndDeleteBulkPages()
 
@@ -157,6 +187,44 @@ final class SQLiteStorageEngineTests: XCTestCase {
             }
         }
         XCTAssertEqual(try store.getMeta(key: "read-scope-probe"), "uncommitted")
+    }
+
+    func testReadScopeNestedInTransactionSeesUncommittedRows() throws {
+        try store.db.transaction {
+            try store.db.exec(
+                "INSERT INTO metadata(key, value) VALUES ('write-scope-probe', 'uncommitted')"
+            )
+            let value = try store.withReadConnection {
+                try store.getMeta(key: "write-scope-probe")
+            }
+            XCTAssertEqual(value, "uncommitted")
+        }
+    }
+
+    func testThrowingMutationRestoresEnclosingReadConnection() throws {
+        enum ExpectedFailure: Error { case rollback }
+        try store.withReadConnection {
+            let before = try store.db.prepare("SELECT 1")
+            let readHandle = sqlite3_db_handle(before)
+            sqlite3_finalize(before)
+            XCTAssertNotEqual(readHandle, store.db.db)
+
+            XCTAssertThrowsError(
+                try store.db.transaction {
+                    try store.withReadConnection {
+                        try store.db.exec(
+                            "INSERT INTO metadata(key, value) VALUES ('rolled-back-probe', 'uncommitted')"
+                        )
+                        XCTAssertEqual(try store.getMeta(key: "rolled-back-probe"), "uncommitted")
+                    }
+                    throw ExpectedFailure.rollback
+                })
+
+            let after = try store.db.prepare("SELECT 1")
+            defer { sqlite3_finalize(after) }
+            XCTAssertEqual(sqlite3_db_handle(after), readHandle)
+            XCTAssertNil(try store.getMeta(key: "rolled-back-probe"))
+        }
     }
 
     func testReadAsyncServesReadsFromTheReadPath() async throws {

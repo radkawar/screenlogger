@@ -231,18 +231,18 @@ final class AssistantHandoffLaunchServiceTests: XCTestCase {
     }
 
     func testErrorsNeverSuggestClipboardRecovery() {
-        XCTAssertEqual(
-            AssistantHandoffLaunchError.invalidTerminalCommand.localizedDescription,
-            "Screenlogger couldn't prepare a safe Terminal handoff."
-        )
-        XCTAssertEqual(
-            AssistantHandoffLaunchError.couldNotPrepareWorkspace.localizedDescription,
-            "Screenlogger couldn't prepare its private assistant handoff workspace. Nothing was sent."
-        )
-        XCTAssertEqual(
-            AssistantHandoffLaunchError.couldNotOpenAssistant.localizedDescription,
-            "The assistant couldn't be opened. Nothing was sent."
-        )
+        let errors: [AssistantHandoffLaunchError] = [
+            .invalidLink, .invalidTerminalCommand, .couldNotPrepareWorkspace, .couldNotOpenAssistant,
+        ]
+        for error in errors {
+            XCTAssertFalse(error.localizedDescription.localizedCaseInsensitiveContains("clipboard"))
+        }
+        for error in [
+            AssistantHandoffLaunchError.couldNotPrepareWorkspace,
+            AssistantHandoffLaunchError.couldNotOpenAssistant,
+        ] {
+            XCTAssertTrue(error.localizedDescription.contains("did not send anything"))
+        }
     }
 
     func testAssistantWorkspaceIsPrivateAndReused() throws {

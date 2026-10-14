@@ -268,9 +268,7 @@ public final class RetentionService: @unchecked Sendable {
     /// used so Settings can preview consequences before confirmation.
     public func preflight(store: Store, now: Date = Date()) throws -> RetentionPreflightReport {
         let nowMs = Int64(now.timeIntervalSince1970 * 1_000)
-        let retentionDays = max(0, policy.retentionDays)
-        let dayMilliseconds = Int64(retentionDays).multipliedReportingOverflow(by: 86_400_000)
-        let cutoff = dayMilliseconds.overflow ? Int64.min : nowMs - dayMilliseconds.partialValue
+        let cutoff = cutoffTimestamp(nowMs: nowMs)
         let libraryBytes = try ManagedLibraryStorage.byteSize(root: store.root)
 
         let allCandidates = try store.retentionCandidatesByOldestFrame()
@@ -349,8 +347,7 @@ public final class RetentionService: @unchecked Sendable {
         var attemptedStillIDs = Set<Int64>()
         var failures: [String] = []
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
-        let retentionDays = max(0, policy.retentionDays)
-        let cutoff = nowMs - Int64(retentionDays) * 86_400_000
+        let cutoff = cutoffTimestamp(nowMs: nowMs)
 
         func attempt(_ video: VideoRow) -> PurgeResult? {
             guard attemptedVideoIDs.insert(video.id).inserted else { return nil }
@@ -482,6 +479,13 @@ public final class RetentionService: @unchecked Sendable {
         try store.setMeta(key: "last_retention_report", value: report.description)
         try store.setMeta(key: "last_retention_errors", value: failures.joined(separator: "\n"))
         return report
+    }
+
+    private func cutoffTimestamp(nowMs: Int64) -> Int64 {
+        let duration = Int64(max(0, policy.retentionDays)).multipliedReportingOverflow(by: 86_400_000)
+        guard !duration.overflow else { return Int64.min }
+        let cutoff = nowMs.subtractingReportingOverflow(duration.partialValue)
+        return cutoff.overflow ? Int64.min : cutoff.partialValue
     }
 
     private func purge(

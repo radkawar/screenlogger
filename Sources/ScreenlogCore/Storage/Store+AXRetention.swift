@@ -2,9 +2,18 @@ import Compression
 import Foundation
 import SQLite3
 
+public struct DatabasePayloadMigrationBatch: Equatable, Sendable {
+    public let scannedPayloadCount: Int
+    public let compressedPayloadCount: Int
+    /// Stored payload bytes, not space returned to the filesystem.
+    public let payloadBytesSaved: Int64
+    public let isComplete: Bool
+    public let reclamationPending: Bool
+}
+
 enum AXPayloadCodec {
     private static let magic = Data([0x53, 0x4C, 0x41, 0x58, 0x01])
-    private static let maximumDecodedBytes = 32 * 1024 * 1024
+    static let maximumDecodedBytes = 32 * 1024 * 1024
 
     static func encode(_ data: Data) -> Data {
         // Raw legacy payloads remain readable, while compressed payloads must
@@ -32,6 +41,10 @@ enum AXPayloadCodec {
         withUnsafeBytes(of: &decodedSize) { output.append(contentsOf: $0) }
         output.append(compressed)
         return output
+    }
+
+    static func isEncoded(_ data: Data) -> Bool {
+        data.starts(with: magic)
     }
 
     static func decode(_ data: Data) -> Data? {
@@ -65,6 +78,122 @@ enum AXPayloadCodec {
 }
 
 extension Store {
+    private static let payloadMigrationID = "ax-payload-lzfse-v1"
+    private static let payloadMigrationCursor = "ax-payload-lzfse-v1.cursor"
+    private static let payloadMigrationTable = "ax-payload-lzfse-v1.table"
+    private static let payloadReclamation = "ax-payload-lzfse-v1.reclamation"
+
+    /// Commits at most 32 rows or 4 MiB of source payloads per call. A single
+    /// payload can exceed that byte budget, up to the codec's 32 MiB limit.
+    /// Progress and payload changes commit together. No schema transaction
+    /// calls this method. Callers must release the writer between calls.
+    public func migrateDatabasePayloadBatch() throws -> DatabasePayloadMigrationBatch {
+        try Task.checkCancellation()
+        return try withSerializedMutation {
+            try db.transaction {
+                try Task.checkCancellation()
+                if try isOnceTaskCompleted(Self.payloadMigrationID) {
+                    return DatabasePayloadMigrationBatch(
+                        scannedPayloadCount: 0, compressedPayloadCount: 0,
+                        payloadBytesSaved: 0, isComplete: true,
+                        reclamationPending: try getMeta(key: Self.payloadReclamation) == "pending"
+                    )
+                }
+                let tableIndex = Int(try getMeta(key: Self.payloadMigrationTable) ?? "0") ?? 0
+                let table = tableIndex == 0 ? "ax_node" : "ax_legacy_tree"
+                let key = tableIndex == 0 ? "rowid" : "frame_id"
+                let cursor = try getMeta(key: Self.payloadMigrationCursor).flatMap(Int64.init)
+                let after = cursor == nil ? "" : " WHERE \(key) > ?"
+                let select = try db.prepare(
+                    "SELECT \(key), length(payload) FROM \(table)\(after) ORDER BY \(key) LIMIT 32"
+                )
+                defer { sqlite3_finalize(select) }
+                if let cursor { SQLiteBind.int64(select, 1, cursor) }
+                let payload = try db.prepare("SELECT payload FROM \(table) WHERE \(key) = ?")
+                defer { sqlite3_finalize(payload) }
+                let update = try db.prepare("UPDATE \(table) SET payload = ? WHERE \(key) = ?")
+                defer { sqlite3_finalize(update) }
+                var rows = 0
+                var count = 0
+                var sourceBytes = 0
+                var saved: Int64 = 0
+                var lastID = cursor
+                var exhausted = false
+                while rows < 32, sourceBytes < 4 * 1024 * 1024 {
+                    try Task.checkCancellation()
+                    let result = sqlite3_step(select)
+                    if result == SQLITE_DONE {
+                        exhausted = true
+                        break
+                    }
+                    guard result == SQLITE_ROW else {
+                        throw SQLiteError.step("Could not read accessibility data for migration")
+                    }
+                    let id = SQLiteColumn.int64(select, 0)
+                    lastID = id
+                    rows += 1
+                    let length = SQLiteColumn.int64(select, 1)
+                    guard length > 0, length <= Int64(AXPayloadCodec.maximumDecodedBytes) else { continue }
+                    sqlite3_reset(payload)
+                    sqlite3_clear_bindings(payload)
+                    SQLiteBind.int64(payload, 1, id)
+                    guard sqlite3_step(payload) == SQLITE_ROW,
+                        let raw = SQLiteColumn.data(payload, 0)
+                    else { throw SQLiteError.step("Could not read the accessibility payload") }
+                    sourceBytes += raw.count
+                    guard !AXPayloadCodec.isEncoded(raw) else { continue }
+                    let encoded = AXPayloadCodec.encode(raw)
+                    guard encoded.count < raw.count else { continue }
+                    guard AXPayloadCodec.decode(encoded) == raw else {
+                        throw SQLiteError.exec("Accessibility data changed during compression")
+                    }
+                    sqlite3_reset(update)
+                    sqlite3_clear_bindings(update)
+                    SQLiteBind.blob(update, 1, encoded)
+                    SQLiteBind.int64(update, 2, id)
+                    guard sqlite3_step(update) == SQLITE_DONE, db.changes() == 1 else {
+                        throw SQLiteError.step("Could not migrate the accessibility payload")
+                    }
+                    count += 1
+                    saved += Int64(raw.count - encoded.count)
+                }
+                if count > 0 { try setMeta(key: Self.payloadReclamation, value: "pending") }
+                let complete = exhausted && tableIndex == 1
+                if complete {
+                    try markOnceTask(Self.payloadMigrationID)
+                } else if exhausted {
+                    try setMeta(key: Self.payloadMigrationTable, value: "1")
+                    try setMeta(key: Self.payloadMigrationCursor, value: "")
+                } else if let lastID {
+                    try setMeta(key: Self.payloadMigrationCursor, value: String(lastID))
+                }
+                return DatabasePayloadMigrationBatch(
+                    scannedPayloadCount: rows, compressedPayloadCount: count,
+                    payloadBytesSaved: saved, isComplete: complete,
+                    reclamationPending: try getMeta(key: Self.payloadReclamation) == "pending"
+                )
+            }
+        }
+    }
+
+    /// Run off-main while capture is stopped. The writer stays open and its
+    /// executor excludes all concurrent mutations. Failure keeps the pending
+    /// marker, so a later safe opportunity can retry without scanning payloads.
+    public func reclaimMigratedDatabaseSpace(
+        freeSpaceMarginBytes: Int64 = 256 * 1024 * 1024
+    ) throws -> SQLiteCompactionReport? {
+        try Task.checkCancellation()
+        return try withExclusiveMaintenance {
+            guard try isOnceTaskCompleted(Self.payloadMigrationID),
+                try getMeta(key: Self.payloadReclamation) == "pending"
+            else { return nil }
+            try Task.checkCancellation()
+            let report = try db.compactDatabaseFile(freeSpaceMarginBytes: freeSpaceMarginBytes)
+            try setMeta(key: Self.payloadReclamation, value: "complete")
+            return report
+        }
+    }
+
     // MARK: - Metadata
 
     public func setMeta(key: String, value: String) throws {

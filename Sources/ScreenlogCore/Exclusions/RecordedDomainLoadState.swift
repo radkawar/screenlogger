@@ -17,9 +17,9 @@ public enum RecordedDomainLoadIssue: CaseIterable, Equatable, Sendable {
     public var message: String {
         switch self {
         case .libraryUnavailable:
-            return "The Library isn't available right now. Try loading the list again."
+            return "The Library is unavailable. Load the list again."
         case .queryFailed:
-            return "Screenlogger couldn't load recently recorded websites. Try again."
+            return "Screenlogger could not load recently recorded websites. Try again."
         }
     }
 
@@ -41,7 +41,7 @@ public enum RecordedDomainLoadRecoveryAction: Equatable, Sendable {
     public var accessibilityHint: String {
         switch self {
         case .retry:
-            return "Try loading the recently recorded website list again"
+            return "Load the recently recorded website list again"
         }
     }
 }

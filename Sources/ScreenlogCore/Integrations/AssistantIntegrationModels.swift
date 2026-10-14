@@ -185,19 +185,19 @@ public enum AssistantIntegrationError: LocalizedError, Equatable, Sendable {
     public var errorDescription: String? {
         switch self {
         case .sourceMissing:
-            return "Screenlogger integration resources are unavailable. Reinstall Screenlogger and try again."
+            return "Screenlogger integration resources are unavailable. Reinstall Screenlogger. Try again."
         case .configMissing:
             return "OpenClaw configuration is unavailable. Install or open OpenClaw first."
         case .malformedConfiguration:
-            return "OpenClaw configuration is invalid and was left unchanged."
+            return "OpenClaw configuration is invalid. Screenlogger left it unchanged."
         case .destinationNeedsUpgrade:
             return "The installed Screenlogger integration needs an explicit upgrade."
         case .destinationNotOwned:
-            return "The integration location contains an item Screenlogger cannot authenticate, so it was left unchanged."
+            return "Screenlogger cannot authenticate an item at the integration location. It left the item unchanged."
         case .unsafeDestination:
             return "Screenlogger refused an unsafe integration location."
         case .replacementFailed:
-            return "The integration could not be replaced. The previous installation was preserved."
+            return "Screenlogger could not replace the integration. It preserved the previous installation."
         }
     }
 }

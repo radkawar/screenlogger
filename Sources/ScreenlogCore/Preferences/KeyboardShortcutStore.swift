@@ -8,6 +8,7 @@ import Foundation
 public enum KeyboardShortcutActionID: String, CaseIterable, Codable, Identifiable, Sendable {
     case findLibrary = "library.find"
     case showLibrary = "navigation.library"
+    case showSessions = "navigation.sessions"
     case searchLibrary = "library.search"
     case showTimeline = "navigation.timeline"
     case showSettings = "navigation.settings"
@@ -403,17 +404,24 @@ public struct KeyboardShortcutRegistry: Sendable {
     private static let standardDefinitions: [KeyboardShortcutDefinition] = [
         .init(
             id: .showLibrary,
-            title: "Show Library",
+            title: "Show Search",
             category: .navigation,
             scope: .application,
             defaultBinding: .init(key: .character("1"), modifiers: .command)
+        ),
+        .init(
+            id: .showSessions,
+            title: "Show Sessions",
+            category: .navigation,
+            scope: .application,
+            defaultBinding: .init(key: .character("2"), modifiers: .command)
         ),
         .init(
             id: .showTimeline,
             title: "Show Timeline",
             category: .navigation,
             scope: .application,
-            defaultBinding: .init(key: .character("2"), modifiers: .command)
+            defaultBinding: .init(key: .character("3"), modifiers: .command)
         ),
         .init(
             id: .showSettings,
@@ -1003,6 +1011,26 @@ public final class KeyboardShortcutStore: @unchecked Sendable {
                     loadedRepairs.append(.init(actionID: actionID, issue: issue))
                 }
             } else {
+                loadedOverrides[actionID] = .disabled
+            }
+        }
+
+        // Navigation defaults moved when Sessions gained its own command.
+        // An intentional override wins over either newly assigned default;
+        // never discard the person's entire shortcut catalog on upgrade.
+        for actionID in [KeyboardShortcutActionID.showSessions, .showTimeline] {
+            guard loadedOverrides[actionID] == nil,
+                let definition = registry.definition(for: actionID)
+            else { continue }
+            let binding = definition.defaultBinding
+            let hasCustomConflict = registry.definitions.contains { other in
+                guard other.id != actionID,
+                    definition.scope.overlaps(other.scope),
+                    case .binding(let custom) = loadedOverrides[other.id]
+                else { return false }
+                return custom == binding
+            }
+            if hasCustomConflict {
                 loadedOverrides[actionID] = .disabled
             }
         }

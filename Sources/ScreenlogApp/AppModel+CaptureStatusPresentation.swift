@@ -31,6 +31,9 @@ extension AppModel {
         if libraryRestoreState == .restoring {
             return .restoring
         }
+        if isDatabaseReclamationRunning {
+            return .reclaimingDatabase
+        }
         return .ready
     }
 

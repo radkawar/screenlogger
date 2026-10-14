@@ -275,7 +275,23 @@ private actor CapturePipeline {
         try await cycleGate.acquire()
         defer { cycleGate.release() }
         try Task.checkCancellation()
-        return try await runCaptureCycle(store: store, energy: energy)
+        do {
+            let outcome = try await runCaptureCycle(store: store, energy: energy)
+            try Task.checkCancellation()
+            return outcome
+        } catch {
+            guard Task.isCancelled || error is CancellationError else { throw error }
+            // OCR can finish before cancellation prevents the matching still
+            // from being stored. Do not reuse that uncommitted frame's OCR on
+            // the next cycle with a previous frame's encoded pixels.
+            for service in differentialOCRByDisplay.values { service.reset() }
+            throw CancellationError()
+        }
+    }
+
+    func resetStoredState() {
+        differentialOCRByDisplay.removeAll()
+        lastStoredByDisplay.removeAll()
     }
 
     private func runCaptureCycle(
@@ -318,6 +334,7 @@ private actor CapturePipeline {
         var bitmaps = try await capture.captureDisplays(
             excludingApplicationsWithBundleIDs: excludedBundleIDs
         )
+        try Task.checkCancellation()
         guard !bitmaps.isEmpty else { throw CaptureError.noDisplay }
         let representativeTitle = bitmaps[0].focusedTitle
         let representativeBundleID = bitmaps[0].focusedBundleID
@@ -408,6 +425,7 @@ private actor CapturePipeline {
         // Remove each processed bitmap so native multi-display buffers are
         // released as soon as their OCR and stored copy are complete.
         while !bitmaps.isEmpty {
+            try Task.checkCancellation()
             let bitmap = bitmaps.removeFirst()
             let visibleWindows = ScreenCaptureService.windows(
                 bitmap.windowBounds,
@@ -435,6 +453,7 @@ private actor CapturePipeline {
                     rawOCR = try await fullOCR.recognize(image: bitmap.image)
                     reused = false
                 }
+                try Task.checkCancellation()
                 prepared.append(
                     PreparedDisplay(
                         bitmap: bitmap,
@@ -445,6 +464,8 @@ private actor CapturePipeline {
                         displayKey: bitmap.displayID ?? UInt32.max
                     )
                 )
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 firstFailure = firstFailure ?? error
                 log.error(
@@ -481,6 +502,7 @@ private actor CapturePipeline {
         var attachedAXTree = false
 
         for item in prepared {
+            try Task.checkCancellation()
             do {
                 let attributed = OCRService.attributeToForegroundBackground(
                     result: item.rawOCR,
@@ -512,6 +534,7 @@ private actor CapturePipeline {
                     indexSearch = false
                 } else {
                     encoded = try await capture.encodeStill(item.bitmap.image)
+                    try Task.checkCancellation()
                     storedOCRBoxes = OCRService.rescaleBoxes(
                         attributed.boxes,
                         sourceWidth: item.bitmap.width,
@@ -542,6 +565,7 @@ private actor CapturePipeline {
                     indexSearch: indexSearch
                 )
 
+                try Task.checkCancellation()
                 let frameID = try store.store(payload: payload)
                 frameIDs.append(frameID)
                 lastStoredByDisplay[item.displayKey] = StoredDisplayStill(
@@ -566,6 +590,8 @@ private actor CapturePipeline {
                         attachedAXTree = true
                     }
                 }
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 firstFailure = firstFailure ?? error
                 log.error(
@@ -705,6 +731,8 @@ public final class RecordingEngine: ObservableObject {
 
     private var task: Task<Void, Never>?
     private var maintenanceTask: Task<Void, Never>?
+    private var loopRevision: UInt64 = 0
+    private var manualCaptureTasks: [UUID: Task<Int64, Error>] = [:]
     private var audioControlTask: Task<Void, Never>?
     private var audioControlRevision: UInt64 = 0
     private let pipeline = CapturePipeline()
@@ -779,7 +807,14 @@ public final class RecordingEngine: ObservableObject {
         audioControlRevision &+= 1
         let requestedRevision = audioControlRevision
         audioControlTask?.cancel()
+        let previousAudioControlTask = audioControlTask
         audioControlTask = Task { [weak self] in
+            defer {
+                if self?.audioControlRevision == requestedRevision {
+                    self?.audioControlTask = nil
+                }
+            }
+            await previousAudioControlTask?.value
             guard let self,
                 !Task.isCancelled,
                 self.audioControlRevision == requestedRevision
@@ -898,6 +933,21 @@ public final class RecordingEngine: ObservableObject {
             isRecording = false
             return false
         }
+        return start(
+            captureLoop: { [weak self] in await self?.runLoop() },
+            maintenanceLoop: { [weak self] in await self?.maintenanceLoop() }
+        )
+    }
+
+    /// Own the complete lifetime of both loops, including work which ignores
+    /// cancellation while a framework or the maintenance queue is finishing.
+    /// The injectable operations also let lifecycle tests avoid real capture.
+    @discardableResult
+    func start(
+        captureLoop: @escaping @MainActor () async -> Void,
+        maintenanceLoop: @escaping @MainActor () async -> Void
+    ) -> Bool {
+        guard !isRecording else { return true }
         isRecording = true
         lastError = nil
         framesCapturedSession = 0
@@ -906,9 +956,25 @@ public final class RecordingEngine: ObservableObject {
         pausedForInactivity = false
         pauseReason = nil
         // Unstructured task: awaits on pipeline release MainActor during OCR/encode/DB.
-        task = Task(priority: .utility) { [weak self] in await self?.runLoop() }
+        loopRevision &+= 1
+        let revision = loopRevision
+        let previousCaptureTask = task
+        let previousMaintenanceTask = maintenanceTask
+        task = Task(priority: .utility) { [weak self] in
+            defer {
+                if self?.loopRevision == revision { self?.task = nil }
+            }
+            await previousCaptureTask?.value
+            guard !Task.isCancelled else { return }
+            await captureLoop()
+        }
         maintenanceTask = Task(priority: .background) { [weak self] in
-            await self?.maintenanceLoop()
+            defer {
+                if self?.loopRevision == revision { self?.maintenanceTask = nil }
+            }
+            await previousMaintenanceTask?.value
+            guard !Task.isCancelled else { return }
+            await maintenanceLoop()
         }
         scheduleAudioReconciliation(markCaptureAvailable: true)
         log.info("recording started interval=\(self.intervalSeconds)s")
@@ -920,14 +986,21 @@ public final class RecordingEngine: ObservableObject {
     public func stop() -> Bool {
         isRecording = false
         task?.cancel()
-        task = nil
         maintenanceTask?.cancel()
-        maintenanceTask = nil
+        for capture in manualCaptureTasks.values { capture.cancel() }
         automaticMaintenanceDeferredForPower = false
         audioControlRevision &+= 1
+        let requestedRevision = audioControlRevision
         audioControlTask?.cancel()
+        let previousAudioControlTask = audioControlTask
         audioTranscription.deactivateImmediately()
-        audioControlTask = Task { [audioTranscription] in
+        audioControlTask = Task { [weak self, audioTranscription] in
+            defer {
+                if self?.audioControlRevision == requestedRevision {
+                    self?.audioControlTask = nil
+                }
+            }
+            await previousAudioControlTask?.value
             await audioTranscription.stop()
         }
         pausedForDisk = false
@@ -938,28 +1011,31 @@ public final class RecordingEngine: ObservableObject {
         return !isRecording
     }
 
-    /// Stop and await both loops before a Library replacement closes SQLite.
-    /// `stop()` is intentionally immediate for ordinary UI use; restore needs
-    /// the stronger guarantee that no pipeline operation still holds `Store`.
+    /// Stop and await every Store-owning operation before SQLite is closed.
+    /// `stop()` remains immediate, but retains canceled work until it finishes.
     public func quiesceForLibraryReplacement() async {
         isRecording = false
+        // Close admission before the first suspension. Capture Now and start()
+        // must not obtain the old Store while replacement is draining it.
+        store = nil
+        dataRoot = nil
         let captureTask = task
         let backgroundMaintenanceTask = maintenanceTask
+        let manualTasks = Array(manualCaptureTasks.values)
         let previousAudioControlTask = audioControlTask
         captureTask?.cancel()
         backgroundMaintenanceTask?.cancel()
-        task = nil
-        maintenanceTask = nil
+        for capture in manualTasks { capture.cancel() }
         audioControlRevision &+= 1
         previousAudioControlTask?.cancel()
-        audioControlTask = nil
         audioTranscription.deactivateImmediately()
         _ = await captureTask?.result
         _ = await backgroundMaintenanceTask?.result
+        for capture in manualTasks { _ = await capture.result }
         _ = await previousAudioControlTask?.result
         await audioTranscription.stop()
-        store = nil
-        dataRoot = nil
+        await pipeline.resetStoredState()
+        automaticMaintenanceDeferredForPower = false
         pausedForDisk = false
         pausedForInactivity = false
         pauseReason = nil
@@ -968,6 +1044,34 @@ public final class RecordingEngine: ObservableObject {
     }
 
     public func captureOneNow() async throws -> Int64 {
+        try await captureOneNow { [self] in
+            try await performCaptureOneNow()
+        }
+    }
+
+    /// Manual captures are owned even when continuous recording is off.
+    func captureOneNow(
+        operation: @escaping @MainActor () async throws -> Int64
+    ) async throws -> Int64 {
+        guard store != nil else { throw CaptureError.notAuthorized }
+        try Task.checkCancellation()
+        let identifier = UUID()
+        let capture = Task {
+            try Task.checkCancellation()
+            let frameID = try await operation()
+            try Task.checkCancellation()
+            return frameID
+        }
+        manualCaptureTasks[identifier] = capture
+        defer { manualCaptureTasks[identifier] = nil }
+        return try await withTaskCancellationHandler {
+            try await capture.value
+        } onCancel: {
+            capture.cancel()
+        }
+    }
+
+    private func performCaptureOneNow() async throws -> Int64 {
         guard let store else { throw CaptureError.notAuthorized }
         guard PermissionsSnapshot.currentFast().isCaptureReady else {
             pauseReason = .permissionRequired
@@ -984,6 +1088,7 @@ public final class RecordingEngine: ObservableObject {
         var energy = currentEnergyProfile()
         energy.unchangedHeartbeatSeconds = 0
         let outcome = try await pipeline.captureAndStore(store: store, energy: energy)
+        try Task.checkCancellation()
         if let reason = outcome.pauseReason {
             lastCycleFrameCount = 0
             pauseReason = reason
@@ -1010,6 +1115,7 @@ public final class RecordingEngine: ObservableObject {
         while !Task.isCancelled && isRecording {
             if !PermissionsSnapshot.currentFast().isCaptureReady {
                 await audioTranscription.setCaptureAvailable(false)
+                guard !Task.isCancelled else { break }
                 pausedForDisk = false
                 pausedForInactivity = false
                 pauseReason = .permissionRequired
@@ -1024,6 +1130,7 @@ public final class RecordingEngine: ObservableObject {
                 DiskSpaceMonitor.shared.shouldPauseRecording(dataRoot: root)
             {
                 await audioTranscription.setCaptureAvailable(false)
+                guard !Task.isCancelled else { break }
                 pausedForDisk = true
                 pausedForInactivity = false
                 pauseReason = .lowDiskSpace
@@ -1042,6 +1149,7 @@ public final class RecordingEngine: ObservableObject {
                 SystemIdleMonitor.isIdle(thresholdSeconds: inactivityThresholdSeconds)
             {
                 await audioTranscription.setCaptureAvailable(false)
+                guard !Task.isCancelled else { break }
                 if !pausedForInactivity {
                     log.info(
                         "capture paused for inactivity (idle >= \(Int(self.inactivityThresholdSeconds))s)"
@@ -1059,6 +1167,7 @@ public final class RecordingEngine: ObservableObject {
             }
             pausedForInactivity = false
             await audioTranscription.setCaptureAvailable(true)
+            guard !Task.isCancelled else { break }
 
             do {
                 if let store {
@@ -1067,6 +1176,7 @@ public final class RecordingEngine: ObservableObject {
                         store: store,
                         energy: currentEnergyProfile()
                     )
+                    try Task.checkCancellation()
                     if let id = outcome.frameIDs.last {
                         lastFrameID = id
                         lastCycleFrameCount = outcome.frameIDs.count
@@ -1089,18 +1199,22 @@ public final class RecordingEngine: ObservableObject {
                 // capture failure after the UI has moved to Capture Off.
                 break
             } catch CaptureError.excluded {
+                guard !Task.isCancelled else { break }
                 consecutiveFailures = 0
                 lastError = nil
             } catch CaptureError.notAuthorized {
+                guard !Task.isCancelled else { break }
                 consecutiveFailures = 0
                 pauseReason = .permissionRequired
                 lastError = nil
             } catch {
+                guard !Task.isCancelled else { break }
                 consecutiveFailures += 1
                 pauseReason = nil
                 lastError = error.localizedDescription
                 log.error("capture cycle failed: \(error.localizedDescription)")
             }
+            guard !Task.isCancelled else { break }
             let retryDelay = failureBackoff.delay(
                 afterConsecutiveFailures: consecutiveFailures
             )

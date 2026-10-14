@@ -1,7 +1,6 @@
 import SQLite3
-import XCTest
-
 @testable import ScreenlogCore
+import XCTest
 
 final class RetentionServiceTests: XCTestCase {
     var tempRoot: URL!
@@ -225,6 +224,28 @@ final class RetentionServiceTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: oldPath))
         XCTAssertNil(try imagePathOptional(frameID: oldID))
         XCTAssertEqual(try frameForeground(frameID: oldID), "aged still")
+    }
+
+    func testMaximumRetentionAgeDoesNotOverflowOrPurgeMedia() throws {
+        let frameID = try insertStill(
+            timestampMs: 1_600_000_000_000,
+            foreground: "long retention",
+            byteCount: 2_048
+        )
+        let path = try imagePath(frameID: frameID)
+        let service = RetentionService(
+            policy: RetentionPolicy(retentionDays: Int.max, storageCapMB: 0)
+        )
+
+        let preview = try service.preflight(store: store)
+        let report = try service.runDetailed(store: store)
+
+        XCTAssertEqual(preview.cutoffMs, Int64.min)
+        XCTAssertEqual(report.cutoffMs, preview.cutoffMs)
+        XCTAssertEqual(preview.selectedMediaCount, 0)
+        XCTAssertEqual(report.purgedStillCount, 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path))
+        XCTAssertEqual(try imagePathOptional(frameID: frameID), path)
     }
 
     func testStillDeletionFailureKeepsCanonicalFileAndCanRetry() throws {

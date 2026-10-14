@@ -455,6 +455,10 @@ public struct SessionRow: Sendable, Equatable, Codable, Identifiable {
     public var primaryDisplayName: String?
     /// First on-disk still in the session (optional preview thumb).
     public var previewImagePath: String?
+    /// User-chosen title, persisted independently of live session bounds.
+    public var customName: String?
+
+    public var displayTitle: String { customName ?? appLabel }
 
     public init(
         startMs: Int64,
@@ -462,7 +466,8 @@ public struct SessionRow: Sendable, Equatable, Codable, Identifiable {
         frameCount: Int64,
         primaryBundleID: String? = nil,
         primaryDisplayName: String? = nil,
-        previewImagePath: String? = nil
+        previewImagePath: String? = nil,
+        customName: String? = nil
     ) {
         self.startMs = startMs
         self.endMs = endMs
@@ -470,6 +475,7 @@ public struct SessionRow: Sendable, Equatable, Codable, Identifiable {
         self.primaryBundleID = primaryBundleID
         self.primaryDisplayName = primaryDisplayName
         self.previewImagePath = previewImagePath
+        self.customName = customName
     }
 
     /// Stable list identity. Unlike `endMs`, a session's start does not change
