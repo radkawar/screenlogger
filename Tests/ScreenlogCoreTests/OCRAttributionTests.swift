@@ -1,5 +1,6 @@
-@testable import ScreenlogCore
 import XCTest
+
+@testable import ScreenlogCore
 
 /// Pure FG/BG OCR attribution - no Vision / ScreenCaptureKit.
 final class OCRAttributionTests: XCTestCase {

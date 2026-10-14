@@ -1,6 +1,7 @@
 import Foundation
-@testable import ScreenlogCore
 import XCTest
+
+@testable import ScreenlogCore
 
 final class BrowserURLServiceTests: XCTestCase {
     private final class Node {

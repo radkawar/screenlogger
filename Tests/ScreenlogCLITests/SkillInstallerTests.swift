@@ -1,6 +1,7 @@
 import Foundation
-@testable import ScreenlogCLI
 import XCTest
+
+@testable import ScreenlogCLI
 
 final class SkillInstallerTests: XCTestCase {
     func testShippedSkillCopiesMatch() throws {

@@ -1,6 +1,7 @@
 import Foundation
-@testable import ScreenlogCore
 import XCTest
+
+@testable import ScreenlogCore
 
 final class ScreenlogProcessPreferencesTests: XCTestCase {
     private let token = "4ef32591-bf79-445d-8bbb-19026f8a5952"

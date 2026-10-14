@@ -1,7 +1,8 @@
 import Darwin
 import Foundation
-@testable import ScreenlogCore
 import XCTest
+
+@testable import ScreenlogCore
 
 final class IPCSocketContractTests: XCTestCase {
     private var root: URL!

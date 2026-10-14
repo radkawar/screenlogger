@@ -1,5 +1,6 @@
-@testable import ScreenlogCore
 import XCTest
+
+@testable import ScreenlogCore
 
 final class ExclusionStoreTests: XCTestCase {
     var suiteName: String!

@@ -1,6 +1,7 @@
 import CoreGraphics
-@testable import ScreenlogCore
 import XCTest
+
+@testable import ScreenlogCore
 
 final class OCRHighlightTransformTests: XCTestCase {
     func testLandscapeImageUsesVerticalLetterboxing() throws {

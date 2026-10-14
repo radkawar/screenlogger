@@ -1,6 +1,7 @@
 import ApplicationServices
-@testable import ScreenlogCore
 import XCTest
+
+@testable import ScreenlogCore
 
 final class AXTreeExtractorTests: XCTestCase {
     func testAccessibilityElementRejectsUnexpectedCoreFoundationType() {

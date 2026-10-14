@@ -1,6 +1,7 @@
 import Foundation
-@testable import ScreenlogCore
 import XCTest
+
+@testable import ScreenlogCore
 
 final class LibraryRestoreServiceTests: XCTestCase {
     private var temporaryRoot: URL!

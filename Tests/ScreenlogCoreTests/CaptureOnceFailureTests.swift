@@ -1,7 +1,8 @@
 import CoreGraphics
 import ImageIO
-@testable import ScreenlogCore
 import XCTest
+
+@testable import ScreenlogCore
 
 final class CaptureOnceFailureTests: XCTestCase {
     func testScreenloggerIsAlwaysAddedToCaptureFilter() {

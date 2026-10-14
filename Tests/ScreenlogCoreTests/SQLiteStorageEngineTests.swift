@@ -1,6 +1,7 @@
 import SQLite3
-@testable import ScreenlogCore
 import XCTest
+
+@testable import ScreenlogCore
 
 /// Covers the two promises the storage engine makes to the rest of the app:
 /// deleting data eventually returns disk space, and a read never has to wait

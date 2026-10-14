@@ -1,6 +1,7 @@
 import CoreGraphics
-@testable import ScreenlogCore
 import XCTest
+
+@testable import ScreenlogCore
 
 /// Pure DifferentialOCR logic - no Vision / ScreenCaptureKit permissions.
 final class DifferentialOCRTests: XCTestCase {

@@ -1,6 +1,7 @@
 import CoreGraphics
-@testable import ScreenlogCore
 import XCTest
+
+@testable import ScreenlogCore
 
 final class TimelineStagePanGeometryTests: XCTestCase {
     func testLandscapeCaptureOnlyPansWhereZoomedContentExceedsViewport() {

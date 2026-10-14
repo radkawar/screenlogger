@@ -1,7 +1,8 @@
 import Foundation
-@testable import ScreenlogCLI
 import ScreenlogCore
 import XCTest
+
+@testable import ScreenlogCLI
 
 final class CLISemanticCommandTests: XCTestCase {
     func testReadOnlyQueryPreservesOperatorsAndNarrowsMode() throws {

@@ -1,6 +1,7 @@
 import Foundation
-@testable import ScreenlogCore
 import XCTest
+
+@testable import ScreenlogCore
 
 /// Honest tests for StorageManagementMode to auto-compact/retention gating
 /// and CapturePreferenceStore UserDefaults round-trip (keys AppModel uses).

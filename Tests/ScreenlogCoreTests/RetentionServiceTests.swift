@@ -1,6 +1,7 @@
 import SQLite3
-@testable import ScreenlogCore
 import XCTest
+
+@testable import ScreenlogCore
 
 final class RetentionServiceTests: XCTestCase {
     var tempRoot: URL!

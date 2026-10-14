@@ -1,6 +1,7 @@
 import Foundation
-@testable import ScreenlogCore
 import XCTest
+
+@testable import ScreenlogCore
 
 final class TimedCapturePausePreferenceTests: XCTestCase {
     private var suiteName: String!

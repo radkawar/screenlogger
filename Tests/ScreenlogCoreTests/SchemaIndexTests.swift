@@ -1,7 +1,8 @@
 import Foundation
 import SQLite3
-@testable import ScreenlogCore
 import XCTest
+
+@testable import ScreenlogCore
 
 /// Verifies required covering indexes exist after migration.
 final class SchemaIndexTests: XCTestCase {

@@ -2,9 +2,10 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import SQLite3
-@testable import ScreenlogCore
 import UniformTypeIdentifiers
 import XCTest
+
+@testable import ScreenlogCore
 
 final class StoreFTSTests: XCTestCase {
     var tempRoot: URL!

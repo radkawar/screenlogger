@@ -1,7 +1,8 @@
 import Foundation
 import SQLite3
-@testable import ScreenlogCore
 import XCTest
+
+@testable import ScreenlogCore
 
 final class StoreStartupIntegrityTests: XCTestCase {
     func testStartupRemovesOnlyCanonicalUnreferencedManagedStills() throws {

@@ -1,6 +1,7 @@
-@testable import ScreenlogCore
 import UniformTypeIdentifiers
 import XCTest
+
+@testable import ScreenlogCore
 
 final class PermissionFlowTests: XCTestCase {
     func testBothPermissionsAreRequiredForCaptureReadiness() {
